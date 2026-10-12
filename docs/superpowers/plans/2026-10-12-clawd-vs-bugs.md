@@ -258,7 +258,7 @@ All coordinates are rounded to whole pixels inside the renderer.
 
 ---
 
-## Phase A — Foundation (sequential; the full code is given here)
+## Phase A — Foundation (sequential; the full code is given here. Rev 2: these blocks are copied from a working copy where `node --test` passes 136/136 on Node 26.)
 
 ### Task 1: Scaffold, namespace, math, RNG, test harness
 
@@ -290,7 +290,7 @@ All coordinates are rounded to whole pixels inside the renderer.
   "private": true,
   "description": "Top-down pixel boss rush: Clawd vs software bugs.",
   "scripts": {
-    "test": "node --test tests/",
+    "test": "node --test",
     "build": "node tools/build-artifact.mjs",
     "serve": "python3 -m http.server 8137"
   },
@@ -334,12 +334,17 @@ node_modules/
 <script src="src/art/render.js"></script>
 <script src="src/core/input.js"></script>
 <script src="src/core/audio.js"></script>
+<script src="src/core/music.js"></script>
 <script src="src/core/loop.js"></script>
 <script src="src/game/world.js"></script>
 <script src="src/game/projectiles.js"></script>
 <script src="src/game/patches.js"></script>
 <script src="src/game/player.js"></script>
 <script src="src/game/fx.js"></script>
+<script src="src/game/compact.js"></script>
+<script src="src/game/pickups.js"></script>
+<script src="src/game/quips.js"></script>
+<script src="src/game/unlocks.js"></script>
 <script src="src/game/enemies/syntaxError.js"></script>
 <script src="src/game/enemies/nullPointer.js"></script>
 <script src="src/game/enemies/raceCondition.js"></script>
@@ -404,6 +409,8 @@ node_modules/
     },
     angleTo: (ax, ay, bx, by) => Math.atan2(by - ay, bx - ax),
     wrapAngle(a) {
+      if (!Number.isFinite(a)) return 0;
+      if (a > 1e6 || a < -1e6) a %= 2 * Math.PI;
       while (a > Math.PI) a -= 2 * Math.PI;
       while (a < -Math.PI) a += 2 * Math.PI;
       return a;
@@ -603,7 +610,7 @@ function loadWith(...extra) {
 
 function makeInput(over) {
   return Object.assign(
-    { moveX: 0, moveY: 0, aimX: 160, aimY: 40, fire: false, dash: false, pause: false, mute: false, confirm: false, choice: 0, retry: false, quit: false },
+    { moveX: 0, moveY: 0, aimX: 160, aimY: 40, fire: false, dash: false, pause: false, mute: false, confirm: false, choice: 0, retry: false, quit: false, compact: false, music: false, keys: [] },
     over || {}
   );
 }
@@ -629,6 +636,7 @@ module.exports = { ROOT, scriptList, load, loadWith, CORE, GAME_BASE, makeInput,
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
+const vm = require('vm');
 const H = require('./harness');
 
 const FILES = ['src/core/ns.js', 'src/core/math.js', 'src/core/rng.js'];
@@ -657,6 +665,21 @@ test('math: norm, clamp, circleHit, circleSegment', () => {
   assert.ok(Math.abs(M.wrapAngle(3 * Math.PI) - Math.PI) < 1e-9);
   assert.equal(M.approach(0, 10, 3), 3);
   assert.equal(M.approach(9, 10, 3), 10);
+});
+
+test('math: wrapAngle terminates and stays finite for huge and non-finite angles', () => {
+  const { sandbox } = H.load(FILES, { returnSandbox: true });
+  // Evaluated inside the vm with a timeout: a regression to an endless loop fails here instead of hanging the suite.
+  const wrap = (expr) => vm.runInContext(`CB.M.wrapAngle(${expr})`, sandbox, { timeout: 2000 });
+  assert.ok(Number.isFinite(wrap('1e17')));
+  assert.ok(Math.abs(wrap('1e17')) <= Math.PI + 1e-9);
+  assert.ok(Math.abs(wrap('-1e17')) <= Math.PI + 1e-9);
+  assert.ok(Number.isFinite(wrap('1e300')));
+  assert.equal(wrap('Infinity'), 0);
+  assert.equal(wrap('-Infinity'), 0);
+  assert.equal(wrap('NaN'), 0);
+  assert.ok(Math.abs(Math.abs(wrap('7 * Math.PI')) - Math.PI) < 1e-9);
+  assert.ok(Math.abs(wrap('0.5') - 0.5) < 1e-12, 'small angles pass through');
 });
 
 test('math: clampToArena keeps the circle inside', () => {
@@ -697,7 +720,7 @@ test('harness: scriptList parses index.html in order', () => {
   const list = H.scriptList();
   assert.equal(list[0], 'src/core/ns.js');
   assert.equal(list[list.length - 1], 'src/main.js');
-  assert.ok(list.length >= 38);
+  assert.ok(list.length >= 43);
 });
 ```
 
@@ -773,6 +796,49 @@ test('sprites: custom palette per sprite', () => {
   CB.Art.defineSprite('t_custom', ['ab'], { a: '#000000', b: null });
   assert.equal(CB.Art.spriteDef('t_custom').pal.a, '#000000');
 });
+
+test('sprites: defineTint keeps the shape and recolours every visible pixel', () => {
+  const CB = H.load(FILES);
+  CB.Art.defineSprite('t_src', ['.oh.', 'oOko', '.wz.']);
+  CB.Art.defineTint('t_tint', 't_src', '#123456');
+  const s = CB.Art.spriteDef('t_src');
+  const t = CB.Art.spriteDef('t_tint');
+  assert.equal(t.w, s.w);
+  assert.equal(t.h, s.h);
+  assert.deepEqual(H.plain(t.rows), H.plain(s.rows));
+  let visible = 0;
+  for (let y = 0; y < t.h; y++) {
+    for (let x = 0; x < t.w; x++) {
+      const ch = t.rows[y][x];
+      if (ch === '.') assert.equal(t.pal[ch], null);
+      else {
+        visible++;
+        assert.equal(t.pal[ch], '#123456', `pixel ${x},${y} (${ch})`);
+      }
+    }
+  }
+  assert.equal(visible, 8);
+  assert.equal(CB.Art.spriteDef('t_src').pal.o, CB.Pal.C.clawd, 'source is untouched');
+  assert.throws(() => CB.Art.defineTint('t_bad', 't_missing', '#FFFFFF'), /unknown source sprite/);
+});
+
+test('sprites: defineTint works on custom palettes and on tints of tints', () => {
+  const CB = H.load(FILES);
+  CB.Art.defineSprite('t_c', ['ab.'], { a: '#000000', b: null, '.': null });
+  CB.Art.defineTint('t_c1', 't_c', '#FF0000');
+  assert.equal(CB.Art.spriteDef('t_c1').pal.a, '#FF0000');
+  assert.equal(CB.Art.spriteDef('t_c1').pal.b, null, 'transparent palette entries stay transparent');
+  CB.Art.defineTint('t_c2', 't_c1', '#00FF00');
+  assert.equal(CB.Art.spriteDef('t_c2').pal.a, '#00FF00');
+});
+
+test("sprites: defineTint keeps '.' transparent even if the source palette coloured it", () => {
+  const CB = H.load(FILES);
+  CB.Art.defineSprite('t_dotcol', ['a.'], { a: '#000000', '.': '#654321' });
+  CB.Art.defineTint('t_dotcol_t', 't_dotcol', '#FF00FF');
+  assert.equal(CB.Art.spriteDef('t_dotcol_t').pal['.'], null);
+  assert.equal(CB.Art.spriteDef('t_dotcol_t').pal.a, '#FF00FF');
+});
 ```
 
 - [ ] **Step 2: Run to verify failure.** Run `node --test tests/art.test.js`. Expected: FAIL (ENOENT for `src/art/palette.js`).
@@ -836,6 +902,16 @@ test('sprites: custom palette per sprite', () => {
     delete baked[name];
   }
 
+  // A same-shape sprite with every visible pixel drawn in one colour ('.' stays transparent).
+  function defineTint(name, srcName, color) {
+    const src = defs[srcName];
+    if (!src) throw new Error(`sprite ${name}: unknown source sprite ${srcName}`);
+    const pal = {};
+    for (const ch of Object.keys(src.pal)) pal[ch] = src.pal[ch] ? color : null;
+    pal['.'] = null;
+    defineSprite(name, src.rows, pal);
+  }
+
   function bake(name) {
     const d = defs[name];
     if (!d) throw new Error(`unknown sprite ${name}`);
@@ -873,6 +949,7 @@ test('sprites: custom palette per sprite', () => {
 
   CB.Art = {
     defineSprite,
+    defineTint,
     hasSprite: (name) => name in defs,
     spriteDef: (name) => defs[name],
     sprite: (name) => baked[name] || bake(name),
@@ -939,16 +1016,23 @@ test('patches: each patch effect matches the spec table', () => {
   const CB = H.load(FILES);
   const S = (c) => CB.Patches.computeStats(c);
   assert.equal(S({ spread: 2 }).spread, 2);
-  assert.ok(Math.abs(S({ rapid: 1 }).fireCooldown - 0.14) < 1e-9);
-  assert.ok(Math.abs(S({ rapid: 2 }).fireCooldown - 0.098) < 1e-9);
+  assert.ok(Math.abs(S({ rapid: 1 }).fireCooldown - 0.16) < 1e-9);
+  assert.ok(Math.abs(S({ rapid: 2 }).fireCooldown - 0.128) < 1e-9);
   assert.equal(S({ pierce: 2 }).pierce, 2);
-  assert.equal(S({ heavy: 1 }).dmg, 1.5);
-  assert.equal(S({ heavy: 2 }).dmg, 2);
+  assert.ok(Math.abs(S({ heavy: 1 }).dmg - 1.35) < 1e-9);
+  assert.ok(Math.abs(S({ heavy: 2 }).dmg - 1.7) < 1e-9);
+  assert.equal(S({ heavy: 1 }).boltR, 3);
   assert.equal(S({ heavy: 2 }).boltR, 4);
   assert.equal(S({ heart: 2 }).maxHearts, 7);
   assert.equal(S({ dash: 1 }).dashCooldown, 0.45);
   assert.equal(S({ ricochet: 1 }).bounces, 1);
   assert.equal(S({ spread: 9 }).spread, 2, 'counts above max are clamped');
+});
+
+test('patches: descriptions match the retuned numbers', () => {
+  const CB = H.load(FILES);
+  assert.equal(CB.Patches.DEFS.rapid.desc, 'Fire 25% faster');
+  assert.equal(CB.Patches.DEFS.heavy.desc, '+35% damage, bigger sparks');
 });
 
 test('patches: apply increments and refuses past max', () => {
@@ -1096,9 +1180,121 @@ test('world: an enemy bullet costs one heart and is consumed; a second one in th
 
 test('world: contact with an enemy hurts the player', () => {
   const { w } = setup();
-  w.spawnEnemy('dummy', w.player.x + 3, w.player.y);
+  const e = w.spawnEnemy('dummy', w.player.x + 3, w.player.y);
+  e.noContactT = 0;
   H.stepN(w, 1, idle);
   assert.equal(w.player.hearts, 4);
+});
+
+test('world: a freshly spawned regular enemy cannot hurt for 0.3 s, then can', () => {
+  const { CB, w } = setup();
+  const p = w.player;
+  const e = w.spawnEnemy('dummy', p.x, p.y);
+  assert.equal(e.noContactT, CB.SPAWN_GRACE);
+  assert.equal(CB.SPAWN_GRACE, 0.3);
+  let hurtTick = 0;
+  for (let i = 1; i <= 40 && !hurtTick; i++) {
+    H.stepN(w, 1, idle);
+    if (p.hearts < 5) hurtTick = i;
+    if (i === 15) assert.equal(p.hearts, 5, 'still protected at 0.25 s');
+  }
+  assert.ok(hurtTick >= 18 && hurtTick <= 19, `first hurt on tick ${hurtTick}`);
+  assert.equal(p.hearts, 4);
+});
+
+test('world: a boss part and a pre-set grace are not given the regular spawn grace', () => {
+  const { CB, w } = setup({ boss: true, regular: false });
+  const part = w.spawnEnemy('dummy', 60, 60);
+  assert.equal(part.noContactT, 0);
+  CB.Enemies.graced = { create: (ww, x, y) => CB.makeEnemy('graced', x, y, { hp: 1, noContactT: 0.5 }), update() {}, draw() {} };
+  assert.equal(w.spawnEnemy('graced', 80, 60).noContactT, 0.5, 'a longer grace is kept');
+  assert.equal(CB.makeEnemy('k', 0, 0).noContactT, 0);
+});
+
+test('world: overlapping regular enemies are pushed apart', () => {
+  const { w } = setup();
+  const a = w.spawnEnemy('dummy', 100, 60, { r: 4 });
+  const b = w.spawnEnemy('dummy', 100, 60, { r: 6 });
+  H.stepN(w, 60, idle);
+  const d = Math.hypot(a.x - b.x, a.y - b.y);
+  assert.ok(d >= 0.8 * (4 + 6) - 0.5, `separated to ${d}`);
+  assert.ok(d < 0.8 * (4 + 6) + 1, 'a gentle push, not a launch');
+  for (const e of [a, b]) assert.ok(Number.isFinite(e.x) && Number.isFinite(e.y));
+});
+
+test('world: separation pushes at most 30 px/s per enemy (a nudge, not a teleport)', () => {
+  const { w } = setup();
+  const a = w.spawnEnemy('dummy', 100, 60, { r: 5 });
+  const b = w.spawnEnemy('dummy', 100, 60, { r: 5 });
+  H.stepN(w, 1, idle);
+  assert.ok(Math.abs(Math.abs(a.x - 100) - 0.5) < 1e-9, `a moved ${a.x - 100}`);
+  assert.ok(Math.abs(Math.abs(b.x - 100) - 0.5) < 1e-9, `b moved ${b.x - 100}`);
+  assert.ok(a.x < b.x, 'deterministic: the first of a coincident pair goes -x, the second +x');
+  assert.equal(a.y, 60);
+  assert.equal(b.y, 60);
+  H.stepN(w, 5, idle);
+  assert.ok(Math.hypot(a.x - b.x, a.y - b.y) < 0.8 * 10, 'still easing apart after 6 ticks');
+});
+
+test('world: separation ignores bosses, hidden and dead enemies and keeps everyone in the arena', () => {
+  const { CB, w } = setup();
+  const boss = w.spawnEnemy('dummy', 100, 60, { boss: true, regular: false });
+  const hidden = w.spawnEnemy('dummy', 100, 60, { visible: false });
+  const live = w.spawnEnemy('dummy', 100, 60);
+  H.stepN(w, 30, idle);
+  assert.equal(boss.x, 100);
+  assert.equal(hidden.x, 100);
+  assert.equal(live.x, 100, 'a lone regular enemy is not pushed by non-regular ones');
+  // pile at the left wall: nobody leaves the arena
+  const pile = [];
+  for (let i = 0; i < 6; i++) pile.push(w.spawnEnemy('dummy', 13, 90));
+  H.stepN(w, 120, idle);
+  for (const e of pile) {
+    assert.ok(e.x >= CB.ARENA.x + e.r - 1e-9 && e.y >= CB.ARENA.y + e.r - 1e-9 && e.y <= CB.ARENA.y + CB.ARENA.h - e.r + 1e-9);
+  }
+  for (let i = 0; i < pile.length; i++) {
+    for (let j = i + 1; j < pile.length; j++) assert.ok(Math.hypot(pile[i].x - pile[j].x, pile[i].y - pile[j].y) > 1, 'no two share a point');
+  }
+});
+
+test('world: a defeated boss controller is never updated again', () => {
+  const { w } = setup();
+  const boss = { defeated: false, calls: 0, update() { this.calls++; }, draw() {} };
+  w.boss = boss;
+  H.stepN(w, 3, idle);
+  assert.equal(boss.calls, 3);
+  boss.defeated = true;
+  H.stepN(w, 30, idle);
+  assert.equal(boss.calls, 3);
+});
+
+test('world: hurtPlayer routes through Player.hurt', () => {
+  const { w } = setup();
+  assert.equal(w.hurtPlayer(null), true);
+  assert.equal(w.player.hearts, 4);
+  assert.equal(w.hurtPlayer(null), false, 'hurt invulnerability applies');
+});
+
+test('world: a bolt fired at an enemy hugging Clawd still hits it (no point-blank dead zone)', () => {
+  for (const r of [4, 5]) {
+    for (const off of [0, 2, 4, 6]) {
+      const { w } = setup({ r, hp: 10 });
+      const p = w.player;
+      const e = w.spawnEnemy('dummy', p.x + off, p.y);
+      H.stepN(w, 3, () => H.makeInput({ aimX: 300, aimY: p.y, fire: true }));
+      assert.ok(e.hp < 10, `r ${r} at ${off} px was not hit (hp ${e.hp})`);
+    }
+  }
+});
+
+test('world: a new player bolt does not move on its spawn tick', () => {
+  const { w } = setup();
+  const b = w.firePlayerBolt(100, 60, 0);
+  H.stepN(w, 1, idle);
+  assert.equal(b.x, 100);
+  assert.ok(Math.abs(b.life - (1.5 - 1 / 60)) < 1e-9, 'life still decrements');
+  H.stepN(w, 1, idle);
+  assert.ok(b.x > 103);
 });
 
 test('world: puddle hazard halves player speed while inside', () => {
@@ -1140,6 +1336,29 @@ test('world: aiming exactly at the player never produces NaN', () => {
   H.stepN(w, 20, () => H.makeInput({ aimX: p.x, aimY: p.y, fire: true }));
   for (const b of w.pBullets) assert.ok(Number.isFinite(b.x) && Number.isFinite(b.vx));
   assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y));
+});
+
+test('fx: a silent enemy death is only a small 4-spark burst (no ring, no text)', () => {
+  const { CB, w } = setup();
+  w.emit('enemyDie', { x: 100, y: 60, kind: 'syntaxError', r: 5, boss: false, silent: true });
+  CB.Fx.consume(w, 0);
+  assert.equal(w.fx.length, 4);
+  assert.ok(w.fx.every((f) => f.kind === 'p'));
+  const loud = CB.createWorld({ seed: 1 });
+  loud.emit('enemyDie', { x: 100, y: 60, kind: 'syntaxError', r: 5, boss: false, silent: false });
+  CB.Fx.consume(loud, 0);
+  assert.ok(loud.fx.some((f) => f.kind === 'ring'), 'a real kill still gets its ring');
+  assert.ok(loud.fx.length > 4);
+});
+
+test('fx: killAllEnemies during a step is silent (a boss defeat does not flood the screen)', () => {
+  const { w } = setup();
+  for (let i = 0; i < 5; i++) w.spawnEnemy('dummy', 60 + i * 30, 60);
+  // Fx only sees events emitted inside step, so the clear is triggered from a boss update.
+  w.boss = { defeated: false, update(ww) { ww.killAllEnemies(); this.defeated = true; }, draw() {} };
+  H.stepN(w, 1, idle);
+  assert.equal(w.fx.length, 5 * 4);
+  assert.ok(w.fx.every((f) => f.kind === 'p'));
 });
 
 // Only events emitted *during* step become particles (consume reads from the step's start index),
@@ -1207,7 +1426,7 @@ test('player: dash covers ~39 px, grants 0.25 s invulnerability, then cools down
   assert.ok(p.invuln > 0.2);
   H.stepN(w, 17, () => H.makeInput({ aimX: 300, aimY: 30 }));
   const d = p.x - x0;
-  assert.ok(d > 35 && d < 46, `dash distance ${d}`);
+  assert.ok(Math.abs(d - 39) <= 1.5, `dash distance ${d}`);
   const dashes = () => w.events.filter((e) => e.type === 'dash').length;
   assert.equal(dashes(), 1);
   H.stepN(w, 1, mv(1, 0, { dash: true }));
@@ -1215,6 +1434,73 @@ test('player: dash covers ~39 px, grants 0.25 s invulnerability, then cools down
   H.stepN(w, 40, () => H.makeInput({ aimX: 300, aimY: 30 }));
   H.stepN(w, 1, mv(1, 0, { dash: true }));
   assert.equal(dashes(), 2, 'dash available after 0.8 s');
+});
+
+test('player: dash protection lasts exactly 15 ticks (0.25 s)', () => {
+  const { CB, w } = world();
+  const p = w.player;
+  let protectedTicks = 0;
+  for (let i = 0; i < 40; i++) {
+    H.stepN(w, 1, () => H.makeInput({ moveX: i === 0 ? 1 : 0, dash: i === 0, aimX: 300, aimY: 30 }));
+    if (!CB.Player.canBeHit(p)) protectedTicks++;
+  }
+  assert.equal(protectedTicks, 15);
+});
+
+test('player: a dash trail never holds more than 3 afterimages', () => {
+  const { w } = world();
+  const p = w.player;
+  let peak = 0;
+  for (let i = 0; i < 30; i++) {
+    H.stepN(w, 1, () => H.makeInput({ moveX: 1, dash: i === 0, aimX: 300, aimY: 30 }));
+    peak = Math.max(peak, p.trail.length);
+  }
+  assert.equal(peak, 3);
+});
+
+test('player: a dash pressed on a frozen hit-stop tick fires on the first live tick', () => {
+  const { CB, w } = world();
+  const p = w.player;
+  CB.Player.hurt(p, w, null);
+  assert.ok(w.hitstop > 0, 'a normal (non-god) hit freezes the world');
+  let tick = 0;
+  let live = -1;
+  let dashed = -1;
+  H.stepN(w, 1, () => H.makeInput({ moveX: 1, dash: true, aimX: 300, aimY: 30 }));
+  assert.equal(w.time, 0, 'the press landed on a frozen tick');
+  assert.equal(w.events.some((e) => e.type === 'dash'), false);
+  for (; tick < 12; tick++) {
+    const t0 = w.time;
+    H.stepN(w, 1, () => H.makeInput({ moveX: 1, aimX: 300, aimY: 30 }));
+    if (live < 0 && w.time > t0) live = tick;
+    if (dashed < 0 && w.events.some((e) => e.type === 'dash')) dashed = tick;
+  }
+  assert.ok(live >= 0);
+  assert.equal(dashed, live, 'dash fires on the first live tick');
+});
+
+test('player: god mode never freezes the world on a hit', () => {
+  const CB = H.loadWith();
+  const w = CB.createWorld({ seed: 1, god: true });
+  assert.equal(CB.Player.hurt(w.player, w, null), true);
+  assert.equal(w.hitstop, 0);
+  assert.equal(w.stats.wouldHits, 1);
+  H.stepN(w, 1, () => H.makeInput());
+  assert.ok(w.time > 0);
+});
+
+test('player: hurt invulnerability comes from p.hurtInvuln (default 1 s) so a mode can lower it', () => {
+  const { CB, w } = world();
+  const p = w.player;
+  assert.equal(p.hurtInvuln, 1.0);
+  CB.Player.hurt(p, w, null);
+  assert.equal(p.invuln, 1.0);
+  assert.equal(p.hurtT, 1.0);
+  const w2 = world().w;
+  w2.player.hurtInvuln = 0.7;
+  CB.Player.hurt(w2.player, w2, null);
+  assert.equal(w2.player.invuln, 0.7);
+  assert.equal(w2.player.hurtT, 0.7);
 });
 
 test('player: dash with no movement goes toward the aim point', () => {
@@ -1242,6 +1528,12 @@ test('player: firing respects cooldown and spread patch', () => {
   ({ w } = world({ spread: 2 }));
   H.stepN(w, 1, () => H.makeInput({ aimX: 300, aimY: 126, fire: true }));
   assert.equal(w.pBullets.length, 5);
+});
+
+test('player: holding fire for 10 s gives 50-51 shots (cooldown keeps its sub-tick remainder)', () => {
+  const { w } = world();
+  H.stepN(w, 600, () => H.makeInput({ aimX: 300, aimY: 126, fire: true }));
+  assert.ok(w.stats.shots >= 50 && w.stats.shots <= 51, `shots ${w.stats.shots}`);
 });
 
 test('player: hurt grants 1 s invulnerability; death at 0 hearts', () => {
@@ -1291,9 +1583,9 @@ test('player: sprites are all defined at 16x12', () => {
   'use strict';
   const DEFS = {
     spread: { name: 'Spread Shot', max: 2, desc: '+2 angled sparks' },
-    rapid: { name: 'Rapid Fire', max: 2, desc: 'Fire 30% faster' },
+    rapid: { name: 'Rapid Fire', max: 2, desc: 'Fire 25% faster' },
     pierce: { name: 'Pierce', max: 2, desc: 'Sparks pass through +1 bug' },
-    heavy: { name: 'Heavy Bolts', max: 2, desc: '+50% damage, bigger sparks' },
+    heavy: { name: 'Heavy Bolts', max: 2, desc: '+35% damage, bigger sparks' },
     heart: { name: 'Extra Heart', max: 2, desc: '+1 max heart' },
     dash: { name: 'Quick Dash', max: 1, desc: 'Dash recharges in 0.45 s' },
     ricochet: { name: 'Ricochet', max: 1, desc: 'Sparks bounce off walls once' },
@@ -1312,10 +1604,10 @@ test('player: sprites are all defined at 16x12', () => {
     computeStats(counts) {
       const c = (id) => count(counts, id);
       return {
-        fireCooldown: BASE.fireCooldown * Math.pow(0.7, c('rapid')),
+        fireCooldown: BASE.fireCooldown * Math.pow(0.8, c('rapid')),
         boltSpeed: BASE.boltSpeed,
         boltR: BASE.boltR + c('heavy'),
-        dmg: BASE.dmg + 0.5 * c('heavy'),
+        dmg: BASE.dmg + 0.35 * c('heavy'),
         spread: c('spread'),
         pierce: c('pierce'),
         bounces: c('ricochet'),
@@ -1351,12 +1643,16 @@ test('player: sprites are all defined at 16x12', () => {
   const CAPS = Object.freeze({ enemies: 60, eBullets: 400, pBullets: 120, fx: 500 });
   CB.CAPS = CAPS;
   CB.SPAWN_TELEGRAPH = 0.6;
+  CB.SPAWN_GRACE = 0.3; // a freshly spawned regular enemy can be shot but cannot hurt for this long
+  const EPS = 1e-9; // timers are decremented by 1/60 repeatedly; 0.3 - 18/60 is +5e-17, not 0
+  const SEP_FRAC = 0.8;
+  const SEP_SPEED = 30;
 
   CB.makeEnemy = function (kind, x, y, props) {
     const e = {
       kind, x, y, r: 5, vx: 0, vy: 0, hp: 1, maxHp: 1, t: 0, state: 'idle', stateT: 0,
       targetable: true, solid: false, contact: true, visible: true,
-      hitFlash: 0, invuln: 0, dead: false, boss: false, regular: true, facing: 1, alpha: 1, data: {},
+      hitFlash: 0, invuln: 0, noContactT: 0, dead: false, boss: false, regular: true, facing: 1, alpha: 1, data: {},
     };
     if (props) Object.assign(e, props);
     if (!props || props.maxHp == null) e.maxHp = e.hp;
@@ -1372,6 +1668,43 @@ test('player: sprites are all defined at 16x12', () => {
     let j = 0;
     for (let i = 0; i < arr.length; i++) if (!arr[i].dead) arr[j++] = arr[i];
     arr.length = j;
+  }
+
+  function separable(e) {
+    return !e.dead && e.visible && e.regular && !e.boss;
+  }
+
+  // Gentle pairwise push so a pile of regular enemies can't collapse onto one point.
+  function separate(w, dt) {
+    const list = w.enemies;
+    const maxPush = SEP_SPEED * dt;
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i];
+      if (!separable(a)) continue;
+      for (let j = i + 1; j < list.length; j++) {
+        const b = list[j];
+        if (!separable(b)) continue;
+        const min = SEP_FRAC * (a.r + b.r);
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= min * min) continue;
+        const d = Math.sqrt(d2);
+        let nx = 1;
+        let ny = 0;
+        if (d > 1e-9) {
+          nx = dx / d;
+          ny = dy / d;
+        }
+        const push = Math.min((min - d) / 2, maxPush);
+        a.x -= nx * push;
+        a.y -= ny * push;
+        b.x += nx * push;
+        b.y += ny * push;
+        M.clampToArena(a, w.arena);
+        M.clampToArena(b, w.arena);
+      }
+    }
   }
 
   function collide(w) {
@@ -1398,7 +1731,7 @@ test('player: sprites are all defined at 16x12', () => {
       if (M.circleHit(eb.x, eb.y, eb.r, p.x, p.y, p.r) && CB.Player.hurt(p, w, eb)) eb.dead = true;
     }
     for (const e of w.enemies) {
-      if (e.dead || !e.visible || !e.contact) continue;
+      if (e.dead || !e.visible || !e.contact || e.noContactT > EPS) continue;
       if (M.circleHit(e.x, e.y, e.r * 0.85, p.x, p.y, p.r)) CB.Player.hurt(p, w, e);
     }
   }
@@ -1441,6 +1774,7 @@ test('player: sprites are all defined at 16x12', () => {
       events: [],
       shake: 0,
       hitstop: 0,
+      dashBuffered: false,
       flash: 0,
       stats: { wouldHits: 0, shots: 0, kills: 0, damageDealt: 0 },
     };
@@ -1461,6 +1795,7 @@ test('player: sprites are all defined at 16x12', () => {
       if (w.enemies.length >= CAPS.enemies) return null;
       const e = mod.create(w, x, y, o2 || {});
       e.kind = kind;
+      if (e.regular && !e.boss) e.noContactT = Math.max(e.noContactT || 0, CB.SPAWN_GRACE);
       w.enemies.push(e);
       return e;
     };
@@ -1556,6 +1891,8 @@ test('player: sprites are all defined at 16x12', () => {
       return b;
     };
 
+    w.hurtPlayer = (src) => CB.Player.hurt(w.player, w, src);
+
     w.damageEnemy = function (e, dmg, src) {
       if (!e || e.dead || !e.targetable || !e.visible) return 0;
       if (e.invuln > 0) {
@@ -1606,6 +1943,7 @@ test('player: sprites are all defined at 16x12', () => {
     w.step = function (dt, input) {
       if (w.hitstop > 0) {
         w.hitstop = Math.max(0, w.hitstop - dt);
+        if (input && input.dash) w.dashBuffered = true;
         return;
       }
       const evStart = w.events.length;
@@ -1627,9 +1965,11 @@ test('player: sprites are all defined at 16x12', () => {
         e.stateT += dt;
         if (e.hitFlash > 0) e.hitFlash -= dt;
         if (e.invuln > 0) e.invuln -= dt;
+        if (e.noContactT > 0) e.noContactT -= dt;
         CB.Enemies[e.kind].update(e, w, dt);
       }
-      if (w.boss) w.boss.update(w, dt);
+      separate(w, dt);
+      if (w.boss && !w.boss.defeated) w.boss.update(w, dt);
       CB.Projectiles.update(w, dt);
       collide(w);
       updateHazards(w, dt);
@@ -1667,10 +2007,14 @@ test('player: sprites are all defined at 16x12', () => {
       const a = w.arena;
       for (const b of w.pBullets) {
         if (b.dead) continue;
+        // A bolt does not move on the tick it was created, so an enemy hugging Clawd can still be hit.
+        const fresh = b.t === 0;
         b.t += dt;
         b.life -= dt;
-        b.x += b.vx * dt;
-        b.y += b.vy * dt;
+        if (!fresh) {
+          b.x += b.vx * dt;
+          b.y += b.vy * dt;
+        }
         if (b.life <= 0) {
           b.dead = true;
           continue;
@@ -1746,6 +2090,7 @@ test('player: sprites are all defined at 16x12', () => {
   const DASH_INVULN = 0.25;
   const HURT_INVULN = 1.0;
   const SPREAD_STEP = (12 * Math.PI) / 180;
+  const EPS = 1e-9; // timers are decremented by 1/60 repeatedly; 0.2 - 12/60 is +5e-17, not 0
 
   // 16x12 Clawd. Eyes sit one pixel right of centre so flipping reads as "facing".
   const BLANK = '................';
@@ -1781,11 +2126,11 @@ test('player: sprites are all defined at 16x12', () => {
         hearts: stats.maxHearts, stats, facing: 1,
         aimX: a.x + a.w / 2, aimY: a.y,
         fireCd: 0, dashCd: 0, dashT: 0, dashDX: 0, dashDY: 0,
-        invuln: 0, hurtT: 0, dead: false, slow: 1, moving: false, walkT: 0, t: 0, trail: [],
+        invuln: 0, hurtT: 0, hurtInvuln: HURT_INVULN, dead: false, slow: 1, moving: false, walkT: 0, t: 0, trail: [],
       };
     },
 
-    canBeHit: (p) => !p.dead && p.invuln <= 0,
+    canBeHit: (p) => !p.dead && p.invuln <= EPS,
 
     update(p, w, dt, input) {
       p.t += dt;
@@ -1801,7 +2146,9 @@ test('player: sprites are all defined at 16x12', () => {
       p.facing = p.aimX >= p.x ? 1 : -1;
       const mv = M.norm(input.moveX || 0, input.moveY || 0);
 
-      if (input.dash && p.dashCd <= 0 && p.dashT <= 0) {
+      const wantDash = input.dash || w.dashBuffered;
+      w.dashBuffered = false;
+      if (wantDash && p.dashCd <= EPS && p.dashT <= EPS) {
         let d = mv;
         if (d.x === 0 && d.y === 0) d = M.norm(p.aimX - p.x, p.aimY - p.y);
         if (d.x === 0 && d.y === 0) d = { x: p.facing, y: 0 };
@@ -1813,12 +2160,12 @@ test('player: sprites are all defined at 16x12', () => {
         w.emit('dash', { x: p.x, y: p.y });
       }
 
-      if (p.dashT > 0) {
+      if (p.dashT > EPS) {
         p.dashT -= dt;
         p.vx = p.dashDX * DASH_SPEED;
         p.vy = p.dashDY * DASH_SPEED;
         p.trail.push({ x: p.x, y: p.y, life: 0.2, facing: p.facing });
-        if (p.trail.length > 8) p.trail.shift();
+        if (p.trail.length > 3) p.trail.shift();
       } else {
         const sp = SPEED * p.slow;
         p.vx = mv.x * sp;
@@ -1830,8 +2177,10 @@ test('player: sprites are all defined at 16x12', () => {
       p.y += p.vy * dt;
       M.clampToArena(p, w.arena);
 
-      if (input.fire && p.fireCd <= 0) {
-        p.fireCd = p.stats.fireCooldown;
+      if (input.fire && p.fireCd <= EPS) {
+        // Keep the sub-tick remainder (so 0.14 s really averages 8.4 ticks), but give no credit for idle time.
+        const carry = p.fireCd > -dt + EPS ? p.fireCd : 0;
+        p.fireCd = carry + p.stats.fireCooldown;
         CB.Player.fire(p, w);
       }
     },
@@ -1850,11 +2199,11 @@ test('player: sprites are all defined at 16x12', () => {
     },
 
     hurt(p, w) {
-      if (p.dead || p.invuln > 0) return false;
-      p.invuln = HURT_INVULN;
-      p.hurtT = HURT_INVULN;
+      if (p.dead || p.invuln > EPS) return false;
+      p.invuln = p.hurtInvuln;
+      p.hurtT = p.hurtInvuln;
       w.addShake(4);
-      w.hitstop = Math.max(w.hitstop, 0.06);
+      if (!w.god) w.hitstop = Math.max(w.hitstop, 0.06);
       w.flash = 0.15;
       if (w.god) {
         w.stats.wouldHits++;
@@ -1933,9 +2282,13 @@ test('player: sprites are all defined at 16x12', () => {
           case 'hit': Fx.spark(w, e.x, e.y, C().white, 3, 40, 0.18); break;
           case 'clink': Fx.spark(w, e.x, e.y, C().grey, 2, 30, 0.12); break;
           case 'enemyDie':
+            if (e.silent) {
+              Fx.spark(w, e.x, e.y, C().spark, 4, 50, 0.25); // cleared, not killed: no ring, no text
+              break;
+            }
             Fx.spark(w, e.x, e.y, e.boss ? C().gold : C().spark, Math.min(24, 6 + (e.r | 0) * 2), 70, 0.4);
             Fx.ring(w, e.x, e.y, 2, (e.r | 0) + 6, C().white, 0.25);
-            if (!e.silent && DEATH_TEXT[e.kind] && w.fxRng.chance(0.5)) Fx.text(w, e.x, e.y - 8, DEATH_TEXT[e.kind], C().pale, 0.7);
+            if (DEATH_TEXT[e.kind] && w.fxRng.chance(0.5)) Fx.text(w, e.x, e.y - 8, DEATH_TEXT[e.kind], C().pale, 0.7);
             break;
           case 'spawn': Fx.ring(w, e.x, e.y, 2, 10, C().white, 0.25); break;
           case 'playerHurt': Fx.spark(w, e.x, e.y, C().hurt, 10, 80, 0.35); break;
@@ -2022,7 +2375,7 @@ function setup() {
 }
 const idle = () => H.makeInput({ aimX: 160, aimY: 30 });
 
-test('waves: never more than 8 regular enemies alive or pending', () => {
+test('waves: never more than 6 regular enemies alive or pending', () => {
   const CB = setup();
   const w = CB.createWorld({ seed: 2 });
   const sp = CB.createWaveSpawner(w, [{ kind: 'dummy', count: 20 }]);
@@ -2032,7 +2385,8 @@ test('waves: never more than 8 regular enemies alive or pending', () => {
     sp.update(CB.DT);
     peak = Math.max(peak, sp.alive());
   }
-  assert.equal(peak, 8);
+  assert.equal(peak, 6);
+  assert.equal(CB.WAVE.MAX_ALIVE, 6);
   assert.equal(sp.done, false, 'enemies still alive');
   for (let i = 0; i < 60 * 40 && !sp.done; i++) {
     for (const e of w.enemies) if (!e.dead) w.killEnemy(e);
@@ -2223,6 +2577,216 @@ test('stageRunner: skipWaves goes from stageIntro straight to bossWarn', () => {
   until(run, (r) => r.state !== 'stageIntro', 200);
   assert.equal(run.state, 'bossWarn');
 });
+
+// ---- rev 2: durations, heals, boss checkpoint -------------------------------------------------
+
+const ticksIn = (run, state) => {
+  let n = 0;
+  while (run.state === state && n < 2000) {
+    run.step(idle());
+    n++;
+  }
+  return n;
+};
+const near = (ticks, secs) => assert.ok(Math.abs(ticks / 60 - secs) <= 0.04, `${ticks / 60} s vs ${secs} s`);
+// Plays through the waves (killing everything instantly) until the given state is entered.
+function toState(run, state) {
+  assert.ok(until(run, (r) => r.state === state, 3000, killAll), `never reached ${state}, stuck in ${run.state}`);
+}
+function toBoss(run) {
+  toState(run, 'boss');
+  run.world.player.invuln = 0; // drop the boss-spawn safety so tests can hurt Clawd
+  return run.world.boss;
+}
+function kill(run) {
+  const p = run.world.player;
+  p.hearts = 1;
+  p.invuln = 0;
+  assert.equal(run.world.hurtPlayer(null), true);
+  run.step(idle());
+}
+
+test('stageRunner: state durations match the spec (waveBreak 1.5, bossWarn 2.5, bossDead 3.0, dying 1.2)', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1 });
+  assert.ok(until(run, (r) => r.state === 'wave', 200));
+  near(run.time * 60, 2.0);
+  toState(run, 'waveBreak');
+  near(ticksIn(run, 'waveBreak'), 1.5);
+  assert.equal(run.state, 'wave');
+  toState(run, 'bossWarn');
+  near(ticksIn(run, 'bossWarn'), 2.5);
+  assert.equal(run.state, 'boss');
+  run.world.boss.hp = 0;
+  toState(run, 'bossDead');
+  near(ticksIn(run, 'bossDead'), 3.0);
+  assert.equal(run.state, 'patchPick');
+
+  const run2 = CB.createRun({ seed: 1 });
+  toState(run2, 'wave');
+  kill(run2);
+  assert.equal(run2.state, 'dying');
+  near(ticksIn(run2, 'dying'), 1.2);
+  assert.equal(run2.state, 'dead');
+});
+
+test('stageRunner: waveBreak heals 2 hearts, capped at max hearts', () => {
+  const CB = setup();
+  for (const [patches, before, after] of [[{}, 1, 3], [{}, 4, 5], [{}, 5, 5], [{ heart: 1 }, 5, 6], [{ heart: 2 }, 3, 5]]) {
+    const run = CB.createRun({ seed: 1, patches });
+    toState(run, 'wave');
+    run.world.player.hearts = before;
+    toState(run, 'waveBreak');
+    assert.equal(run.world.player.hearts, after, `patches ${JSON.stringify(patches)}, ${before} hearts`);
+  }
+});
+
+test('stageRunner: bossWarn heals to full', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1, patches: { heart: 1 } });
+  toState(run, 'waveBreak');
+  toState(run, 'wave');
+  run.world.player.hearts = 1;
+  toState(run, 'bossWarn');
+  assert.equal(run.world.player.hearts, 6);
+  const skip = CB.createRun({ seed: 1, skipWaves: true });
+  skip.world.player.hearts = 2;
+  toState(skip, 'bossWarn');
+  assert.equal(skip.world.player.hearts, 5);
+});
+
+test('stageRunner: the player gets 1 s of invulnerability when the boss spawns', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1, skipWaves: true });
+  toState(run, 'boss');
+  const p = run.world.player;
+  assert.ok(p.invuln >= 1.0 - 1e-9, `invuln ${p.invuln}`);
+  assert.equal(CB.Player.canBeHit(p), false);
+  assert.equal(run.world.hurtPlayer(null), false);
+});
+
+test('stageRunner: dying in the boss fight retries at bossWarn with full hearts and the stage-start patches', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1, patches: { spread: 1 } });
+  toBoss(run);
+  run.patches = { spread: 1, rapid: 1 };
+  kill(run);
+  assert.equal(run.state, 'dying');
+  assert.equal(run.deaths, 1);
+  assert.equal(run.diedInBoss, true);
+  assert.equal(run.checkpoint, 'boss');
+  assert.throws(() => { run.checkpoint = 'stage'; }, TypeError, 'checkpoint is read-only');
+  assert.equal(run.checkpoint, 'boss');
+  assert.ok(until(run, (r) => r.state === 'dead', 200));
+  until(run, (r) => r.stateT >= 0.6, 60);
+  const oldWorld = run.world;
+  run.step(H.makeInput({ retry: true }));
+  assert.equal(run.state, 'bossWarn');
+  assert.notEqual(run.world, oldWorld, 'a fresh world');
+  assert.equal(run.world.boss, null);
+  assert.equal(run.world.player.hearts, 5);
+  assert.equal(run.deaths, 1);
+  assert.deepEqual(H.plain(run.patches), { spread: 1 });
+  assert.equal(run.stageIndex, 0);
+  const evs = run.step(idle());
+  assert.ok(evs.some((e) => e.type === 'bossWarn'), 'the warning card event is emitted');
+  toState(run, 'boss');
+  assert.ok(run.world.boss);
+});
+
+test('stageRunner: dying in the waves retries at stageIntro', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1 });
+  assert.equal(run.checkpoint, 'stage', 'default before any death');
+  toState(run, 'wave');
+  kill(run);
+  assert.equal(run.state, 'dying');
+  assert.equal(run.diedInBoss, false);
+  assert.equal(run.checkpoint, 'stage');
+  toState(run, 'dead');
+  until(run, (r) => r.stateT >= 0.6, 60);
+  run.step(H.makeInput({ retry: true }));
+  assert.equal(run.state, 'stageIntro');
+  assert.equal(run.world.player.hearts, 5);
+  assert.equal(run.deaths, 1);
+});
+
+test('stageRunner: dying in the boss fight again after a boss retry keeps the boss checkpoint', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1 });
+  toBoss(run);
+  kill(run);
+  toState(run, 'dead');
+  until(run, (r) => r.stateT >= 0.6, 60);
+  run.step(H.makeInput({ retry: true }));
+  assert.equal(run.state, 'bossWarn');
+  toBoss(run);
+  kill(run);
+  assert.equal(run.deaths, 2);
+  assert.equal(run.checkpoint, 'boss');
+});
+
+test('stageRunner: the boss defeat tick spawns the bossDie rings', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1, skipWaves: true });
+  toBoss(run);
+  run.world.boss.hp = 0;
+  run.step(idle());
+  assert.equal(run.state, 'bossDead');
+  assert.ok(run.world.fx.some((f) => f.kind === 'ring'), 'rings from bossDie');
+});
+
+test('stageRunner: if the player dies on the defeat tick the defeat wins, Clawd lives and no death is counted', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1, skipWaves: true });
+  toBoss(run);
+  const w = run.world;
+  w.player.hearts = 1;
+  w.boss.hp = 0;
+  w.fireEnemyBullet(w.player.x, w.player.y, 0, 0);
+  run.step(idle());
+  assert.equal(run.state, 'bossDead');
+  assert.equal(w.player.dead, false);
+  assert.ok(w.player.hearts >= 1);
+  assert.equal(run.deaths, 0);
+});
+
+test('stageRunner: if the boss falls while Clawd is dying the defeat wins and the death is undone', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1, skipWaves: true });
+  const boss = toBoss(run);
+  kill(run);
+  assert.equal(run.state, 'dying');
+  assert.equal(run.deaths, 1);
+  run.world.player.trail.push({ x: 1, y: 1, life: 1, facing: 1 });
+  boss.hp = 0;
+  assert.ok(until(run, (r) => r.state !== 'dying', 20));
+  assert.equal(run.state, 'bossDead');
+  assert.equal(run.deaths, 0);
+  assert.equal(run.world.player.dead, false);
+  assert.ok(run.world.player.hearts >= 1);
+  assert.equal(run.world.player.trail.length, 0);
+  assert.ok(run.world.fx.some((f) => f.kind === 'ring'));
+});
+
+test('stageRunner: entering dead leaves no enemies, spawns, bullets or hazards', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1 });
+  toState(run, 'wave');
+  const w = run.world;
+  w.spawnEnemy('dummy', 60, 60);
+  w.queueSpawn('dummy', 100, 60);
+  w.fireEnemyBullet(40, 40, 0, 0);
+  w.firePlayerBolt(60, 100, 0);
+  w.addHazard({ x: 200, y: 60 });
+  kill(run);
+  assert.ok(until(run, (r) => r.state === 'dead', 200), 'no killAll helper here: leftovers must be cleared by the runner');
+  assert.equal(w.enemies.length, 0);
+  assert.equal(w.spawns.length, 0);
+  assert.equal(w.eBullets.length, 0);
+  assert.equal(w.pBullets.length, 0);
+  assert.equal(w.hazards.length, 0);
+});
 ```
 
 - [ ] **Step 3: Run to verify failure.** Run `node --test tests/waves.test.js tests/stageRunner.test.js`. Expected: FAIL (ENOENT).
@@ -2270,11 +2834,11 @@ test('stageRunner: skipWaves goes from stageIntro straight to bossWarn', () => {
 - [ ] **Step 5: Create `src/game/waves.js`**
 
 ```js
-// Wave spawner: round-robin by kind, one group every 0.7 s, at most 8 regular enemies alive or pending.
+// Wave spawner: round-robin by kind, one group every 0.7 s, at most 6 regular enemies alive or pending.
 (function (CB) {
   'use strict';
   const INTERVAL = 0.7;
-  const MAX_ALIVE = 8;
+  const MAX_ALIVE = 6;
   CB.WAVE = { INTERVAL, MAX_ALIVE };
 
   function groupSize(kind) {
@@ -2367,10 +2931,14 @@ test('stageRunner: skipWaves goes from stageIntro straight to bossWarn', () => {
       time: 0,
       deaths: 0,
       attempt: 0,
+      diedInBoss: false, // set on entering 'dying'; a boss death retries at bossWarn
       world: null,
       pending: [],
     };
     const stage = () => CB.STAGES[run.stageIndex];
+    // 'boss' | 'stage': where a retry will land. Read-only; set on entering 'dying', read by the game-over screen.
+    let checkpoint = 'stage';
+    Object.defineProperty(run, 'checkpoint', { get: () => checkpoint, enumerable: true });
 
     function setState(s) {
       run.state = s;
@@ -2402,8 +2970,15 @@ test('stageRunner: skipWaves goes from stageIntro straight to bossWarn', () => {
       setState('wave');
     }
 
+    function enterWaveBreak() {
+      const p = run.world.player;
+      if (!p.dead) p.hearts = Math.min(p.stats.maxHearts, p.hearts + 2);
+      setState('waveBreak');
+    }
+
     function enterBossWarn() {
       const w = run.world;
+      if (!w.player.dead) w.player.hearts = w.player.stats.maxHearts;
       w.clearEnemyBullets();
       w.pBullets.length = 0;
       w.hazards.length = 0;
@@ -2411,11 +2986,36 @@ test('stageRunner: skipWaves goes from stageIntro straight to bossWarn', () => {
       run.pending.push({ type: 'bossWarn' });
     }
 
+    function enterDead() {
+      const w = run.world;
+      w.enemies.length = 0;
+      w.spawns.length = 0;
+      w.pBullets.length = 0;
+      w.hazards.length = 0;
+      w.clearEnemyBullets();
+      setState('dead');
+    }
+
     function startBoss() {
       const w = run.world;
       w.clearEnemyBullets();
       w.boss = CB.Bosses[stage().boss].create(w);
+      w.player.invuln = Math.max(w.player.invuln, 1.0); // safe spawn
       setState('boss');
+    }
+
+    function enterDying(prev) {
+      run.deaths++;
+      run.diedInBoss = prev === 'boss';
+      checkpoint = run.diedInBoss ? 'boss' : 'stage';
+      setState('dying');
+    }
+
+    function revivePlayer() {
+      const p = run.world.player;
+      p.dead = false;
+      p.hearts = Math.max(1, p.hearts);
+      p.trail.length = 0;
     }
 
     function bossDefeated() {
@@ -2424,7 +3024,10 @@ test('stageRunner: skipWaves goes from stageIntro straight to bossWarn', () => {
       w.clearEnemyBullets();
       w.hazards.length = 0;
       w.player.invuln = 999;
+      if (w.player.dead) revivePlayer();
+      const from = w.events.length;
       w.emit('bossDie', { x: w.boss.x, y: w.boss.y });
+      CB.Fx.consume(w, from);
       w.addShake(6);
       setState('bossDead');
     }
@@ -2448,7 +3051,7 @@ test('stageRunner: skipWaves goes from stageIntro straight to bossWarn', () => {
           w.step(dt, inp);
           run.spawner.update(dt);
           if (run.spawner.done) {
-            if (run.waveIndex === 0) setState('waveBreak');
+            if (run.waveIndex === 0) enterWaveBreak();
             else enterBossWarn();
           }
           break;
@@ -2480,7 +3083,12 @@ test('stageRunner: skipWaves goes from stageIntro straight to bossWarn', () => {
           break;
         case 'dying':
           w.step(dt * 0.5, NEUTRAL);
-          if (run.stateT >= T.dying) setState('dead');
+          if (run.diedInBoss && w.boss && w.boss.defeated) {
+            // The boss fell during the death slow-down: the defeat wins and the death does not count.
+            run.deaths--;
+            revivePlayer();
+            bossDefeated();
+          } else if (run.stateT >= T.dying) enterDead();
           break;
         case 'dead':
           if (inp.retry || inp.confirm) run.retryStage();
@@ -2488,10 +3096,7 @@ test('stageRunner: skipWaves goes from stageIntro straight to bossWarn', () => {
         default:
           break;
       }
-      if (COMBAT[run.state] && run.world.player.dead) {
-        run.deaths++;
-        setState('dying');
-      }
+      if (COMBAT[run.state] && run.world.player.dead) enterDying(run.state);
       const ev = run.world.events;
       for (let i = 0; i < ev.length; i++) out.push(ev[i]);
       ev.length = 0;
@@ -2514,6 +3119,7 @@ test('stageRunner: skipWaves goes from stageIntro straight to bossWarn', () => {
       run.patches = Object.assign({}, run.stagePatches);
       run.attempt++;
       beginStage();
+      if (run.diedInBoss) enterBossWarn(); // boss checkpoint: skip the intro and the waves
       return true;
     };
 
@@ -2602,8 +3208,33 @@ test('render: primitives and sprites run headless without throwing', () => {
   r.text('hello', 160, 90, { align: 'center', shadow: '#000000', alpha: 0.5, scale: 2 });
   r.alpha(0.5, () => r.rect(0, 0, 1, 1, '#FFFFFF'));
   r.shaken(2, -1, () => r.rect(0, 0, 1, 1, '#FFFFFF'));
+  let ran = 0;
+  r.squash(10, 12, 1.25, 0.75, () => {
+    ran++;
+    r.sprite('t_dot', 10, 12);
+  });
+  assert.equal(ran, 1);
   r.present();
   assert.equal(r.measure('abc', 1), 18);
+});
+
+test('render: squash scales about the anchor and always restores, even when the callback throws', () => {
+  const { CB, sandbox } = H.load([...H.CORE, 'src/art/render.js'], { returnSandbox: true });
+  const log = [];
+  const rec = new Proxy({ canvas: null, imageSmoothingEnabled: false }, {
+    get: (t, prop) => (prop in t ? t[prop] : (...args) => { log.push([String(prop), ...args]); }),
+    set: (t, prop, v) => { t[prop] = v; return true; },
+  });
+  sandbox.document.createElement = () => ({ width: 0, height: 0, style: {}, getContext: () => rec });
+  const canvas = sandbox.document.createElement('canvas');
+  const r = CB.createRenderer(canvas, { innerWidth: 640, innerHeight: 360, devicePixelRatio: 1 });
+  log.length = 0;
+  r.squash(10, 20, 1.5, 0.5, () => log.push(['fn']));
+  assert.deepEqual(log, [['save'], ['translate', 10, 20], ['scale', 1.5, 0.5], ['translate', -10, -20], ['fn'], ['restore']]);
+  log.length = 0;
+  assert.throws(() => r.squash(0, 0, 2, 2, () => { throw new Error('boom'); }), /boom/);
+  assert.equal(log[log.length - 1][0], 'restore');
+  assert.equal(log.filter((l) => l[0] === 'save').length, log.filter((l) => l[0] === 'restore').length);
 });
 ```
 
@@ -2812,6 +3443,19 @@ test('render: primitives and sprites run headless without throwing', () => {
         withAlpha(a, fn);
       },
 
+      // Scales fn's drawing about the anchor point (ax, ay): squash and stretch.
+      squash(ax, ay, sx, sy, fn) {
+        b.save();
+        b.translate(ax, ay);
+        b.scale(sx, sy);
+        b.translate(-ax, -ay);
+        try {
+          fn();
+        } finally {
+          b.restore();
+        }
+      },
+
       shaken(dx, dy, fn) {
         b.save();
         b.translate(R(dx), R(dy));
@@ -2919,6 +3563,79 @@ test('input: left mouse holds fire and confirms once; right mouse dashes; aim ma
   assert.equal(input.sample().dash, true);
 });
 
+test('input: E casts compact and N toggles music, once per press', () => {
+  const { win, input } = makeInput();
+  let s = input.sample();
+  assert.equal(s.compact, false);
+  assert.equal(s.music, false);
+  win.fire('keydown', { code: 'KeyE' });
+  win.fire('keydown', { code: 'KeyN' });
+  s = input.sample();
+  assert.equal(s.compact, true);
+  assert.equal(s.music, true);
+  s = input.sample();
+  assert.equal(s.compact, false);
+  assert.equal(s.music, false);
+  win.fire('keydown', { code: 'KeyE', repeat: true });
+  assert.equal(input.sample().compact, false, 'key repeat does not recast');
+});
+
+test('input: sample() returns the key codes pressed since the last sample, oldest dropped past 16', () => {
+  const { win, input } = makeInput();
+  assert.deepEqual(H.plain(input.sample().keys), []);
+  win.fire('keydown', { code: 'KeyA' });
+  win.fire('keydown', { code: 'KeyA', repeat: true });
+  win.fire('keydown', { code: 'ArrowUp' });
+  win.fire('keyup', { code: 'KeyA' });
+  const got = input.sample().keys;
+  assert.deepEqual(H.plain(got), ['KeyA', 'ArrowUp']);
+  got.push('junk');
+  assert.deepEqual(H.plain(input.sample().keys), [], 'cleared by sample and the result is a copy');
+  for (let i = 0; i < 20; i++) win.fire('keydown', { code: 'Key' + i });
+  const last = H.plain(input.sample().keys);
+  assert.equal(last.length, 16);
+  assert.equal(last[0], 'Key4');
+  assert.equal(last[15], 'Key19');
+});
+
+test('input: a mouse move without the primary button releases fire; an unknown buttons value does nothing', () => {
+  const { win, canvas, input } = makeInput();
+  canvas.fire('mousedown', { button: 0, clientX: 40, clientY: 40 });
+  win.fire('mousemove', { clientX: 80, clientY: 80, buttons: 1 });
+  assert.equal(input.sample().fire, true, 'button still down');
+  win.fire('mousemove', { clientX: 120, clientY: 80 });
+  let s = input.sample();
+  assert.equal(s.fire, true, 'buttons undefined: unknown, do nothing');
+  assert.equal(s.aimX, 30);
+  win.fire('mousemove', { clientX: 160, clientY: 80, buttons: 2 });
+  s = input.sample();
+  assert.equal(s.fire, false, 'primary button is up');
+  assert.equal(s.aimX, 40, 'the aim still follows the pointer');
+  win.fire('mousemove', { clientX: 160, clientY: 80, buttons: 0 });
+  assert.equal(input.sample().fire, false);
+});
+
+test('input: a keydown with metaKey clears held keys but its edge still registers', () => {
+  const { win, input } = makeInput();
+  win.fire('keydown', { code: 'KeyW' });
+  win.fire('keydown', { code: 'KeyD' });
+  let s = input.sample();
+  assert.equal(s.moveX, 1);
+  assert.equal(s.moveY, -1);
+  win.fire('keydown', { code: 'KeyE', metaKey: true });
+  s = input.sample();
+  assert.equal(s.moveX, 0);
+  assert.equal(s.moveY, 0);
+  assert.equal(s.compact, true, 'the edge is still processed');
+  assert.ok(H.plain(s.keys).includes('KeyE'));
+  // macOS never sends the keyup for a key pressed with Cmd down, so such a key must not stay held.
+  win.fire('keydown', { code: 'KeyA', metaKey: true });
+  s = input.sample();
+  assert.equal(s.moveX, 0, 'a movement key pressed with Cmd is not held');
+  win.fire('keydown', { code: 'KeyD' });
+  assert.equal(input.sample().moveX, 1, 'plain keys hold again afterwards');
+});
+
 test('input: blur releases held keys and fire', () => {
   const { win, canvas, input } = makeInput();
   win.fire('keydown', { code: 'KeyA' });
@@ -2987,16 +3704,24 @@ test('loop: an exception stops the loop and reaches onError', () => {
     let hasMouse = false;
     let mx = 0;
     let my = 0;
-    const edges = { dash: false, pause: false, mute: false, confirm: false, choice: 0, retry: false, quit: false };
+    const KEYS_MAX = 16; // recent key codes, for typed secrets (Konami, "ultrathink")
+    const keys = [];
+    const edges = { dash: false, pause: false, mute: false, confirm: false, choice: 0, retry: false, quit: false, compact: false, music: false };
 
     function onKeyDown(e) {
       if (PREVENT[e.code] && e.preventDefault) e.preventDefault();
+      // macOS sends no keyup for keys released while Cmd is down, so Cmd shortcuts must not leave keys stuck.
+      if (e.metaKey) held.clear();
       if (e.repeat) return;
-      held.add(e.code);
+      if (!e.metaKey) held.add(e.code);
+      keys.push(e.code);
+      if (keys.length > KEYS_MAX) keys.shift();
       switch (e.code) {
         case 'Space': case 'ShiftLeft': case 'ShiftRight': edges.dash = true; break;
         case 'Escape': case 'KeyP': edges.pause = true; break;
         case 'KeyM': edges.mute = true; break;
+        case 'KeyN': edges.music = true; break;
+        case 'KeyE': edges.compact = true; break;
         case 'Enter': case 'NumpadEnter': edges.confirm = true; break;
         case 'KeyR': edges.retry = true; break;
         case 'KeyQ': edges.quit = true; break;
@@ -3016,6 +3741,8 @@ test('loop: an exception stops the loop and reaches onError', () => {
     }
     function onMouseUp(e) { if (e.button === 0) fireHeld = false; }
     function onMouseMove(e) {
+      // A release outside the window can be missed: if the primary button is no longer down, stop firing.
+      if (typeof e.buttons === 'number' && !(e.buttons & 1)) fireHeld = false;
       hasMouse = true;
       mx = e.clientX;
       my = e.clientY;
@@ -3056,8 +3783,9 @@ test('loop: an exception stops the loop and reaches onError', () => {
           aimX: a.x, aimY: a.y, fire: fireHeld,
           dash: edges.dash, pause: edges.pause, mute: edges.mute, confirm: edges.confirm,
           choice: edges.choice, retry: edges.retry, quit: edges.quit,
+          compact: edges.compact, music: edges.music, keys: keys.splice(0),
         };
-        edges.dash = edges.pause = edges.mute = edges.confirm = edges.retry = edges.quit = false;
+        edges.dash = edges.pause = edges.mute = edges.confirm = edges.retry = edges.quit = edges.compact = edges.music = false;
         edges.choice = 0;
         return s;
       },
@@ -3204,6 +3932,34 @@ test('parseDebugHash: parses stage, boss, god, seed, speed, patches, hitboxes', 
   assert.equal(CB.parseDebugHash('#speed=1000').speed, 8);
 });
 
+test('parseDebugHash: bare anchors are not debug hashes; malformed escapes do not throw', () => {
+  const { CB } = setup();
+  assert.equal(CB.parseDebugHash('#foo').active, false);
+  assert.equal(CB.parseDebugHash('#top').active, false);
+  assert.equal(CB.parseDebugHash('#boss').active, true);
+  assert.equal(CB.parseDebugHash('#boss').skipWaves, true);
+  assert.equal(CB.parseDebugHash('#stage=2').active, true);
+  assert.doesNotThrow(() => CB.parseDebugHash('#100%'));
+  assert.equal(CB.parseDebugHash('#100%').active, false);
+  assert.doesNotThrow(() => CB.parseDebugHash('#stage=%E0%A4%A&boss'));
+  assert.equal(CB.parseDebugHash('#stage=%E0%A4%A&boss').active, true);
+  assert.deepEqual(H.plain(CB.parseDebugHash('#patches=constructor,toString,__proto__,dash').patches), { dash: 1 });
+});
+
+test('debugFromLocation: debug hashes apply on file:, localhost, 127.0.0.1 and [::1] only', () => {
+  const { CB } = setup();
+  const at = (protocol, hostname) => CB.debugFromLocation({ protocol, hostname, hash: '#stage=2&god' });
+  for (const [protocol, hostname] of [['file:', ''], ['http:', 'localhost'], ['http:', '127.0.0.1'], ['http:', '[::1]']]) {
+    const d = at(protocol, hostname);
+    assert.equal(d.active, true, `${protocol}//${hostname}`);
+    assert.equal(d.startStage, 1);
+    assert.equal(d.god, true);
+  }
+  for (const [protocol, hostname] of [['https:', 'claude.ai'], ['https:', 'localhost.evil.example'], ['https:', '127.0.0.1.evil.example'], ['https:', 'xlocalhost'], ['https:', '']]) {
+    assert.deepEqual(H.plain(at(protocol, hostname)), { active: false }, `${protocol}//${hostname}`);
+  }
+});
+
 test('play: onBlur pauses in combat states and pause toggles', () => {
   const { CB, game } = setup();
   const play = CB.Scenes.play;
@@ -3220,13 +3976,168 @@ test('play: onBlur pauses in combat states and pause toggles', () => {
   assert.ok(play.run.time > t0);
 });
 
-test('play: quit from pause returns to title', () => {
+test('play: quit from pause is two-step (first Q arms for 2 s, second Q quits)', () => {
+  const { CB, game, visits } = setup();
+  const play = CB.Scenes.play;
+  play.enter(game, { runOpts: { seed: 1 } });
+  assert.equal(play.quitArmT, 0);
+  play.update(CB.DT, H.makeInput({ pause: true }));
+  assert.equal(play.paused, true);
+  play.update(CB.DT, H.makeInput({ quit: true }));
+  assert.equal(visits.length, 0, 'the first Q only arms');
+  assert.equal(play.quitArmT, 2.0);
+  for (let i = 0; i < 30; i++) play.update(CB.DT, H.makeInput());
+  assert.ok(Math.abs(play.quitArmT - 1.5) < 1e-9, `decays by dt while paused: ${play.quitArmT}`);
+  assert.equal(visits.length, 0);
+  play.update(CB.DT, H.makeInput({ quit: true }));
+  assert.equal(visits.length, 1);
+  assert.equal(visits[0][0], 'title');
+});
+
+test('play: the quit arm expires after 2 s and resuming disarms it', () => {
   const { CB, game, visits } = setup();
   const play = CB.Scenes.play;
   play.enter(game, { runOpts: { seed: 1 } });
   play.update(CB.DT, H.makeInput({ pause: true }));
   play.update(CB.DT, H.makeInput({ quit: true }));
+  for (let i = 0; i < 125; i++) play.update(CB.DT, H.makeInput());
+  assert.equal(play.quitArmT, 0, 'expired');
+  play.update(CB.DT, H.makeInput({ quit: true }));
+  assert.equal(visits.length, 0, 'an expired arm just re-arms');
+  assert.equal(play.quitArmT, 2.0);
+  play.update(CB.DT, H.makeInput({ pause: true }));
+  assert.equal(play.paused, false);
+  assert.equal(play.quitArmT, 0, 'resuming disarms');
+  play.update(CB.DT, H.makeInput({ pause: true }));
+  play.update(CB.DT, H.makeInput({ quit: true }));
+  assert.equal(visits.length, 0, 'a fresh pause needs two Qs again');
+  assert.equal(play.quitArmT, 2.0);
+});
+
+test('play: Q does nothing outside pause and the dead screen', () => {
+  const { CB, game, visits } = setup();
+  const play = CB.Scenes.play;
+  play.enter(game, { runOpts: { seed: 1 } });
+  play.update(CB.DT, H.makeInput({ quit: true }));
+  play.update(CB.DT, H.makeInput({ quit: true }));
+  assert.equal(visits.length, 0);
+  assert.equal(play.quitArmT, 0);
+});
+
+test('play: Q on the dead screen waits for the input lock', () => {
+  const { CB, game, visits } = setup();
+  const play = CB.Scenes.play;
+  play.enter(game, { runOpts: { seed: 1 } });
+  const p = play.run.world.player;
+  p.hearts = 1;
+  assert.equal(play.run.world.hurtPlayer(null), true);
+  for (let i = 0; i < 400 && play.run.state !== 'dead'; i++) play.update(CB.DT, H.makeInput());
+  assert.equal(play.run.state, 'dead');
+  play.update(CB.DT, H.makeInput({ quit: true }));
+  assert.equal(visits.length, 0, 'locked right after dying (a mashed Q must not skip the screen)');
+  for (let i = 0; i < 30; i++) play.update(CB.DT, H.makeInput());
+  assert.ok(play.run.stateT < CB.RUN_T.inputLock);
+  play.update(CB.DT, H.makeInput({ quit: true }));
+  assert.equal(visits.length, 0);
+  for (let i = 0; i < 10; i++) play.update(CB.DT, H.makeInput());
+  assert.ok(play.run.stateT >= CB.RUN_T.inputLock);
+  play.update(CB.DT, H.makeInput({ quit: true }));
+  assert.equal(visits.length, 1);
   assert.equal(visits[0][0], 'title');
+});
+
+test('play: N toggles the music (also while paused); a missing CB.Music is fine', () => {
+  const { CB, game } = setup();
+  const play = CB.Scenes.play;
+  play.enter(game, { runOpts: { seed: 1 } });
+  assert.doesNotThrow(() => play.update(CB.DT, H.makeInput({ music: true })));
+  let toggles = 0;
+  CB.Music = { toggle: () => { toggles++; } };
+  play.update(CB.DT, H.makeInput({ music: true }));
+  assert.equal(toggles, 1);
+  play.update(CB.DT, H.makeInput());
+  assert.equal(toggles, 1);
+  play.update(CB.DT, H.makeInput({ pause: true }));
+  play.update(CB.DT, H.makeInput({ music: true }));
+  assert.equal(toggles, 2);
+});
+
+test('play: extra sim ticks (debug speed) never repeat edge inputs', () => {
+  const { CB, game } = setup();
+  const play = CB.Scenes.play;
+  game.debug.speed = 3;
+  play.enter(game, { runOpts: { seed: 1 } });
+  const seen = [];
+  const real = play.run.step;
+  play.run.step = function (inp) { seen.push(inp); return real.call(this, inp); };
+  const keys = ['KeyA'];
+  play.update(CB.DT, H.makeInput({ dash: true, compact: true, music: true, keys }));
+  assert.equal(seen.length, 3);
+  assert.equal(seen[0].dash, true);
+  assert.equal(seen[0].compact, true);
+  for (const i of [1, 2]) {
+    assert.equal(seen[i].dash, false);
+    assert.equal(seen[i].compact, false);
+    assert.equal(seen[i].music, false);
+    assert.deepEqual(H.plain(seen[i].keys), []);
+  }
+});
+
+function drawSetup() {
+  const s = setup();
+  const { CB } = s;
+  CB.WorldDraw = { draw() {} };
+  CB.Screens.hud = { draw() {}, cursor() {} };
+  for (const k of ['stageIntro', 'waveBanner', 'bossWarn', 'bossDead', 'gameOver', 'victory']) CB.Screens[k] = { draw() {} };
+  const pauseArgs = [];
+  CB.Screens.pause = { draw: (...a) => pauseArgs.push(a) };
+  const log = [];
+  const r = {
+    clear: (c) => log.push(['clear', c]),
+    shaken: (dx, dy, fn) => { log.push(['shaken', dx, dy]); fn(); },
+    alpha: (a, fn) => { log.push(['alpha', a]); fn(); },
+    rect: (x, y, w, h, c) => log.push(['rect', c]),
+  };
+  const play = CB.Scenes.play;
+  play.enter(s.game, { runOpts: { seed: 1 } });
+  return Object.assign(s, { play, r, log, pauseArgs });
+}
+
+test('play.draw: starts with a black clear, then the shaken world', () => {
+  const { play, r, log } = drawSetup();
+  play.draw(r, 0.5);
+  assert.deepEqual(log[0], ['clear', '#000000']);
+  assert.equal(log[1][0], 'shaken');
+});
+
+test('play.draw: shake and flash are live only while not paused; flash uses w.flashColor', () => {
+  const { CB, play, r, log, pauseArgs } = drawSetup();
+  const w = play.run.world;
+  w.shake = 4;
+  w.flash = 0.1;
+  const t = 0.5;
+  play.draw(r, t);
+  const sh = log.find((l) => l[0] === 'shaken');
+  assert.equal(sh[1], Math.round(Math.sin(t * 91) * 4));
+  assert.equal(sh[2], Math.round(Math.cos(t * 77) * 4));
+  assert.ok(sh[1] !== 0 || sh[2] !== 0, 'the test point really shakes');
+  const rect = log.find((l) => l[0] === 'rect');
+  assert.equal(rect[1], CB.Pal.C.hurt, 'default flash colour');
+  log.length = 0;
+  w.flashColor = '#123456';
+  play.draw(r, t);
+  assert.equal(log.find((l) => l[0] === 'rect')[1], '#123456');
+  log.length = 0;
+  play.paused = true;
+  play.quitArmT = 1.25;
+  play.draw(r, t);
+  const sp = log.find((l) => l[0] === 'shaken');
+  assert.equal(sp[1], 0);
+  assert.equal(sp[2], 0);
+  assert.equal(log.some((l) => l[0] === 'rect'), false, 'no flash while paused');
+  assert.equal(pauseArgs.length, 1);
+  assert.equal(pauseArgs[0][3].quitArmT, 1.25, 'the pause screen can read the arm timer');
+  assert.equal(w.shake, 4, 'drawing never mutates the sim');
 });
 
 test('play: clicking a patch card picks it after the input lock', () => {
@@ -3261,7 +4172,8 @@ test('play: restore data carries deaths, time and history', () => {
 // Play scene: routes input to the run, handles pause/quit and patch clicks, layers world + HUD + overlays.
 (function (CB) {
   'use strict';
-  const EDGE_OFF = { dash: false, pause: false, mute: false, confirm: false, choice: 0, retry: false, quit: false };
+  const EDGE_OFF = { dash: false, pause: false, mute: false, confirm: false, choice: 0, retry: false, quit: false, compact: false, music: false, keys: [] };
+  const QUIT_ARM = 2.0; // seconds the second Q is accepted after the first one, while paused
   const OVERLAY = {
     stageIntro: 'stageIntro', wave: 'waveBanner', waveBreak: 'waveBanner', bossWarn: 'bossWarn',
     bossDead: 'bossDead', patchPick: 'patchPick', dead: 'gameOver', victory: 'victory',
@@ -3271,6 +4183,7 @@ test('play: restore data carries deaths, time and history', () => {
     game: null,
     run: null,
     paused: false,
+    quitArmT: 0, // >0 after the first Q on the pause screen; the pause screen reads it for the "Q again" prompt
     ui: { hover: -1 },
 
     enter(game, data) {
@@ -3284,6 +4197,7 @@ test('play: restore data carries deaths, time and history', () => {
         this.run.history = Array.isArray(d.restore.history) ? d.restore.history.slice() : [];
       }
       this.paused = false;
+      this.quitArmT = 0;
       this.ui.hover = -1;
     },
 
@@ -3294,17 +4208,24 @@ test('play: restore data carries deaths, time and history', () => {
     update(dt, inp) {
       const run = this.run;
       const game = this.game;
+      if (inp.music && CB.Music) CB.Music.toggle();
       if (inp.pause && (this.paused || CB.RUN_COMBAT_STATES[run.state])) {
         this.paused = !this.paused;
+        this.quitArmT = 0;
         CB.Audio.play('uiSelect');
       }
       if (this.paused) {
-        if (inp.quit) game.go('title');
+        if (this.quitArmT > 0) this.quitArmT = Math.max(0, this.quitArmT - dt);
+        if (inp.quit) {
+          // Two-step quit: a stray Q must not throw away the run.
+          if (this.quitArmT > 0) game.go('title');
+          else this.quitArmT = QUIT_ARM;
+        }
         return;
       }
       this.ui.hover = run.state === 'patchPick' ? CB.Screens.patchPick.cardAt(inp.aimX, inp.aimY) : -1;
       if (run.state === 'patchPick' && inp.confirm && this.ui.hover >= 0) run.choosePatch(this.ui.hover);
-      if (run.state === 'dead' && inp.quit) {
+      if (run.state === 'dead' && inp.quit && run.stateT >= CB.RUN_T.inputLock) {
         game.go('title');
         return;
       }
@@ -3319,15 +4240,21 @@ test('play: restore data carries deaths, time and history', () => {
     draw(r, t) {
       const run = this.run;
       const w = run.world;
-      const sx = w.shake > 0 ? Math.round(Math.sin(t * 91) * w.shake) : 0;
-      const sy = w.shake > 0 ? Math.round(Math.cos(t * 77) * w.shake) : 0;
+      const live = !this.paused;
+      const shake = live ? w.shake : 0; // a paused frame is still: no shake, no flash
+      const sx = shake > 0 ? Math.round(Math.sin(t * 91) * shake) : 0;
+      const sy = shake > 0 ? Math.round(Math.cos(t * 77) * shake) : 0;
       const hitboxes = !!(this.game.debug && this.game.debug.hitboxes);
+      r.clear('#000000'); // the shaken world leaves an uncovered strip at the edge
       r.shaken(sx, sy, () => CB.WorldDraw.draw(r, w, t, { hitboxes }));
-      if (w.flash > 0) r.alpha(Math.min(0.35, w.flash * 2), () => r.rect(0, 0, CB.W, CB.H, CB.Pal.C.hurt));
+      if (live && w.flash > 0) r.alpha(Math.min(0.35, w.flash * 2), () => r.rect(0, 0, CB.W, CB.H, w.flashColor || CB.Pal.C.hurt));
       CB.Screens.hud.draw(r, run, t);
       const ov = OVERLAY[run.state];
       if (ov) CB.Screens[ov].draw(r, run, t, this.ui);
-      if (this.paused) CB.Screens.pause.draw(r, run, t);
+      if (this.paused) {
+        this.ui.quitArmT = this.quitArmT;
+        CB.Screens.pause.draw(r, run, t, this.ui);
+      }
       const a = this.game.input.peekAim();
       const pointer = this.paused || run.state === 'patchPick' || run.state === 'dead' || run.state === 'victory';
       CB.Screens.hud.cursor(r, a.x, a.y, pointer ? 'pointer' : 'cross', t);
@@ -3345,16 +4272,24 @@ test('play: restore data carries deaths, time and history', () => {
 
   CB.parseDebugHash = function (hash) {
     const s = String(hash || '').replace(/^#/, '');
-    const q = {};
+    const q = Object.create(null);
+    const dec = (v) => {
+      try {
+        return decodeURIComponent(v);
+      } catch (e) {
+        return v;
+      }
+    };
     if (s) {
       for (const part of s.split('&')) {
         if (!part) continue;
         const i = part.indexOf('=');
-        const k = decodeURIComponent(i < 0 ? part : part.slice(0, i));
-        q[k] = i < 0 ? true : decodeURIComponent(part.slice(i + 1));
+        const k = dec(i < 0 ? part : part.slice(0, i));
+        q[k] = i < 0 ? true : dec(part.slice(i + 1));
       }
     }
-    const d = { active: Object.keys(q).length > 0 };
+    const KNOWN = ['stage', 'boss', 'god', 'seed', 'speed', 'patches', 'hitboxes'];
+    const d = { active: KNOWN.some((k) => q[k] != null) };
     if (q.stage != null) d.startStage = Math.max(0, Math.min(3, (parseInt(q.stage, 10) || 1) - 1));
     if (q.boss) d.skipWaves = true;
     if (q.god) d.god = true;
@@ -3363,7 +4298,7 @@ test('play: restore data carries deaths, time and history', () => {
     if (q.patches) {
       d.patches = {};
       for (const id of String(q.patches).split(',')) {
-        const def = CB.Patches.DEFS[id];
+        const def = Object.prototype.hasOwnProperty.call(CB.Patches.DEFS, id) ? CB.Patches.DEFS[id] : null;
         if (def) d.patches[id] = Math.min(def.max, (d.patches[id] || 0) + 1);
       }
     }
@@ -3371,16 +4306,153 @@ test('play: restore data carries deaths, time and history', () => {
     return d;
   };
 
+  // Debug hashes only work locally: on a published Artifact a stray #boss or #god must not change the game.
+  CB.debugFromLocation = function (loc) {
+    const local = loc.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(loc.hostname);
+    return local ? CB.parseDebugHash(loc.hash) : { active: false };
+  };
+
   if (window.CB_NO_BOOT) return;
 
+  // ---- crash handling --------------------------------------------------------------------------
+  // `canvas`, `r` and `loop` are filled in by boot(); crash() copes with any of them still being null.
+  let canvas = null;
+  let r = null;
+  let loop = null;
+  let crashed = false;
+  let crashErr = null;
+
+  function esc(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function wrapLines(str, width, maxLines) {
+    const out = [];
+    for (const raw of String(str).split('\n')) {
+      let line = raw;
+      while (line.length > width) {
+        out.push(line.slice(0, width));
+        line = line.slice(width);
+      }
+      out.push(line);
+    }
+    return out.slice(0, maxLines);
+  }
+
+  // No renderer to draw with: put the panic text in the page itself.
+  function showPre(e) {
+    try {
+      const pre = document.createElement('pre');
+      pre.style.cssText = 'position:fixed;inset:0;margin:0;padding:16px;z-index:2147483647;overflow:auto;white-space:pre-wrap;background:#000;color:#FF6B6B;font:14px/1.4 monospace;cursor:pointer';
+      pre.innerHTML = 'KERNEL PANIC\n\n' + esc(String(e.message).slice(0, 600)) + '\n\nPress R to reload';
+      if (pre.addEventListener) pre.addEventListener('mousedown', () => location.reload());
+      (document.body || document.documentElement).appendChild(pre);
+    } catch (e3) {
+      // nothing left to try; the error is already in the console
+    }
+  }
+
+  function paintFallback(e) {
+    try {
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#FF6B6B';
+      ctx.font = '16px monospace';
+      ctx.fillText('KERNEL PANIC', 16, 32);
+      const lines = wrapLines(e.message, Math.max(20, Math.floor((canvas.width - 32) / 10)), 10);
+      for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], 16, 56 + i * 20);
+      ctx.fillText('Press R to reload', 16, 56 + (lines.length + 1) * 20);
+    } catch (e2) {
+      showPre(e);
+    }
+  }
+
+  function paintPanic() {
+    const e = crashErr;
+    if (!e) return;
+    try {
+      r.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      r.ctx.globalAlpha = 1;
+      CB.Screens.panic.draw(r, e);
+      r.present();
+    } catch (e2) {
+      paintFallback(e);
+    }
+  }
+
+  function crash(err) {
+    if (crashed) return;
+    crashed = true;
+    const e = err instanceof Error ? err : new Error(String(err));
+    crashErr = e;
+    console.error(e);
+    if (loop) loop.stop();
+    if (canvas && canvas.style) canvas.style.cursor = 'auto';
+    if (r) {
+      paintPanic();
+      window.addEventListener('resize', () => {
+        try {
+          r.resize();
+        } catch (e2) {
+          // painting below still works with the old size
+        }
+        paintPanic();
+      });
+    } else showPre(e);
+    window.addEventListener('keydown', (ev) => {
+      if (ev.code === 'KeyR') location.reload();
+    });
+    if (canvas && canvas.addEventListener) canvas.addEventListener('mousedown', () => location.reload());
+  }
+
+  function installCrashHandlers() {
+    // Only a real Error is fatal; ResizeObserver noise and cross-origin "Script error." events are not.
+    window.addEventListener('error', (ev) => {
+      if (ev && ev.error instanceof Error) crash(ev.error);
+      else console.warn('Ignored non-fatal error event:', ev && ev.message);
+    });
+    window.addEventListener('unhandledrejection', (ev) => {
+      console.warn('Unhandled promise rejection:', ev && ev.reason);
+    });
+  }
+
+  // ---- Artifact hot snapshot -------------------------------------------------------------------
+  // Only mid-fight states resume cleanly (at that stage's intro); anywhere else the next load starts at the title.
+  function snapshotState() {
+    try {
+      const g = CB.game;
+      const run = g && g.sceneName === 'play' && g.scene && g.scene.run;
+      if (!run || !(CB.RUN_COMBAT_STATES[run.state] || run.state === 'dying')) return {};
+      return {
+        stageIndex: run.stageIndex,
+        patches: Object.assign({}, run.patches),
+        deaths: run.deaths,
+        time: run.time,
+        history: run.history.slice(),
+      };
+    } catch (e) {
+      return {};
+    }
+  }
+  try {
+    const hot0 = window.claude && window.claude.hot;
+    if (hot0 && hot0.snapshot) hot0.snapshot(snapshotState);
+  } catch (e) {
+    console.warn('hot snapshot not registered:', e);
+  }
+
+  // ---- boot ------------------------------------------------------------------------------------
   function boot(hotData) {
-    const canvas = document.getElementById('game');
-    const r = CB.createRenderer(canvas);
+    installCrashHandlers();
+    canvas = document.getElementById('game');
+    r = CB.createRenderer(canvas);
     r.resize();
     window.addEventListener('resize', () => r.resize());
     const input = CB.createInput({ canvas, renderer: r });
-    const debug = CB.parseDebugHash(location.hash);
-    let loop = null;
+    const debug = CB.debugFromLocation(location);
 
     const game = {
       r, input, debug, scene: null, sceneName: '', t: 0,
@@ -3397,35 +4469,10 @@ test('play: restore data carries deaths, time and history', () => {
       get run() {
         return game.scene && game.scene.run;
       },
+      get scene() {
+        return game.scene;
+      },
     };
-
-    let crashed = false;
-    function crash(err) {
-      if (crashed) return;
-      crashed = true;
-      const e = err instanceof Error ? err : new Error(String(err));
-      console.error(e);
-      if (loop) loop.stop();
-      try {
-        r.ctx.setTransform(1, 0, 0, 1, 0, 0);
-        r.ctx.globalAlpha = 1;
-        CB.Screens.panic.draw(r, e);
-        r.present();
-      } catch (e2) {
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#FF6B6B';
-        ctx.font = '16px monospace';
-        ctx.fillText('KERNEL PANIC: ' + e.message, 16, 32);
-        ctx.fillText('Press R to reload', 16, 56);
-      }
-      window.addEventListener('keydown', (ev) => {
-        if (ev.code === 'KeyR') location.reload();
-      });
-    }
-    window.addEventListener('error', (ev) => crash(ev.error || new Error(ev.message)));
-    window.addEventListener('unhandledrejection', (ev) => crash(ev.reason instanceof Error ? ev.reason : new Error(String(ev.reason))));
 
     const unlock = () => CB.Audio.init();
     window.addEventListener('pointerdown', unlock);
@@ -3438,14 +4485,6 @@ test('play: restore data carries deaths, time and history', () => {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) blur();
     });
-
-    const hot = window.claude && window.claude.hot;
-    if (hot && hot.snapshot) {
-      hot.snapshot(() => {
-        const run = game.sceneName === 'play' && game.scene.run;
-        return run ? { stageIndex: run.stageIndex, patches: run.patches, deaths: run.deaths, time: run.time, history: run.history } : {};
-      });
-    }
 
     if (debug.active) game.go('play', { runOpts: debug });
     else if (hotData && hotData.stageIndex != null) {
@@ -3460,6 +4499,7 @@ test('play: restore data carries deaths, time and history', () => {
         game.scene.update(dt, inp);
       },
       render() {
+        r.resize();
         game.scene.draw(r, game.t);
         r.present();
       },
@@ -3479,7 +4519,448 @@ test('play: restore data carries deaths, time and history', () => {
 })(window.CB);
 ```
 
-- [ ] **Step 5: Run tests.** Run `node --test tests/scenes.test.js`. Expected: 5 PASS.
+- [ ] **Step 4b: Create `tests/boot.test.js`.** It boots the real `main.js` in the vm with `CB_NO_BOOT` off, against stub DOM and scenes. It covers crash handlers, the panic screen, debug-host gating, resize-before-draw, the M/N split, the `CB.debug` getters and the hot snapshot.
+
+```js
+'use strict';
+// Runs the real src/main.js inside the vm sandbox (CB_NO_BOOT off) against stub DOM, audio and scenes,
+// so crash handling, debug-hash gating, the hot snapshot and the loop wiring are tested end to end.
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const H = require('./harness');
+
+const LIBS = [
+  'src/core/ns.js', 'src/core/math.js', 'src/core/rng.js', 'src/art/palette.js', 'src/art/sprites.js', 'src/art/render.js',
+  'src/core/input.js', 'src/core/loop.js',
+  'src/game/world.js', 'src/game/projectiles.js', 'src/game/patches.js', 'src/game/player.js', 'src/game/fx.js',
+  'src/game/stages.js', 'src/game/waves.js', 'src/game/stageRunner.js', 'src/scenes/play.js',
+];
+const MAIN = fs.readFileSync(path.join(H.ROOT, 'src/main.js'), 'utf8');
+
+function bootEnv(o) {
+  const opt = o || {};
+  const { CB, sandbox } = H.load(LIBS, { returnSandbox: true });
+  delete sandbox.CB_NO_BOOT;
+  const SErr = vm.runInContext('Error', sandbox); // errors must come from the sandbox realm to pass `instanceof Error`
+
+  const order = [];
+  const warns = [];
+  const errs = [];
+  const appended = [];
+  const winOn = {};
+  const canvasOn = {};
+  const calls = [];
+  const env = { CB, sandbox, SErr, order, warns, errs, appended, winOn, canvasOn, calls, reloads: 0, focused: 0, nowMs: 0, rafCb: null };
+
+  sandbox.addEventListener = (type, fn) => {
+    (winOn[type] = winOn[type] || []).push(fn);
+    order.push('win:' + type);
+  };
+  sandbox.console = { log() {}, info() {}, warn: (...a) => warns.push(a), error: (...a) => errs.push(a) };
+  sandbox.performance = { now: () => env.nowMs };
+  sandbox.requestAnimationFrame = (f) => {
+    env.rafCb = f;
+    return 1;
+  };
+  sandbox.location = Object.assign({ protocol: 'http:', hostname: 'localhost', hash: '', reload() { env.reloads++; } }, opt.loc || {});
+  if (opt.claude) sandbox.claude = opt.claude;
+
+  const ctx = new Proxy({ canvas: null, imageSmoothingEnabled: false, globalAlpha: 1 }, {
+    get: (t, p) => (p in t ? t[p] : (...a) => { calls.push([String(p), ...a]); }),
+    set: (t, p, v) => { t[p] = v; return true; },
+  });
+  const canvas = {
+    width: 300,
+    height: 150,
+    style: {},
+    focus() { env.focused++; },
+    addEventListener: (type, fn) => { (canvasOn[type] = canvasOn[type] || []).push(fn); },
+    removeEventListener() {},
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: canvas.width, height: canvas.height }),
+    getContext: () => ctx,
+  };
+  env.canvas = canvas;
+  const doc = sandbox.document;
+  doc.getElementById = () => canvas;
+  doc.addEventListener = () => {};
+  doc.body = { appendChild: (el) => appended.push(el), classList: { add() {}, remove() {} } };
+
+  const probe = { toggles: 0, inputs: [], draws: 0, panic: [], panicThrows: false, updateThrows: null, musicToggles: 0 };
+  env.probe = probe;
+  CB.Audio = { init() {}, toggleMute() { probe.toggles++; }, play() {}, handleEvents() {} };
+  CB.Music = { toggle() { probe.musicToggles++; } };
+  CB.Scenes.title = {
+    enter() { order.push('title.enter'); },
+    update(dt, inp) {
+      probe.inputs.push(inp);
+      if (probe.updateThrows) throw probe.updateThrows;
+    },
+    draw() { order.push('draw'); probe.draws++; },
+  };
+  CB.Screens.panic = {
+    draw(r, e) {
+      if (probe.panicThrows) throw new SErr('panic screen failed too');
+      probe.panic.push(e);
+    },
+  };
+  const realCreate = CB.createRenderer;
+  CB.createRenderer = (c, w) => {
+    order.push('createRenderer');
+    if (opt.rendererThrows) throw new SErr('no 2d context');
+    const r = realCreate(c, w);
+    const realResize = r.resize;
+    r.resize = () => {
+      order.push('resize');
+      return realResize();
+    };
+    env.r = r;
+    return r;
+  };
+
+  env.fire = (type, ev) => (winOn[type] || []).slice().forEach((fn) => fn(ev));
+  env.fireCanvas = (type, ev) => (canvasOn[type] || []).slice().forEach((fn) => fn(ev));
+  env.runMain = () => vm.runInContext(MAIN, sandbox, { filename: 'src/main.js' });
+  env.frame = (ms) => {
+    env.nowMs += ms;
+    env.rafCb();
+  };
+  env.err = (msg) => new SErr(msg);
+  return env;
+}
+
+test('boot: the crash handlers go in before the renderer is touched; a boot failure shows an escaped <pre>', () => {
+  const env = bootEnv({ rendererThrows: true });
+  let thrown = null;
+  try {
+    env.runMain();
+  } catch (e) {
+    thrown = e;
+  }
+  assert.ok(thrown, 'createRenderer failed, so boot threw');
+  assert.ok(env.order.indexOf('win:error') >= 0 && env.order.indexOf('win:unhandledrejection') >= 0);
+  assert.ok(env.order.indexOf('win:error') < env.order.indexOf('createRenderer'), 'error handler is first');
+  assert.ok(env.order.indexOf('win:unhandledrejection') < env.order.indexOf('createRenderer'));
+  assert.equal(env.order[0], 'win:error', 'nothing runs before the handlers are installed');
+  // The browser would now raise a window 'error' event for the uncaught exception.
+  env.fire('error', { error: env.err('bad <b>html</b> & "quotes"'), message: 'x' });
+  assert.equal(env.appended.length, 1, 'no renderer, so the message goes into the page');
+  const pre = env.appended[0];
+  assert.ok(pre.innerHTML.includes('KERNEL PANIC'));
+  assert.ok(pre.innerHTML.includes('bad &lt;b&gt;html&lt;/b&gt; &amp; &quot;quotes&quot;'), pre.innerHTML);
+  assert.ok(!pre.innerHTML.includes('<b>'), 'message is HTML-escaped');
+  assert.ok(pre.innerHTML.includes('Press R to reload'));
+  assert.match(pre.style.cssText, /position:fixed/);
+  env.fire('keydown', { code: 'KeyX' });
+  assert.equal(env.reloads, 0);
+  env.fire('keydown', { code: 'KeyR' });
+  assert.equal(env.reloads, 1);
+  assert.equal(env.probe.panic.length, 0, 'no renderer, no panic screen');
+});
+
+test('boot: an error event without an Error object and unhandled rejections only warn', () => {
+  const env = bootEnv();
+  env.runMain();
+  env.fire('error', { message: 'ResizeObserver loop completed with undelivered notifications.', error: null });
+  env.fire('error', { message: 'Script error.', error: 'just a string' });
+  env.fire('unhandledrejection', { reason: env.err('a promise went wrong') });
+  env.fire('unhandledrejection', { reason: 'plain reason' });
+  assert.equal(env.warns.length, 4);
+  assert.equal(env.probe.panic.length, 0);
+  assert.equal(env.canvas.style.cursor, undefined);
+  env.frame(20);
+  assert.equal(env.probe.draws, 1, 'the loop keeps running');
+  assert.equal(env.errs.length, 0);
+});
+
+test('boot: a fatal error paints the panic screen once, frees the cursor, stops the loop, repaints on resize, reloads on R or click', () => {
+  const env = bootEnv();
+  env.runMain();
+  env.frame(20);
+  assert.equal(env.probe.draws, 1);
+  const presents = () => env.calls.filter((c) => c[0] === 'drawImage').length;
+  const p0 = presents();
+  const boom = env.err('boom');
+  env.fire('error', { error: boom, message: 'boom' });
+  assert.equal(env.probe.panic.length, 1);
+  assert.equal(env.probe.panic[0], boom);
+  assert.equal(env.canvas.style.cursor, 'auto');
+  assert.ok(presents() > p0, 'the panic frame was presented');
+  assert.equal(env.errs.length, 1, 'logged once');
+  env.frame(20);
+  assert.equal(env.probe.draws, 1, 'the game loop is stopped');
+  env.fire('error', { error: env.err('second'), message: 'second' });
+  assert.equal(env.probe.panic.length, 1, 'only the first crash is shown');
+  env.fire('resize', {});
+  assert.equal(env.probe.panic.length, 2, 'repainted on resize');
+  assert.equal(env.probe.panic[1], boom);
+  env.fire('keydown', { code: 'KeyW' });
+  assert.equal(env.reloads, 0);
+  env.fire('keydown', { code: 'KeyR' });
+  assert.equal(env.reloads, 1);
+  env.fireCanvas('mousedown', { button: 0, clientX: 5, clientY: 5 });
+  assert.equal(env.reloads, 2, 'clicking the canvas reloads too');
+});
+
+test('boot: an exception inside the game loop becomes the panic screen', () => {
+  const env = bootEnv();
+  env.runMain();
+  env.probe.updateThrows = env.err('update blew up');
+  env.frame(20);
+  assert.equal(env.probe.panic.length, 1);
+  assert.equal(env.probe.panic[0].message, 'update blew up');
+  assert.equal(env.canvas.style.cursor, 'auto');
+});
+
+test('boot: if the panic screen itself fails, the plain fillText fallback is painted', () => {
+  const env = bootEnv();
+  env.runMain();
+  env.probe.panicThrows = true;
+  env.fire('error', { error: env.err('original failure'), message: 'x' });
+  const texts = env.calls.filter((c) => c[0] === 'fillText').map((c) => c[1]);
+  assert.ok(texts.includes('KERNEL PANIC'), JSON.stringify(texts));
+  assert.ok(texts.some((t) => t.includes('original failure')));
+  assert.ok(texts.includes('Press R to reload'));
+  assert.equal(env.appended.length, 0, 'the canvas fallback worked, so no <pre>');
+  env.fire('keydown', { code: 'KeyR' });
+  assert.equal(env.reloads, 1);
+});
+
+test('boot: debug hashes work on local hosts only', () => {
+  const hash = '#stage=3&god';
+  for (const loc of [
+    { protocol: 'http:', hostname: 'localhost' },
+    { protocol: 'http:', hostname: '127.0.0.1' },
+    { protocol: 'http:', hostname: '[::1]' },
+    { protocol: 'file:', hostname: '' },
+  ]) {
+    const env = bootEnv({ loc: Object.assign({ hash }, loc) });
+    env.runMain();
+    assert.equal(env.CB.game.sceneName, 'play', JSON.stringify(loc));
+    assert.equal(env.CB.game.scene.run.stageIndex, 2);
+    assert.equal(env.CB.game.scene.run.god, true);
+  }
+  for (const loc of [
+    { protocol: 'https:', hostname: 'claude.ai' },
+    { protocol: 'https:', hostname: 'localhost.evil.example' },
+    { protocol: 'https:', hostname: '127.0.0.1.evil.example' },
+    { protocol: 'https:', hostname: 'evil-localhost' },
+  ]) {
+    const env = bootEnv({ loc: Object.assign({ hash }, loc) });
+    env.runMain();
+    assert.equal(env.CB.game.sceneName, 'title', JSON.stringify(loc));
+    assert.equal(env.CB.game.debug.active, false);
+  }
+});
+
+test('boot: every render starts with r.resize(); the loop update keeps M for mute and leaves N to the play scene', () => {
+  const env = bootEnv();
+  env.runMain();
+  const n0 = env.order.length;
+  env.frame(20);
+  const tail = env.order.slice(n0);
+  assert.deepEqual(tail.filter((x) => x === 'resize' || x === 'draw'), ['resize', 'draw'], 'resize comes right before draw');
+  env.fire('keydown', { code: 'KeyM' });
+  env.fire('keydown', { code: 'KeyN' });
+  env.fire('keydown', { code: 'KeyE' });
+  env.frame(20);
+  assert.equal(env.probe.toggles, 1, 'M toggles mute');
+  assert.equal(env.probe.musicToggles, 0, 'main.js does not toggle music; play.js does');
+  const last = env.probe.inputs[env.probe.inputs.length - 1];
+  assert.equal(last.music, true);
+  assert.equal(last.compact, true);
+  assert.deepEqual(H.plain(last.keys), ['KeyM', 'KeyN', 'KeyE']);
+});
+
+test('boot: CB.debug exposes game, run and scene', () => {
+  const env = bootEnv();
+  env.runMain();
+  const { CB } = env;
+  assert.equal(CB.debug.game, CB.game);
+  assert.equal(CB.debug.scene, CB.Scenes.title);
+  assert.ok(!CB.debug.run);
+  CB.game.go('play', { runOpts: { seed: 1 } });
+  assert.equal(CB.debug.scene, CB.Scenes.play);
+  assert.equal(CB.debug.run, CB.Scenes.play.run);
+});
+
+test('hot snapshot: registered at load; returns {} unless the run is in a combat state or dying', () => {
+  let snap = null;
+  const env = bootEnv({ claude: { hot: { snapshot: (fn) => { snap = fn; }, data: {} } } });
+  assert.equal(snap, null, 'nothing registered until main.js runs');
+  env.runMain();
+  assert.equal(typeof snap, 'function');
+  const { CB } = env;
+  assert.deepEqual(H.plain(snap()), {}, 'title screen');
+  CB.game.go('play', { runOpts: { startStage: 2, patches: { spread: 1 } } });
+  const run = CB.Scenes.play.run;
+  run.deaths = 2;
+  run.time = 33;
+  run.history.push('spread');
+  for (const state of ['stageIntro', 'wave', 'waveBreak', 'bossWarn', 'boss', 'dying']) {
+    run.state = state;
+    const s = H.plain(snap());
+    assert.equal(s.stageIndex, 2, state);
+    assert.deepEqual(s.patches, { spread: 1 });
+    assert.equal(s.deaths, 2);
+    assert.equal(s.time, 33);
+    assert.deepEqual(s.history, ['spread']);
+  }
+  for (const state of ['bossDead', 'patchPick', 'dead', 'victory']) {
+    run.state = state;
+    assert.deepEqual(H.plain(snap()), {}, state);
+  }
+  run.state = 'wave';
+  const copy = snap();
+  copy.patches.rapid = 9;
+  copy.history.push('x');
+  assert.deepEqual(H.plain(run.patches), { spread: 1 }, 'the snapshot is a copy');
+  assert.deepEqual(H.plain(run.history), ['spread']);
+  run.history = null; // a broken run must not throw out of the snapshot callback
+  assert.doesNotThrow(() => snap());
+  assert.deepEqual(H.plain(snap()), {});
+});
+
+test('hot snapshot: a host whose snapshot() throws does not stop the game from booting', () => {
+  const env = bootEnv({ claude: { hot: { snapshot() { throw new Error('host says no'); }, data: {} } } });
+  assert.doesNotThrow(() => env.runMain());
+  assert.equal(env.CB.game.sceneName, 'title');
+  assert.equal(env.warns.length, 1);
+});
+
+test('hot data: resumes at the saved stage; hot.ready(start) defers the boot', () => {
+  const data = { stageIndex: 2, patches: { rapid: 1 }, deaths: 3, time: 99, history: ['rapid'] };
+  const env = bootEnv({ claude: { hot: { data } } });
+  env.runMain();
+  assert.equal(env.CB.game.sceneName, 'play');
+  const run = env.CB.Scenes.play.run;
+  assert.equal(run.stageIndex, 2);
+  assert.equal(run.deaths, 3);
+  assert.equal(run.time, 99);
+  assert.deepEqual(H.plain(run.patches), { rapid: 1 });
+
+  let startFn = null;
+  const env2 = bootEnv({ claude: { hot: { ready: (fn) => { startFn = fn; } } } });
+  env2.runMain();
+  assert.equal(env2.CB.game, undefined, 'waiting for the host');
+  startFn({ stageIndex: 1 });
+  assert.equal(env2.CB.game.sceneName, 'play');
+  assert.equal(env2.CB.Scenes.play.run.stageIndex, 1);
+  const env3 = bootEnv({ claude: { hot: { data: {} } } });
+  env3.runMain();
+  assert.equal(env3.CB.game.sceneName, 'title', 'an empty snapshot means a normal start');
+});
+```
+
+- [ ] **Step 4c: Create `tests/extra.test.js`.** These are the round-1 dry-run regression tests: boss-death fx, dash buffer during hitstop, defeated boss stops updating, timer quantisation, debug-hash hardening, `wrapAngle`, same-tick death, and dead-state clearing.
+
+```js
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const H = require('./harness');
+
+function runSetup() {
+  const CB = H.loadWith('src/game/stages.js', 'src/game/waves.js', 'src/game/stageRunner.js');
+  CB.Enemies.dummy = { create: (w, x, y) => CB.makeEnemy('dummy', x, y, { hp: 1, contact: false }), update() {}, draw() {} };
+  CB.Bosses.dummyBoss = { id: 'dummyBoss', name: 'D', tagline: 't', commitMsg: 'c', create() { const c = { id: 'dummyBoss', x: 160, y: 60, hp: 10, maxHp: 10, phase: 1, defeated: false, update(w) { if (c.defeated) c.updatedAfterDefeat = true; if (c.hp <= 0) c.defeated = true; }, draw() {} }; return c; } };
+  CB.STAGES = [0, 1, 2, 3].map((i) => ({ id: 's' + i, n: i + 1, path: 'p', palette: 'src', boss: 'dummyBoss', waves: [[{ kind: 'dummy', count: 1 }], [{ kind: 'dummy', count: 1 }]] }));
+  return CB;
+}
+const idle = () => H.makeInput({ aimX: 160, aimY: 30 });
+const ticksIn = (run, state) => { let n = 0; while (run.state === state && n < 2000) { run.step(idle()); n++; } return n; };
+
+test('extra: base fire rate is 5 shots/s over 10 s (not 4.7)', () => {
+  const CB = H.loadWith();
+  const w = CB.createWorld({ seed: 3 });
+  let shots = 0;
+  for (let i = 0; i < 600; i++) { w.step(1 / 60, H.makeInput({ aimX: 300, aimY: 126, fire: true })); shots += w.events.filter((e) => e.type === 'shoot').length; w.events.length = 0; w.pBullets.length = 0; }
+  assert.ok(shots >= 50 && shots <= 51, `shots ${shots}`);
+});
+test('extra: dash covers 39 px (+-1)', () => {
+  const CB = H.loadWith();
+  const w = CB.createWorld({ seed: 3 });
+  const x0 = w.player.x;
+  w.step(1 / 60, H.makeInput({ moveX: 1, dash: true, aimX: 300, aimY: 30 }));
+  for (let i = 0; i < 20; i++) w.step(1 / 60, H.makeInput({ aimX: 300, aimY: 30 }));
+  assert.ok(Math.abs(w.player.x - x0 - 39) <= 1, `dist ${w.player.x - x0}`);
+});
+test('extra: dash invulnerability lasts 15 ticks (0.25 s)', () => {
+  const CB = H.loadWith();
+  const w = CB.createWorld({ seed: 3 });
+  const p = w.player;
+  let n = 0;
+  w.step(1 / 60, H.makeInput({ moveX: 1, dash: true, aimX: 300, aimY: 30 }));
+  if (!CB.Player.canBeHit(p)) n++;
+  for (let i = 0; i < 30; i++) { w.step(1 / 60, H.makeInput({ aimX: 300, aimY: 30 })); p.x = 160; if (!CB.Player.canBeHit(p)) n++; }
+  assert.equal(n, 15);
+});
+test('extra: a dash press during hitstop is buffered, not lost', () => {
+  const CB = H.loadWith();
+  const w = CB.createWorld({ seed: 3 });
+  w.fireEnemyBullet(w.player.x, w.player.y, 0, 0);
+  w.step(1 / 60, idle());
+  assert.ok(w.hitstop > 0);
+  w.step(1 / 60, H.makeInput({ aimX: 300, aimY: 30, moveX: 1, dash: true }));
+  for (let i = 0; i < 6; i++) w.step(1 / 60, H.makeInput({ aimX: 300, aimY: 30, moveX: 1 }));
+  assert.ok(w.events.some((e) => e.type === 'dash'));
+});
+test('extra: boss defeat spawns the bossDie fx', () => {
+  const CB = runSetup();
+  const run = CB.createRun({ seed: 1, skipWaves: true });
+  while (run.state !== 'boss') run.step(idle());
+  run.world.boss.hp = 0;
+  while (run.state !== 'bossDead') run.step(idle());
+  assert.ok(run.world.fx.some((f) => f.kind === 'ring'), 'rings from bossDie');
+});
+test('extra: a defeated boss is not updated again', () => {
+  const CB = runSetup();
+  const run = CB.createRun({ seed: 1, skipWaves: true });
+  while (run.state !== 'boss') run.step(idle());
+  const boss = run.world.boss;
+  boss.hp = 0;
+  for (let i = 0; i < 60; i++) run.step(idle());
+  assert.notEqual(boss.updatedAfterDefeat, true);
+});
+test('extra: same-tick death and defeat leaves Clawd alive for bossDead', () => {
+  const CB = runSetup();
+  const run = CB.createRun({ seed: 1, skipWaves: true });
+  while (run.state !== 'boss') run.step(idle());
+  const w = run.world;
+  w.player.hearts = 1; w.boss.hp = 0; w.fireEnemyBullet(w.player.x, w.player.y, 0, 0);
+  run.step(idle());
+  assert.equal(run.state, 'bossDead');
+  assert.equal(w.player.dead, false);
+});
+test('extra: state timings match the spec (waveBreak 1.5, bossWarn 2.5, bossDead 3.0, dying 1.2)', () => {
+  const CB = runSetup();
+  const run = CB.createRun({ seed: 1, skipWaves: false });
+  const near = (n, s) => assert.ok(Math.abs(n / 60 - s) <= 0.04, `${n / 60} vs ${s}`);
+  while (run.state !== 'wave') run.step(idle());
+  while (run.state === 'wave') { for (const e of run.world.enemies) if (!e.dead) run.world.killEnemy(e); run.step(idle()); }
+  near(ticksIn(run, 'waveBreak'), 1.5);
+  while (run.state === 'wave') { for (const e of run.world.enemies) if (!e.dead) run.world.killEnemy(e); run.step(idle()); }
+  near(ticksIn(run, 'bossWarn'), 2.5);
+  run.world.boss.hp = 0;
+  while (run.state === 'boss') run.step(idle());
+  near(ticksIn(run, 'bossDead'), 3.0);
+});
+test('extra: parseDebugHash survives malformed escapes and ignores bare anchors', () => {
+  const CB = H.loadWith('src/game/stages.js', 'src/game/waves.js', 'src/game/stageRunner.js', 'src/scenes/play.js', 'src/main.js');
+  assert.doesNotThrow(() => CB.parseDebugHash('#100%'));
+  assert.equal(CB.parseDebugHash('#top').active, false);
+  assert.equal(CB.parseDebugHash('#stage=2').active, true);
+});
+test('extra: wrapAngle terminates for huge and non-finite angles', () => {
+  const CB = H.load(['src/core/ns.js', 'src/core/math.js']);
+  assert.ok(Number.isFinite(CB.M.wrapAngle(1e17)));
+  assert.equal(CB.M.wrapAngle(Infinity), 0);
+});
+```
+
+- [ ] **Step 5: Run tests.** Run `node --test`. Expected: all PASS.
 - [ ] **Step 6: Commit (orchestrator).** `git add src/main.js src/scenes/play.js tests/scenes.test.js && git commit -m "feat: boot, debug hash, crash capture and play scene"`
 
 ---
@@ -6099,6 +7580,7 @@ test('title: confirm is ignored during the first 0.3 s', () => {
   - `CB.Player.drawHat(r, x, y, hatId, facing, scale = 1)` draws a hat for an arbitrary position. The title uses it too.
   - `Player.draw` draws `CB.Unlocks && CB.Unlocks.hat()` on Clawd, bobbing with the idle frame.
 - **Draw override:** `Player.draw(p, r, t, opts)` accepts `opts.expr` (the victory screen passes `'happy'`).
+- **Dash afterimages:** the trail is capped at 3 (Phase A), so push a trail point only every 3rd dash tick. The three afterimages then spread across the dash (about 13 px apart) instead of bunching up. This is a draw-side change in `update`'s trail push.
 
 ```js
 'use strict';
