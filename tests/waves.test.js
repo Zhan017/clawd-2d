@@ -75,3 +75,43 @@ test('stages: data matches the spec table', () => {
     [{ kind: 'syntaxError', count: 6 }, { kind: 'nullPointer', count: 3 }],
   ]);
 });
+
+// ---- rev 3 (A3-2): the whole stage table, and elites that can actually be placed -----------------------------------------------
+
+test('stages: the full table matches spec 2.5 (path, bosses, both waves, P0 elites per wave)', () => {
+  const CB = setup();
+  const k = (kind, count) => ({ kind, count });
+  const expected = [
+    { id: 'src', n: 1, path: '~/src/', boss: 'infiniteLoop', elites: [0, 1], waves: [[k('syntaxError', 4), k('nullPointer', 2)], [k('syntaxError', 6), k('nullPointer', 3)]] },
+    { id: 'node_modules', n: 2, path: '~/node_modules/', boss: 'memoryLeakBoss', elites: [0, 1], waves: [[k('syntaxError', 3), k('raceCondition', 2), k('memoryLeak', 2)], [k('memoryLeak', 3), k('raceCondition', 2), k('nullPointer', 2)]] },
+    { id: 'git', n: 3, path: '~/.git/', boss: 'mergeConflict', elites: [1, 1], waves: [[k('offByOne', 2), k('syntaxError', 4), k('raceCondition', 1)], [k('offByOne', 3), k('memoryLeak', 2), k('nullPointer', 2)]] },
+    { id: 'prod', n: 4, path: '~/prod/', boss: 'heisenbug', elites: [1, 2], waves: [[k('offByOne', 2), k('raceCondition', 2), k('memoryLeak', 2), k('nullPointer', 3)], [k('offByOne', 3), k('syntaxError', 4), k('memoryLeak', 2), k('raceCondition', 2)]] },
+  ];
+  assert.equal(CB.STAGES.length, 4);
+  CB.STAGES.forEach((s, i) => {
+    const e = expected[i];
+    assert.deepEqual(H.plain({ id: s.id, n: s.n, path: s.path, boss: s.boss, elites: s.elites, waves: s.waves }), e, `stage ${i + 1}`);
+    assert.ok(CB.Pal.STAGES[s.palette], s.palette);
+  });
+  assert.deepEqual(H.plain(CB.GROUP_SIZE), { raceCondition: 2 }, 'race conditions come in pairs');
+});
+
+test('stages: every real wave has enough eligible spawns for its elite count, and the spawner flags exactly that many', () => {
+  const CB = H.loadWith('src/game/pickups.js', 'src/game/stages.js', 'src/game/waves.js');
+  for (const kind of ['syntaxError', 'nullPointer', 'raceCondition', 'memoryLeak', 'offByOne']) {
+    CB.Enemies[kind] = { create: (w, x, y) => CB.makeEnemy(kind, x, y, { hp: 1, contact: false }), update() {}, draw() {} };
+  }
+  for (const stage of CB.STAGES) {
+    assert.equal(stage.elites.length, stage.waves.length, `${stage.id}: one elite count per wave`);
+    stage.waves.forEach((wave, i) => {
+      const eligible = wave.filter((d) => CB.ELITE_KINDS[d.kind]).reduce((n, d) => n + d.count, 0);
+      assert.ok(stage.elites[i] <= eligible, `${stage.id} wave ${i + 1}: ${stage.elites[i]} elites but only ${eligible} eligible spawns`);
+      const w = CB.createWorld({ seed: 11 });
+      const sp = CB.createWaveSpawner(w, wave, stage.elites[i]);
+      assert.equal(sp.eliteFlags.filter(Boolean).length, stage.elites[i], `${stage.id} wave ${i + 1}: flagged`);
+      sp.queue.forEach((kind, j) => {
+        if (sp.eliteFlags[j]) assert.ok(CB.ELITE_KINDS[kind], `${kind} may not be an elite`);
+      });
+    });
+  }
+});

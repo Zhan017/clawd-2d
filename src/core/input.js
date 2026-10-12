@@ -73,6 +73,7 @@
     win.addEventListener('mousemove', onMouseMove);
     canvas.addEventListener('mousedown', onMouseDown);
     canvas.addEventListener('contextmenu', onContext);
+    canvas.addEventListener('mouseleave', releaseAll); // a button released outside the page never arrives, so leaving stops fire
 
     function peekAim() {
       if (!hasMouse) return { x: CB.W / 2, y: CB.H / 2 - 40 };
@@ -112,6 +113,7 @@
         win.removeEventListener('mousemove', onMouseMove);
         canvas.removeEventListener('mousedown', onMouseDown);
         canvas.removeEventListener('contextmenu', onContext);
+        canvas.removeEventListener('mouseleave', releaseAll);
       },
     };
   };

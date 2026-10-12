@@ -1,7 +1,8 @@
 // The run: stage → waves → boss → patch pick, with death/retry, as a headless state machine.
 (function (CB) {
   'use strict';
-  const T = Object.freeze({ stageIntro: 2.0, waveBreak: 1.5, bossWarn: 2.5, bossDead: 3.0, slowmo: 1.5, slowmoScale: 0.3, dying: 1.2, inputLock: 0.6 });
+  // stageIntro and bossWarn have a short form (…Retry) for every visit after the card has played through once.
+  const T = Object.freeze({ stageIntro: 2.0, stageIntroRetry: 0.9, waveBreak: 1.5, bossWarn: 2.5, bossWarnRetry: 1.3, bossDead: 3.0, slowmo: 1.5, slowmoScale: 0.3, dying: 1.2, inputLock: 0.6 });
   CB.RUN_T = T;
   const COMBAT = { stageIntro: true, wave: true, waveBreak: true, bossWarn: true, boss: true };
   const NEUTRAL = Object.freeze({ moveX: 0, moveY: 0, aimX: 160, aimY: 90, fire: false, dash: false, pause: false, mute: false, confirm: false, choice: 0, retry: false, quit: false, compact: false, music: false, keys: [] });
@@ -28,22 +29,40 @@
       deaths: 0,
       squashed: {}, // kills by enemy kind (non-boss, non-silent), for the victory/game-over tally
       stageSquashed: {}, // run.squashed as it was when the current stage began; a retry goes back to it
+      wave2Squashed: {}, // run.squashed as it was when the wave break began; a wave-2 retry goes back to it
       bossesFixed: 0,
-      maxChain: 0,
       attempt: 0,
-      diedInBoss: false, // set on entering 'dying'; a boss death retries at bossWarn
+      diedInBoss: false, // set on entering 'dying' (checkpoint === 'boss'); a boss death retries at bossWarn
+      seenIntro: new Set(), // stage indices whose intro card has played to the end; later visits get the short card
+      seenWarn: new Set(), // the same for the boss-warning card
+      introT: T.stageIntro, // length of the current stageIntro card, set on entering it (the screens read it)
+      warnT: T.bossWarn, // length of the current bossWarn card
       world: null,
       pending: [],
     };
     run.mode = { bossRush: run.bossRush, yolo: run.yolo };
     const stage = () => CB.STAGES[run.stageIndex];
-    // 'boss' | 'stage': where a retry will land. Read-only; set on entering 'dying', read by the game-over screen.
+    // 'boss' | 'wave2' | 'stage': where a retry will land. Read-only; set on entering 'dying', read by the game-over screen.
     let checkpoint = 'stage';
     Object.defineProperty(run, 'checkpoint', { get: () => checkpoint, enumerable: true });
 
     function setState(s) {
       run.state = s;
       run.stateT = 0;
+      if (s === 'stageIntro') run.introT = run.seenIntro.has(run.stageIndex) ? T.stageIntroRetry : T.stageIntro;
+      else if (s === 'bossWarn') run.warnT = run.seenWarn.has(run.stageIndex) ? T.bossWarnRetry : T.bossWarn;
+    }
+
+    // Counts the world's events into the tally. Idempotent within a step: `tallied` marks how far it has read.
+    let tallied = 0;
+    function tally() {
+      const ev = run.world.events;
+      for (let i = Math.min(tallied, ev.length); i < ev.length; i++) {
+        const e = ev[i];
+        if (e.type === 'enemyDie' && !e.boss && !e.silent && e.kind) run.squashed[e.kind] = (run.squashed[e.kind] || 0) + 1;
+        else if (e.type === 'bossDie') run.bossesFixed++;
+      }
+      tallied = ev.length;
     }
 
     function beginStage() {
@@ -74,6 +93,8 @@
     }
 
     function enterWaveBreak() {
+      tally(); // the kills of this very tick belong in the snapshot
+      run.wave2Squashed = Object.assign({}, run.squashed);
       const p = run.world.player;
       if (!p.dead) p.hearts = Math.min(p.stats.maxHearts, p.hearts + 2);
       setState('waveBreak');
@@ -86,7 +107,7 @@
       w.pBullets.length = 0;
       w.hazards.length = 0;
       setState('bossWarn');
-      run.pending.push({ type: 'bossWarn' });
+      run.pending.push({ type: 'bossWarn', x: CB.W / 2, y: CB.H / 2 });
     }
 
     function enterDead() {
@@ -102,15 +123,26 @@
     function startBoss() {
       const w = run.world;
       w.clearEnemyBullets();
-      w.boss = CB.Bosses[stage().boss].create(w);
+      const boss = CB.Bosses[stage().boss].create(w);
+      w.boss = boss;
       w.player.invuln = Math.max(w.player.invuln, 1.0); // safe spawn
+      if (CB.Compact && CB.Compact.fill) CB.Compact.fill(w); // every boss fight, retries and Boss Rush included, starts with one cast
+      // The entrance: audio reads it from run.pending on the next step; Fx is fed it here, because pending events never pass through the world's queue.
+      const enter = { type: 'bossEnter', x: Number.isFinite(boss.x) ? boss.x : CB.W / 2, y: Number.isFinite(boss.y) ? boss.y : CB.H / 2 };
+      run.pending.push(enter);
+      const from = w.events.length;
+      w.events.push(enter);
+      CB.Fx.consume(w, from);
+      w.events.length = from;
       setState('boss');
     }
 
     function enterDying(prev) {
       run.deaths++;
-      run.diedInBoss = prev === 'boss';
-      checkpoint = run.diedInBoss ? 'boss' : 'stage';
+      if (prev === 'boss') checkpoint = 'boss';
+      else if (prev === 'waveBreak' || (prev === 'wave' && run.waveIndex === 1)) checkpoint = 'wave2';
+      else checkpoint = 'stage';
+      run.diedInBoss = checkpoint === 'boss';
       setState('dying');
     }
 
@@ -145,7 +177,8 @@
       switch (run.state) {
         case 'stageIntro':
           w.step(dt, inp);
-          if (run.stateT >= T.stageIntro) {
+          if (run.stateT >= run.introT) {
+            run.seenIntro.add(run.stageIndex);
             if (run.skipWaves) enterBossWarn();
             else startWave(0);
           }
@@ -164,7 +197,10 @@
           break;
         case 'bossWarn':
           w.step(dt, inp);
-          if (run.stateT >= T.bossWarn) startBoss();
+          if (run.stateT >= run.warnT) {
+            run.seenWarn.add(run.stageIndex);
+            startBoss();
+          }
           break;
         case 'boss':
           w.step(dt, inp);
@@ -175,7 +211,7 @@
           if (run.stateT >= T.bossDead) {
             if (run.stageIndex >= CB.STAGES.length - 1) {
               setState('victory');
-              run.pending.push({ type: 'victory' }); // returned by the next step (run -> unlocks/audio)
+              run.pending.push({ type: 'victory', x: CB.W / 2, y: CB.H / 2 }); // returned by the next step (run -> unlocks/audio)
             } else {
               run.offer = CB.Patches.offer(w.rng, run.patches, 3);
               if (run.offer.length) setState('patchPick');
@@ -202,15 +238,11 @@
           break;
       }
       if (COMBAT[run.state] && run.world.player.dead) enterDying(run.state);
+      tally();
       const ev = run.world.events;
-      for (let i = 0; i < ev.length; i++) {
-        const e = ev[i];
-        if (e.type === 'enemyDie' && !e.boss && !e.silent && e.kind) run.squashed[e.kind] = (run.squashed[e.kind] || 0) + 1;
-        else if (e.type === 'bossDie') run.bossesFixed++;
-        out.push(e);
-      }
+      for (let i = 0; i < ev.length; i++) out.push(ev[i]);
       ev.length = 0;
-      run.maxChain = Math.max(run.maxChain, run.world.stats.maxChain || 0);
+      tallied = 0;
       return out;
     };
 
@@ -220,18 +252,23 @@
       if (!id) return false;
       run.patches = CB.Patches.apply(run.patches, id);
       run.history.push(id);
-      run.pending.push({ type: 'patchPick', id });
+      run.pending.push({ type: 'patchPick', id, x: CB.W / 2, y: CB.H / 2 });
       advanceStage();
       return true;
     };
 
     run.retryStage = function () {
       if (run.state !== 'dead' || run.stateT < T.inputLock) return false;
+      const cp = checkpoint;
       run.patches = Object.assign({}, run.stagePatches);
       run.squashed = Object.assign({}, run.stageSquashed); // kills from the failed attempt do not count
       run.attempt++;
       beginStage();
-      if (run.diedInBoss) enterBossWarn(); // boss checkpoint: skip the intro and the waves
+      if (cp === 'boss') enterBossWarn(); // boss checkpoint: skip the intro and the waves
+      else if (cp === 'wave2' && !run.skipWaves) {
+        run.squashed = Object.assign({}, run.wave2Squashed); // wave 1 stays counted
+        startWave(1);
+      }
       return true;
     };
 

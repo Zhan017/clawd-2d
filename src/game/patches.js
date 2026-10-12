@@ -4,7 +4,7 @@
   const DEFS = {
     spread: { name: 'Spread Shot', max: 2, desc: '+2 angled sparks' },
     rapid: { name: 'Rapid Fire', max: 2, desc: 'Fire 25% faster' },
-    pierce: { name: 'Pierce', max: 2, desc: 'Sparks pass through +1 bug' },
+    pierce: { name: 'Pierce', max: 2, desc: 'Sparks pass through +1 bug, +15% damage' },
     heavy: { name: 'Heavy Bolts', max: 2, desc: '+35% damage, bigger sparks' },
     heart: { name: 'Extra Heart', max: 2, desc: '+1 max heart' },
     dash: { name: 'Quick Dash', max: 1, desc: 'Dash recharges in 0.45 s' },
@@ -27,7 +27,7 @@
         fireCooldown: BASE.fireCooldown * Math.pow(0.8, c('rapid')),
         boltSpeed: BASE.boltSpeed,
         boltR: BASE.boltR + c('heavy'),
-        dmg: BASE.dmg + 0.35 * c('heavy'),
+        dmg: BASE.dmg + 0.35 * c('heavy') + 0.15 * c('pierce'),
         spread: c('spread'),
         pierce: c('pierce'),
         bounces: c('ricochet'),

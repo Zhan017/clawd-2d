@@ -309,3 +309,236 @@ test('world: fx particles respect the cap', () => {
   assert.ok(w.fx.length > 0);
   assert.ok(w.fx.length <= CB.CAPS.fx);
 });
+
+// ---- rev 3 (A3-2): player bolt lifetime and walls --------------------------------------------------------------------------
+
+test('projectiles: a bolt expires after 1.5 s in open space (alive at tick 89, dead by tick 92)', () => {
+  const { w } = setup();
+  w.player.stats.boltSpeed = 20; // 30 px in 1.5 s: it can never reach a wall
+  const b = w.firePlayerBolt(160, 90, 0);
+  H.stepN(w, 89, idle);
+  assert.equal(b.dead, false, 'still alive at tick 89');
+  assert.ok(w.pBullets.includes(b));
+  H.stepN(w, 3, idle);
+  assert.equal(b.dead, true, 'dead by tick 92');
+  assert.equal(w.pBullets.includes(b), false, 'and removed');
+  assert.deepEqual(types(w).filter((t) => t === 'bounce'), []);
+});
+
+test('projectiles: a plain bolt dies at the wall without bouncing', () => {
+  const { w } = setup();
+  const b = w.firePlayerBolt(300, 90, 0);
+  assert.equal(b.bounces, 0);
+  H.stepN(w, 3, idle);
+  assert.equal(b.dead, false, 'still inside the arena a few ticks in');
+  H.stepN(w, 5, idle);
+  assert.equal(b.dead, true, 'gone once past x = 312');
+  assert.equal(w.pBullets.length, 0);
+  assert.ok(b.vx > 0, 'never reversed');
+  assert.equal(types(w).includes('bounce'), false);
+  const up = w.firePlayerBolt(160, 24, -Math.PI / 2);
+  H.stepN(w, 3, idle);
+  assert.equal(up.dead, true, 'the top wall too');
+});
+
+test('projectiles: a ricochet bolt survives exactly one bounce and dies at the next wall', () => {
+  const { w } = setup();
+  w.player.stats.bounces = 1;
+  w.player.stats.boltSpeed = 600; // long enough after the bounce to cross the whole arena to the far wall
+  const b = w.firePlayerBolt(300, 90, 0);
+  assert.equal(b.bounces, 1);
+  H.stepN(w, 3, idle);
+  assert.equal(b.dead, false, 'alive after the first wall');
+  assert.ok(b.vx < 0, 'it came back');
+  assert.equal(b.bounces, 0);
+  assert.equal(types(w).filter((t) => t === 'bounce').length, 1);
+  assert.ok(b.life <= 0.6 + 1e-9, 'lifetime refreshed to 0.6 s');
+  H.stepN(w, 40, idle);
+  assert.equal(b.dead, true, 'the second wall ends it');
+  assert.equal(types(w).filter((t) => t === 'bounce').length, 1, 'exactly one bounce ever');
+  assert.equal(w.pBullets.length, 0);
+});
+
+// ---- rev 3 (A3-3): bullet readability (layers, bolt fade, enemy core pulse) ------------------------------------------------
+
+function drawEnv(withComfort) {
+  const CB = H.loadWith(...(withComfort ? ['src/game/unlocks.js', 'src/game/comfort.js'] : []));
+  const calls = [];
+  let alpha = 1;
+  const r = {
+    sprite: (name, x, y) => calls.push({ k: 'sprite', name, x, y, a: alpha }),
+    disc: (x, y, rad, c) => calls.push({ k: 'disc', x, y, rad, c, a: alpha }),
+    rect: (x, y, w, h, c) => calls.push({ k: 'rect', x, y, w, h, c, a: alpha }),
+    alpha: (a, fn) => {
+      const prev = alpha;
+      alpha = prev * a;
+      try {
+        fn();
+      } finally {
+        alpha = prev;
+      }
+    },
+  };
+  return { CB, r, calls };
+}
+const bolts = (n) => Array.from({ length: n }, (_, i) => ({ x: 20 + i, y: 40, r: 2, t: 0.1 }));
+const shots = (n) => Array.from({ length: n }, (_, i) => ({ x: 30 + i * 6, y: 90, r: 2, t: 0 }));
+
+test('projectiles: draw(w, r, t, layer) paints the player bolts, the enemy bullets, or both (player first)', () => {
+  const { CB, r, calls } = drawEnv(false);
+  const w = { pBullets: bolts(2), eBullets: shots(2) };
+  CB.Projectiles.draw(w, r, 0, 'player');
+  assert.deepEqual(calls.map((c) => c.name), ['bolt', 'bolt']);
+  calls.length = 0;
+  CB.Projectiles.draw(w, r, 0, 'enemy');
+  assert.deepEqual(calls.map((c) => c.name), ['ebullet', 'ebullet']);
+  calls.length = 0;
+  CB.Projectiles.draw(w, r, 0);
+  assert.deepEqual(calls.map((c) => c.name), ['bolt', 'bolt', 'ebullet', 'ebullet']);
+  calls.length = 0;
+  CB.Projectiles.draw(w, r, 0, undefined);
+  assert.equal(calls.length, 4);
+  calls.length = 0;
+  CB.Projectiles.draw(w, r); // the old two-argument call still works
+  assert.equal(calls.length, 4);
+});
+
+test('projectiles: up to 14 bolts are drawn at full alpha; beyond that they fade by 0.03 each, down to 0.55', () => {
+  const { CB, r, calls } = drawEnv(false);
+  const alphaFor = (n) => {
+    calls.length = 0;
+    CB.Projectiles.draw({ pBullets: bolts(n), eBullets: [] }, r, 0, 'player');
+    assert.equal(calls.length, n);
+    return calls[0].a;
+  };
+  assert.equal(alphaFor(1), 1);
+  assert.equal(alphaFor(14), 1);
+  assert.ok(Math.abs(alphaFor(15) - 0.97) < 1e-9);
+  assert.ok(Math.abs(alphaFor(20) - 0.82) < 1e-9);
+  assert.ok(Math.abs(alphaFor(30) - 0.55) < 1e-9, 'floor at 0.55 (1 - 16 * 0.03 would be 0.52)');
+  assert.equal(alphaFor(100), 0.55);
+  assert.ok(calls.every((c) => c.a === calls[0].a), 'every bolt at the same alpha');
+});
+
+test('projectiles: the bolt fade also covers rainbow bolts, and never touches enemy bullets', () => {
+  const { CB, r, calls } = drawEnv(true);
+  CB.Unlocks.unlock('rainbow');
+  CB.Projectiles.draw({ pBullets: bolts(24), eBullets: shots(3) }, r, 0);
+  const discs = calls.filter((c) => c.k === 'disc');
+  assert.equal(discs.length, 24);
+  assert.ok(discs.every((c) => Math.abs(c.a - 0.7) < 1e-9), 'rainbow bolts fade too');
+  const enemy = calls.filter((c) => c.k === 'sprite');
+  assert.equal(enemy.length, 3);
+  assert.ok(enemy.every((c) => c.a === 1), 'enemy bullets are never dimmed');
+});
+
+test('projectiles: a full-alpha draw makes no r.alpha call (and a renderer without one still works)', () => {
+  const { CB, calls } = drawEnv(false);
+  const r = { sprite: (name) => calls.push(name), disc() {}, rect() {} };
+  assert.doesNotThrow(() => CB.Projectiles.draw({ pBullets: bolts(14), eBullets: shots(3) }, r, 1.3));
+  assert.equal(calls.length, 17);
+});
+
+test('projectiles: the enemy bullet sprites are a 5 x 5 pair, the bright one ink-outlined with two shades', () => {
+  const { CB } = drawEnv(false);
+  const hot = CB.Art.spriteDef('ebullet_hot');
+  const base = CB.Art.spriteDef('ebullet');
+  assert.ok(hot && base);
+  assert.deepEqual([hot.w, hot.h], [5, 5]);
+  assert.deepEqual([base.w, base.h], [5, 5]);
+  assert.equal(hot.rows[0], '..k..');
+  assert.equal(hot.rows[4], '..k..');
+  assert.equal(hot.rows[2][0], 'k');
+  assert.equal(hot.rows[2][4], 'k');
+  const chars = new Set(hot.rows.join('').replace(/[.k]/g, ''));
+  assert.ok(chars.size >= 2, `at least two fill shades, got ${[...chars]}`);
+});
+
+// The sprite name each of n bullets is drawn with at time t.
+function pulseNames(CB, r, calls, n, t) {
+  calls.length = 0;
+  CB.Projectiles.draw({ pBullets: [], eBullets: shots(n) }, r, t, 'enemy');
+  return calls.map((c) => c.name);
+}
+
+test('projectiles: enemy bullet cores pulse every 0.1 s, each bullet on its own phase', () => {
+  const { CB, r, calls } = drawEnv(true);
+  const names = (t) => pulseNames(CB, r, calls, 8, t);
+  const seen = new Set();
+  for (let i = 0; i < 40; i++) for (const n of names(i * 0.01)) seen.add(n);
+  assert.deepEqual([...seen].sort(), ['ebullet', 'ebullet_hot'], 'both frames show up');
+  // one bullet flips on 0.1 s boundaries and repeats every 0.2 s
+  const first = (t) => names(t)[0];
+  assert.equal(first(0.01), first(0.09), 'steady inside a 0.1 s window');
+  assert.notEqual(first(0.01), first(0.11), 'flips after 0.1 s');
+  assert.equal(first(0.01), first(0.21), 'back after 0.2 s');
+  assert.equal(first(0.25), first(0.45));
+  // the bullets are not all in step at every moment
+  let mixed = 0;
+  for (let i = 0; i < 40; i++) if (new Set(names(i * 0.01)).size === 2) mixed++;
+  assert.ok(mixed >= 20, `bullets are out of phase with each other (${mixed} of 40 moments mixed)`);
+  // but no bullet is dark for long: at any moment a fair share is bright
+  for (let i = 0; i < 40; i++) {
+    const hot = names(i * 0.01).filter((n) => n === 'ebullet_hot').length;
+    assert.ok(hot >= 1 && hot <= 7, `moment ${i}: ${hot} of 8 bright`);
+  }
+});
+
+test('projectiles: enemy bullets are static when calm, without Comfort, or with a Comfort that cannot blink', () => {
+  const calm = drawEnv(true);
+  calm.CB.Comfort.set(true);
+  for (let i = 0; i < 30; i++) {
+    const n = pulseNames(calm.CB, calm.r, calm.calls, 6, i * 0.037);
+    assert.ok(n.every((s) => s === 'ebullet'), `calm t=${i * 0.037}`);
+  }
+  const bare = drawEnv(false);
+  assert.equal(bare.CB.Comfort, undefined);
+  for (let i = 0; i < 30; i++) assert.ok(pulseNames(bare.CB, bare.r, bare.calls, 6, i * 0.037).every((s) => s === 'ebullet'));
+  const partial = drawEnv(false);
+  partial.CB.Comfort = { calm: () => false };
+  for (let i = 0; i < 30; i++) assert.ok(pulseNames(partial.CB, partial.r, partial.calls, 6, i * 0.037).every((s) => s === 'ebullet'));
+  // turning calm off again brings the pulse back
+  const back = drawEnv(true);
+  back.CB.Comfort.set(true);
+  back.CB.Comfort.set(false);
+  const seen = new Set();
+  for (let i = 0; i < 30; i++) for (const n of pulseNames(back.CB, back.r, back.calls, 6, i * 0.037)) seen.add(n);
+  assert.equal(seen.size, 2);
+});
+
+test('projectiles: coloured enemy bullets keep their ink-ringed disc and gain a bright core while pulsing', () => {
+  const { CB, r, calls } = drawEnv(true);
+  const w = { pBullets: [], eBullets: [{ x: 50, y: 60, r: 3, color: '#33AA55', t: 0 }] };
+  const discsAt = (t) => {
+    calls.length = 0;
+    CB.Projectiles.draw(w, r, t, 'enemy');
+    return calls.filter((c) => c.k === 'disc');
+  };
+  let sawCore = false;
+  let sawPlain = false;
+  for (let i = 0; i < 40; i++) {
+    const d = discsAt(i * 0.01);
+    assert.deepEqual(H.plain([d[0].rad, d[0].c, d[1].rad, d[1].c]), [4, CB.Pal.C.ink, 3, '#33AA55'], 'ring and body are always there');
+    if (d.length === 3) {
+      sawCore = true;
+      assert.equal(d[2].c, CB.Pal.C.bulletCore);
+      assert.ok(d[2].rad >= 1 && d[2].rad < 3, 'the core is smaller than the body');
+    } else {
+      sawPlain = true;
+      assert.equal(d.length, 2);
+    }
+  }
+  assert.ok(sawCore && sawPlain);
+  CB.Comfort.set(true);
+  for (let i = 0; i < 40; i++) assert.equal(discsAt(i * 0.01).length, 2, 'calm: no core flash');
+});
+
+test('projectiles: a tiny coloured bullet (r 1) never gets a core that would hide its colour', () => {
+  const { CB, r, calls } = drawEnv(true);
+  const w = { pBullets: [], eBullets: [{ x: 50, y: 60, r: 1, color: '#33AA55', t: 0 }] };
+  for (let i = 0; i < 40; i++) {
+    calls.length = 0;
+    CB.Projectiles.draw(w, r, i * 0.01, 'enemy');
+    assert.equal(calls.filter((c) => c.k === 'disc').length, 2);
+  }
+});

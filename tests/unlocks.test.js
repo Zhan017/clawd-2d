@@ -187,12 +187,12 @@ function playSetup() {
 
 test('play: beating a boss unlocks its hat, raises the toast once, and chimes once', () => {
   const { CB, play, heard } = playSetup();
-  assert.equal(play.toast, null);
+  assert.equal(play.toasts.length, 0);
   let i = 0;
-  while (!play.toast && i++ < 1200) play.update(CB.DT, H.makeInput());
-  assert.ok(play.toast, 'toast raised');
-  assert.equal(play.toast.text, 'NEW HAT: Loop cap');
-  assert.ok(play.toast.t > 2.4 && play.toast.t <= 2.5);
+  while (!play.toasts.length && i++ < 1200) play.update(CB.DT, H.makeInput());
+  assert.equal(play.toasts.length, 1, 'toast raised');
+  assert.equal(play.toasts[0].text, 'NEW HAT: Loop cap');
+  assert.ok(play.toasts[0].t > 2.4 && play.toasts[0].t <= 2.5);
   assert.equal(CB.Unlocks.has('loopcap'), true);
   assert.equal(heard.filter((t) => t === 'unlock').length, 1);
   assert.ok(heard.indexOf('bossDie') >= 0 && heard.indexOf('bossDie') < heard.indexOf('unlock'), 'the unlock chime follows the event that earned it');
@@ -202,28 +202,32 @@ test('play: beating a boss unlocks its hat, raises the toast once, and chimes on
 
 test('play: the toast decays with dt, freezes while paused, and leaving the run clears it', () => {
   const { CB, play } = playSetup();
-  play.toast = { text: 'NEW HAT: Test', t: 1 };
+  play.toasts.push({ text: 'NEW HAT: Test', t: 1 });
   play.update(CB.DT, H.makeInput());
-  assert.ok(Math.abs(play.toast.t - (1 - CB.DT)) < 1e-9);
+  assert.ok(Math.abs(play.toasts[0].t - (1 - CB.DT)) < 1e-9);
   play.update(CB.DT, H.makeInput({ pause: true }));
   assert.equal(play.paused, true);
-  const t0 = play.toast.t;
+  const t0 = play.toasts[0].t;
   for (let k = 0; k < 30; k++) play.update(CB.DT, H.makeInput());
-  assert.equal(play.toast.t, t0, 'frozen while paused');
+  assert.equal(play.toasts[0].t, t0, 'frozen while paused');
   play.update(CB.DT, H.makeInput({ pause: true }));
   for (let k = 0; k < 70; k++) play.update(CB.DT, H.makeInput());
-  assert.equal(play.toast, null, 'expired');
-  play.toast = { text: 'x', t: 1 };
+  assert.equal(play.toasts.length, 0, 'expired');
+  play.toasts.push({ text: 'x', t: 1 });
   play.enter(play.game, { runOpts: { seed: 2 } });
-  assert.equal(play.toast, null, 'a new run starts without the old toast');
+  assert.equal(play.toasts.length, 0, 'a new run starts without the old toast');
 });
 
-test('play: with a stubbed Unlocks (or none) the scene still runs; non-hat unlocks chime without a toast', () => {
+test('play: with a stubbed Unlocks (or none) the scene still runs; modes has its own toast and other non-hat unlocks only chime', () => {
   const { CB, play, heard } = playSetup();
   CB.Unlocks = { onEvents: () => ['modes'] };
   assert.doesNotThrow(() => play.update(CB.DT, H.makeInput()));
-  assert.equal(play.toast, null, 'modes is not a hat');
+  assert.deepEqual(H.plain(play.toasts.map((t) => t.text)), ['UNLOCKED: boss rush + --yolo on the title'], 'modes is not a hat but is announced');
   assert.ok(heard.includes('unlock'));
+  play.toasts.length = 0;
+  CB.Unlocks = { onEvents: () => ['rainbow'] };
+  assert.doesNotThrow(() => play.update(CB.DT, H.makeInput()));
+  assert.equal(play.toasts.length, 0, 'rainbow only chimes');
   CB.HATS = undefined;
   CB.Unlocks = { onEvents: () => ['slime'] };
   assert.doesNotThrow(() => play.update(CB.DT, H.makeInput()));
@@ -245,7 +249,7 @@ test('play.draw: the toast is gold text on a dark band at y 168, fading out; abs
   };
   play.draw(r, 0);
   assert.equal(log.length, 0, 'nothing drawn without a toast');
-  play.toast = { text: 'NEW HAT: Crown', t: 2 };
+  play.toasts.push({ text: 'NEW HAT: Crown', t: 2 });
   play.draw(r, 0);
   const text = log.find((l) => l[0] === 'text');
   assert.deepEqual(H.plain(text), ['text', 'NEW HAT: Crown', CB.W / 2, 168, CB.Pal.C.gold, 'center']);
@@ -254,7 +258,7 @@ test('play.draw: the toast is gold text on a dark band at y 168, fading out; abs
   assert.equal(band[3], CB.W);
   assert.equal(log.filter((l) => l[0] === 'alpha').every((l) => l[1] === 1 || l[1] === 0.85), true, 'fully opaque while fresh');
   log.length = 0;
-  play.toast.t = 0.2;
+  play.toasts[0].t = 0.2;
   play.draw(r, 0);
   assert.ok(log.find((l) => l[0] === 'alpha')[1] < 0.85, 'fading near the end');
 });

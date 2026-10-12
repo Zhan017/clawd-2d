@@ -1,8 +1,20 @@
-// Context meter, the /compact shockwave, graze and the hit chain. Optional module: every caller guards `if (CB.Compact)`.
+// Context meter, the perfect-dash bonus, the /compact shockwave and its keycap prompt. Optional module: every caller guards `if (CB.Compact)`.
 (function (CB) {
   'use strict';
   const M = CB.M;
-  const EPS = 1e-9; // timers and the graze budget are summed from 1/60 steps, so exact comparisons drift
+
+  // 9x9 "E" keycap: ink outline, highlight/face/shade in offwhite, dark glyph.
+  CB.Art.defineSprite('keycap_e', [
+    '.kkkkkkk.',
+    'kwwwwwwwk',
+    'kWdddddWk',
+    'kWdWWWWWk',
+    'kWddddWWk',
+    'kWdWWWWWk',
+    'kWdddddWk',
+    'keeeeeeek',
+    '.kkkkkkk.',
+  ]);
 
   // 1 px midpoint circle, clipped to the screen: the wave grows to 360 px, and r.ring would build a 721 px sprite per radius.
   function pixelRing(r, cx, cy, rad, color) {
@@ -33,8 +45,7 @@
   }
 
   const Compact = {
-    MAX: 60, WAVE_SPEED: 520, WAVE_RMAX: 360, DMG_REGULAR: 3, DMG_BOSS: 5,
-    GRAZE: 0.75, PERFECT: 3, GRAZE_RATE: 4.5, GRAZE_BAND: 6, CHAIN_T: 1.5, CHAIN_CAP: 20, BANNER_T: 1.0,
+    MAX: 45, HIT: 1, INCOME_CAP: 7, PERFECT: 3, WAVE_SPEED: 520, WAVE_RMAX: 360, DMG_REGULAR: 3, DMG_BOSS: 5, BANNER_T: 1.0,
 
     // Adds to the context meter. Reaching full for the first time since the last cast announces it once.
     charge(w, n) {
@@ -47,22 +58,31 @@
       }
     },
 
-    // One applied player-bolt hit: extend the chain, then charge the meter scaled by the new multiplier.
+    // One applied player-bolt hit: worth HIT whatever the damage, paid out of the income bucket (at most INCOME_CAP meter per second).
     onBoltHit(w, applied) {
-      const c = w.chain;
-      c.n++;
-      c.t = Compact.CHAIN_T;
-      c.mul = 1 + Math.min(c.n, Compact.CHAIN_CAP) / Compact.CHAIN_CAP;
-      if (c.n > w.stats.maxChain) w.stats.maxChain = c.n;
-      Compact.charge(w, applied * c.mul);
+      if (!(applied > 0)) return;
+      const take = Math.min(Compact.HIT, w.incomeTokens);
+      w.incomeTokens -= take;
+      Compact.charge(w, take);
     },
 
-    // A real (non-god) heart loss breaks the chain.
-    onHurt(w) {
-      const c = w.chain;
-      c.n = 0;
-      c.t = 0;
-      c.mul = 1;
+    // An enemy bullet overlapped Clawd while a dash protected her (world collide checks that): a perfect dodge, paid outside the bucket.
+    perfect(w, b) {
+      if (b.grazed) return;
+      const p = w.player;
+      b.grazed = true;
+      Compact.charge(w, Compact.PERFECT);
+      w.stats.perfects++;
+      w.emit('graze', { x: b.x, y: b.y, perfect: true });
+      w.emit('text', { x: p.x, y: p.y - 12, text: 'perfect', color: CB.Pal.C.gold });
+    },
+
+    // Tops the meter up and announces it. Every boss fight starts with this (stageRunner startBoss).
+    fill(w) {
+      const c = w.context;
+      c.value = c.max;
+      c.announced = true;
+      w.emit('compactReady', { x: w.player.x, y: w.player.y });
     },
 
     // Casts /compact. Returns false when refused (dead, meter not full, a wave already out, or the boss is down).
@@ -76,20 +96,14 @@
       w.compactWave = { x: p.x, y: p.y, r: 0, hits: [] };
       w.compactBannerT = Compact.BANNER_T;
       w.stats.compacts++;
+      w.seenCompact = true;
+      if (CB.Save && CB.Save.set) CB.Save.set('seenCompact', true);
       w.emit('compact', { x: p.x, y: p.y });
       return true;
     },
 
     update(w, dt) {
-      // Chain: decays 1.5 s after the last applied hit.
-      const ch = w.chain;
-      ch.t -= dt;
-      if (ch.t <= EPS) {
-        ch.t = 0;
-        ch.n = 0;
-        ch.mul = 1;
-      }
-      w.grazeTokens = Math.min(Compact.GRAZE_RATE, w.grazeTokens + Compact.GRAZE_RATE * dt);
+      w.incomeTokens = Math.min(Compact.INCOME_CAP, w.incomeTokens + Compact.INCOME_CAP * dt);
       w.compactBannerT = Math.max(0, w.compactBannerT - dt);
 
       const cw = w.compactWave;
@@ -114,32 +128,6 @@
       if (cw.r >= Compact.WAVE_RMAX) w.compactWave = null;
     },
 
-    // Called by world collide for every live enemy bullet that did not hurt the player. `overlapping` is the hit test.
-    graze(w, b, overlapping) {
-      if (b.grazed) return;
-      const p = w.player;
-      if (overlapping) {
-        // Only dash protection counts (invulnerable but not recovering from a hit): a perfect graze.
-        if (p.invuln > EPS && p.hurtT <= EPS) {
-          b.grazed = true;
-          Compact.charge(w, Compact.PERFECT);
-          w.stats.grazes++;
-          w.emit('graze', { x: b.x, y: b.y, perfect: true });
-          w.emit('text', { x: p.x, y: p.y - 12, text: 'perfect', color: CB.Pal.C.gold });
-        }
-        return;
-      }
-      const reach = b.r + p.r + Compact.GRAZE_BAND;
-      if (M.dist2(b.x, b.y, p.x, p.y) > reach * reach) return;
-      b.grazed = true; // spent even when the budget is dry: a bullet grazes at most once
-      if (w.grazeTokens >= Compact.GRAZE - EPS) {
-        w.grazeTokens = Math.max(0, w.grazeTokens - Compact.GRAZE);
-        Compact.charge(w, Compact.GRAZE);
-        w.stats.grazes++;
-        w.emit('graze', { x: b.x, y: b.y });
-      }
-    },
-
     // Expanding gold/white shockwave, fading as it grows. Called by WorldDraw (Task 19).
     draw(w, r) {
       const cw = w.compactWave;
@@ -149,6 +137,17 @@
         pixelRing(r, Math.round(cw.x), Math.round(cw.y), rad, CB.Pal.C.gold);
         pixelRing(r, Math.round(cw.x), Math.round(cw.y), Math.max(0, rad - 2), CB.Pal.C.white);
       });
+    },
+
+    // The "press E" keycap bobbing above Clawd while a cast is available; WorldDraw calls it right after Player.draw.
+    // Until the first cast ever it also spells out `/compact` in gold beside the key.
+    drawPrompt(w, r, t) {
+      const p = w.player;
+      const c = w.context;
+      if (c.value < c.max || p.dead || w.compactWave || (w.boss && w.boss.defeated)) return;
+      const y = p.y - 17 + Math.round(Math.sin(t * 4));
+      r.sprite('keycap_e', p.x, y);
+      if (!w.seenCompact) r.text('/compact', p.x + 7, y - 3, { color: CB.Pal.C.gold, shadow: CB.Pal.C.ink });
     },
   };
   CB.Compact = Compact;

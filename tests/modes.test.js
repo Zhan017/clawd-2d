@@ -44,7 +44,27 @@ test('modes: YOLO has 3 hearts, 15% faster bullets and 0.7 s hurt invuln; normal
   assert.ok(Math.abs(n.world.fireEnemyBullet(50, 50, 0).vx - 80) < 1e-9);
 });
 
-test('tally: counts non-boss non-silent kills by kind; a retry restores the stage-start tally', () => {
+test('tally: counts non-boss non-silent kills by kind; a wave-1 death retries the stage with the stage-start tally', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1 });
+  until(run, (r) => r.state === 'wave', 300);
+  const killAll = (r) => { for (const e of r.world.enemies) if (!e.dead) r.world.killEnemy(e); };
+  until(run, (r) => r.world.enemies.length > 0, 200);
+  killAll(run);
+  run.step(H.makeInput());
+  assert.equal(run.state, 'wave', 'one of the two wave-1 enemies is still to come');
+  assert.equal(run.squashed.dummy, 1);
+  const p = run.world.player;
+  p.hearts = 1;
+  CB.Player.hurt(p, run.world, null);
+  until(run, (r) => r.state === 'dead', 200);
+  until(run, (r) => r.stateT > 0.7, 60);
+  run.step(H.makeInput({ retry: true }));
+  assert.equal(run.state, 'stageIntro', 'a wave-1 death restarts the stage');
+  assert.equal(run.squashed.dummy || 0, 0);
+});
+
+test('tally: a wave-break death retries at wave 2 and keeps the wave-1 tally (rev 3 checkpoint)', () => {
   const CB = setup();
   const run = CB.createRun({ seed: 1 });
   until(run, (r) => r.state === 'wave', 300);
@@ -56,7 +76,9 @@ test('tally: counts non-boss non-silent kills by kind; a retry restores the stag
   until(run, (r) => r.state === 'dead', 200);
   until(run, (r) => r.stateT > 0.7, 60);
   run.step(H.makeInput({ retry: true }));
-  assert.equal(run.squashed.dummy || 0, 0);
+  assert.equal(run.state, 'wave');
+  assert.equal(run.waveIndex, 1);
+  assert.equal(run.squashed.dummy, 2);
 });
 
 test('modes: victory emits a victory event', () => {

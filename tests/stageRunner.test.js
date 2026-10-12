@@ -342,3 +342,281 @@ test('stageRunner: entering dead leaves no enemies, spawns, bullets or hazards',
   assert.equal(w.pBullets.length, 0);
   assert.equal(w.hazards.length, 0);
 });
+
+// ---- rev 3 (A3-2): wave-2 checkpoint, short retry intros, boss entrance, full-meter boss start ---------------------
+
+// Steps until `pred` holds (at most `max` ticks) and returns every event the steps returned.
+function collect(run, pred, max, each) {
+  const evs = [];
+  for (let i = 0; i < max && !pred(run); i++) {
+    if (each) each(run);
+    for (const e of run.step(idle())) evs.push(e);
+  }
+  return evs;
+}
+const dieAndRetry = (run) => {
+  kill(run);
+  toState(run, 'dead');
+  until(run, (r) => r.stateT >= 0.6, 60);
+  assert.equal(run.retryStage(), true);
+};
+
+test('stageRunner: checkpoint is boss | wave2 | stage by where Clawd died (waveBreak and wave 2 are wave2)', () => {
+  const CB = setup();
+  const at = (reach) => {
+    const run = CB.createRun({ seed: 1 });
+    reach(run);
+    kill(run);
+    assert.equal(run.state, 'dying');
+    return run;
+  };
+  assert.equal(at((run) => assert.equal(run.state, 'stageIntro')).checkpoint, 'stage', 'stageIntro');
+  assert.equal(at((run) => toState(run, 'wave')).checkpoint, 'stage', 'wave 1');
+  const wb = at((run) => toState(run, 'waveBreak'));
+  assert.equal(wb.checkpoint, 'wave2', 'waveBreak');
+  assert.equal(wb.diedInBoss, false);
+  const w2 = at((run) => {
+    toState(run, 'waveBreak');
+    assert.ok(until(run, (r) => r.state === 'wave' && r.waveIndex === 1, 200));
+  });
+  assert.equal(w2.checkpoint, 'wave2', 'wave 2');
+  assert.equal(at((run) => toState(run, 'bossWarn')).checkpoint, 'stage', 'bossWarn');
+  const boss = at((run) => toBoss(run));
+  assert.equal(boss.checkpoint, 'boss');
+  assert.equal(boss.diedInBoss, true, 'diedInBoss stays and mirrors the boss checkpoint');
+});
+
+test('stageRunner: a wave-2 death retries at wave 2 with full hearts, stage-start patches and the wave-1 tally', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1, patches: { spread: 1 } });
+  toState(run, 'waveBreak');
+  assert.deepEqual(H.plain(run.squashed), { dummy: 2 }, 'the last kill of the wave is in the break snapshot');
+  assert.ok(until(run, (r) => r.state === 'wave' && r.waveIndex === 1, 200));
+  run.patches = { spread: 1, rapid: 1 };
+  run.world.killEnemy(run.world.spawnEnemy('dummy', 60, 60)); // an extra kill; the wave's own enemy is still pending, so wave 2 goes on
+  run.step(idle());
+  assert.equal(run.state, 'wave');
+  assert.equal(run.squashed.dummy, 3, 'the wave-2 kill counts while it lasts');
+  const oldWorld = run.world;
+  run.world.player.hearts = 2;
+  kill(run);
+  assert.equal(run.checkpoint, 'wave2');
+  toState(run, 'dead');
+  until(run, (r) => r.stateT >= 0.6, 60);
+  assert.equal(run.retryStage(), true);
+  assert.equal(run.state, 'wave', 'the stage intro and wave 1 are skipped');
+  assert.equal(run.waveIndex, 1);
+  assert.equal(run.stageIndex, 0);
+  assert.notEqual(run.world, oldWorld, 'a fresh world');
+  assert.equal(run.world.player.hearts, 5);
+  assert.deepEqual(H.plain(run.patches), { spread: 1 });
+  assert.deepEqual(H.plain(run.squashed), { dummy: 2 }, 'wave 1 is kept, the failed wave-2 kill is not');
+  assert.equal(run.deaths, 1);
+  assert.equal(run.spawner.total, 1, 'a fresh spawner for wave 2');
+  assert.equal(run.attempt, 1);
+  assert.equal(run.diedInBoss, false);
+  toState(run, 'bossWarn');
+  assert.deepEqual(H.plain(run.squashed), { dummy: 3 });
+});
+
+test('stageRunner: a wave-break death also retries at wave 2; a second death in wave 2 keeps the wave-1 tally', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1 });
+  toState(run, 'waveBreak');
+  dieAndRetry(run);
+  assert.equal(run.state, 'wave');
+  assert.equal(run.waveIndex, 1);
+  assert.deepEqual(H.plain(run.squashed), { dummy: 2 });
+  dieAndRetry(run);
+  assert.equal(run.state, 'wave');
+  assert.equal(run.waveIndex, 1);
+  assert.deepEqual(H.plain(run.squashed), { dummy: 2 });
+  assert.equal(run.deaths, 2);
+  assert.equal(run.attempt, 2);
+});
+
+test('stageRunner: the squashed tally of a retry never aliases the stage-start or wave-break snapshots', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1 });
+  toState(run, 'waveBreak');
+  const snap = run.wave2Squashed;
+  assert.notEqual(snap, run.squashed);
+  assert.deepEqual(H.plain(snap), { dummy: 2 });
+  dieAndRetry(run);
+  assert.notEqual(run.squashed, run.wave2Squashed, 'the live tally is its own object');
+  run.squashed.dummy = 99;
+  assert.deepEqual(H.plain(run.wave2Squashed), { dummy: 2 });
+  assert.deepEqual(H.plain(run.stageSquashed), {});
+});
+
+test('stageRunner: skipWaves and Boss Rush runs never get a wave-2 checkpoint', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1, bossRush: true });
+  toState(run, 'bossWarn');
+  kill(run);
+  assert.equal(run.checkpoint, 'stage');
+  toState(run, 'dead');
+  until(run, (r) => r.stateT >= 0.6, 60);
+  run.retryStage();
+  assert.equal(run.state, 'stageIntro');
+});
+
+test('stageRunner: retry cards are short from the second visit (stage intro 0.9 s, boss warning 1.3 s)', () => {
+  const CB = setup();
+  assert.equal(CB.RUN_T.stageIntroRetry, 0.9);
+  assert.equal(CB.RUN_T.bossWarnRetry, 1.3);
+  const run = CB.createRun({ seed: 1, skipWaves: true });
+  assert.equal(run.introT, 2.0, 'the first visit is the full card');
+  assert.equal(run.seenIntro.has(0), false);
+  near(ticksIn(run, 'stageIntro'), 2.0);
+  assert.equal(run.seenIntro.has(0), true, 'marked when the card completes');
+  assert.equal(run.warnT, 2.5);
+  assert.equal(run.seenWarn.has(0), false);
+  near(ticksIn(run, 'bossWarn'), 2.5);
+  assert.equal(run.seenWarn.has(0), true);
+  assert.equal(run.state, 'boss');
+  run.world.player.invuln = 0;
+  dieAndRetry(run);
+  assert.equal(run.state, 'bossWarn', 'the boss checkpoint skips the intro');
+  assert.equal(run.warnT, 1.3);
+  near(ticksIn(run, 'bossWarn'), 1.3);
+  assert.equal(run.state, 'boss');
+
+  const run2 = CB.createRun({ seed: 1 });
+  near(ticksIn(run2, 'stageIntro'), 2.0);
+  toState(run2, 'wave');
+  dieAndRetry(run2);
+  assert.equal(run2.state, 'stageIntro');
+  assert.equal(run2.introT, 0.9);
+  near(ticksIn(run2, 'stageIntro'), 0.9);
+  assert.equal(run2.state, 'wave');
+});
+
+test('stageRunner: a card that was cut short by a death is still a first visit', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1 });
+  for (let i = 0; i < 30; i++) run.step(idle());
+  assert.equal(run.state, 'stageIntro');
+  kill(run);
+  toState(run, 'dead');
+  until(run, (r) => r.stateT >= 0.6, 60);
+  run.retryStage();
+  assert.equal(run.state, 'stageIntro');
+  assert.equal(run.introT, 2.0, 'the intro never completed, so it is still the full card');
+
+  const warn = CB.createRun({ seed: 1, skipWaves: true });
+  toState(warn, 'bossWarn');
+  for (let i = 0; i < 20; i++) warn.step(idle());
+  kill(warn);
+  toState(warn, 'dead');
+  until(warn, (r) => r.stateT >= 0.6, 60);
+  warn.retryStage();
+  assert.equal(warn.state, 'stageIntro');
+  assert.equal(warn.introT, 0.9, 'this intro had completed');
+  toState(warn, 'bossWarn');
+  assert.equal(warn.warnT, 2.5, 'the warning card never completed');
+});
+
+test('stageRunner: cards are tracked per stage; Boss Rush plays every first visit at full length', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1, bossRush: true });
+  assert.equal(run.skipWaves, true);
+  toBoss(run);
+  run.world.boss.hp = 0;
+  toState(run, 'patchPick');
+  until(run, (r) => r.stateT >= 0.6, 60);
+  assert.equal(run.choosePatch(0), true);
+  assert.equal(run.stageIndex, 1);
+  assert.equal(run.state, 'stageIntro');
+  assert.equal(run.introT, 2.0, 'stage 2 has not been visited');
+  near(ticksIn(run, 'stageIntro'), 2.0);
+  assert.equal(run.state, 'bossWarn');
+  assert.equal(run.warnT, 2.5);
+  assert.deepEqual([...run.seenIntro], [0, 1]);
+});
+
+test('stageRunner: bossEnter is emitted once per boss start (retries included) with the boss position', () => {
+  const CB = setup();
+  const sawByFx = [];
+  const realConsume = CB.Fx.consume;
+  CB.Fx.consume = function (w, from) {
+    for (let i = from; i < w.events.length; i++) sawByFx.push(w.events[i].type);
+    return realConsume.call(this, w, from);
+  };
+  const run = CB.createRun({ seed: 1, skipWaves: true });
+  const evs = collect(run, (r) => r.state === 'boss', 400);
+  assert.equal(run.state, 'boss');
+  assert.equal(evs.filter((e) => e.type === 'bossEnter').length, 0, 'not before the fight starts');
+  const after = collect(run, () => false, 3);
+  const enter = after.filter((e) => e.type === 'bossEnter');
+  assert.equal(enter.length, 1);
+  assert.equal(enter[0].x, run.world.boss.x);
+  assert.equal(enter[0].y, run.world.boss.y);
+  assert.equal(sawByFx.filter((t) => t === 'bossEnter').length, 1, 'Fx sees it too, once');
+  collect(run, () => false, 120);
+  run.world.player.invuln = 0;
+  kill(run);
+  toState(run, 'dead');
+  until(run, (r) => r.stateT >= 0.6, 60);
+  run.retryStage();
+  const again = collect(run, (r) => r.state === 'boss', 400).concat(collect(run, () => false, 3));
+  assert.equal(again.filter((e) => e.type === 'bossEnter').length, 1, 'one more on the retry');
+  assert.equal(sawByFx.filter((t) => t === 'bossEnter').length, 2);
+  for (const e of [...after, ...again]) if (e.type === 'bossEnter') assert.ok(Number.isFinite(e.x) && Number.isFinite(e.y));
+});
+
+test('stageRunner: bossEnter always carries a finite x, y even for a boss with no position', () => {
+  const CB = setup();
+  CB.Bosses.dummyBoss.create = () => ({ id: 'dummyBoss', hp: 10, maxHp: 10, phase: 1, defeated: false, update() {}, draw() {} });
+  const run = CB.createRun({ seed: 1, skipWaves: true });
+  const evs = collect(run, (r) => r.state === 'boss', 400).concat(collect(run, () => false, 2));
+  const enter = evs.find((e) => e.type === 'bossEnter');
+  assert.ok(enter);
+  assert.ok(Number.isFinite(enter.x) && Number.isFinite(enter.y));
+});
+
+test('stageRunner: every boss start, retries included, begins with a full context meter', () => {
+  const CB = H.loadWith('src/game/compact.js', 'src/game/stages.js', 'src/game/waves.js', 'src/game/stageRunner.js');
+  CB.Enemies.dummy = { create: (w, x, y) => CB.makeEnemy('dummy', x, y, { hp: 1, contact: false }), update() {}, draw() {} };
+  CB.Bosses.dummyBoss = { id: 'dummyBoss', create: () => ({ id: 'dummyBoss', x: 160, y: 60, hp: 10, maxHp: 10, phase: 1, defeated: false, update() {}, draw() {} }) };
+  CB.STAGES = [0, 1].map((i) => ({ id: 's' + i, n: i + 1, path: '~/', palette: 'src', boss: 'dummyBoss', waves: [[{ kind: 'dummy', count: 1 }], [{ kind: 'dummy', count: 1 }]] }));
+  const run = CB.createRun({ seed: 1, skipWaves: true });
+  toState(run, 'bossWarn');
+  assert.equal(run.world.context.value, 0, 'empty before the fight');
+  const evs = collect(run, (r) => r.state === 'boss', 400);
+  assert.equal(run.state, 'boss');
+  assert.equal(run.world.context.value, run.world.context.max);
+  assert.equal(run.world.context.announced, true);
+  assert.equal(evs.filter((e) => e.type === 'compactReady').length, 1, 'announced once, on the boss-start tick');
+  run.world.player.invuln = 0;
+  dieAndRetry(run);
+  assert.equal(run.world.context.value, 0, 'a fresh world after the retry');
+  toState(run, 'boss');
+  assert.equal(run.world.context.value, run.world.context.max, 'the retried fight also starts full');
+});
+
+test('stageRunner: every event a run returns, run-level ones included, carries a finite x, y', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1, bossRush: true });
+  const evs = [];
+  const step = (inp) => { for (const e of run.step(inp || idle())) evs.push(e); };
+  for (let i = 0; i < 6000 && run.state !== 'victory'; i++) {
+    if (run.state === 'boss') {
+      run.world.player.invuln = 0;
+      if (run.deaths === 0 && run.stageIndex === 0) {
+        run.world.player.hearts = 1; // one death and a boss retry on the way
+        run.world.hurtPlayer(null);
+        step();
+        continue;
+      }
+      run.world.boss.hp = 0;
+    }
+    if (run.state === 'dead' && run.stateT >= 0.6) run.retryStage();
+    step(run.state === 'patchPick' && run.stateT > 0.7 ? H.makeInput({ choice: 1 }) : idle());
+  }
+  assert.equal(run.state, 'victory');
+  step();
+  const types = new Set(evs.map((e) => e.type));
+  for (const t of ['bossWarn', 'bossEnter', 'bossDie', 'patchPick', 'victory', 'playerDie', 'playerHurt']) assert.ok(types.has(t), `saw ${t}`);
+  for (const e of evs) assert.ok(Number.isFinite(e.x) && Number.isFinite(e.y), `${e.type} has no finite x, y`);
+});

@@ -4,10 +4,49 @@
   const M = CB.M;
   const PC = CB.Pal.C;
   const RAINBOW = [PC.red, PC.ember, PC.yellow, PC.green, PC.cyan, PC.purple]; // ultrathink sparks, 20 colour steps a second
+  const BOLT_FULL = 14; // up to this many player bolts are drawn solid; each one beyond it takes 0.03 off the alpha, down to BOLT_FLOOR
+  const BOLT_STEP = 0.03;
+  const BOLT_FLOOR = 0.55;
+  const PULSE_HZ = 10; // enemy bullet cores flip bright/normal every 0.1 s
+  const PULSE_PHASE = 0.073; // seconds of phase between neighbouring bullets, so they do not flash in step
 
   CB.Art.defineSprite('bolt', ['..z..', '.zwz.', 'zwwwz', '.zwz.', '..z..']);
   CB.Art.defineSprite('bolt_big', ['...z...', '..zwz..', '.zwwwz.', 'zwwwwwz', '.zwwwz.', '..zwz..', '...z...']);
   CB.Art.defineSprite('ebullet', ['..k..', '.kxk.', 'kxXxk', '.kxk.', '..k..']);
+  CB.Art.defineSprite('ebullet_hot', ['..k..', '.kXk.', 'kXwXk', '.kXk.', '..k..']); // the bright half of the core pulse
+
+  // A crowd of bolts fades so the bullets between them stay readable.
+  function drawBolts(w, r) {
+    const n = w.pBullets.length;
+    if (!n) return;
+    const rainbow = !!(CB.Unlocks && CB.Unlocks.has('rainbow'));
+    const paint = () => {
+      for (const b of w.pBullets) {
+        if (rainbow) {
+          r.disc(b.x, b.y, b.r, RAINBOW[Math.floor(b.t * 20) % RAINBOW.length]);
+          r.rect(b.x, b.y, 1, 1, PC.white);
+        } else r.sprite(b.r >= 3 ? 'bolt_big' : 'bolt', b.x, b.y);
+      }
+    };
+    const a = n <= BOLT_FULL ? 1 : Math.max(BOLT_FLOOR, 1 - (n - BOLT_FULL) * BOLT_STEP);
+    if (a < 1) r.alpha(a, paint);
+    else paint();
+  }
+
+  // Enemy bullet cores pulse, each bullet on its own phase. Static in calm mode, and when Comfort is missing or cannot blink.
+  function drawBullets(w, r, t) {
+    const C = CB.Comfort;
+    const pulse = !!(C && C.calm && C.blink && !C.calm());
+    for (let i = 0; i < w.eBullets.length; i++) {
+      const b = w.eBullets[i];
+      const hot = pulse && C.blink(t + i * PULSE_PHASE, PULSE_HZ);
+      if (b.color) {
+        r.disc(b.x, b.y, b.r + 1, PC.ink);
+        r.disc(b.x, b.y, b.r, b.color);
+        if (hot && b.r >= 2) r.disc(b.x, b.y, Math.round(b.r) - 1, PC.bulletCore);
+      } else r.sprite(hot ? 'ebullet_hot' : 'ebullet', b.x, b.y);
+    }
+  }
 
   CB.Projectiles = {
     update(w, dt) {
@@ -71,20 +110,11 @@
       }
     },
 
-    draw(w, r) {
-      const rainbow = !!(CB.Unlocks && CB.Unlocks.has('rainbow'));
-      for (const b of w.pBullets) {
-        if (rainbow) {
-          r.disc(b.x, b.y, b.r, RAINBOW[Math.floor(b.t * 20) % RAINBOW.length]);
-          r.rect(b.x, b.y, 1, 1, PC.white);
-        } else r.sprite(b.r >= 3 ? 'bolt_big' : 'bolt', b.x, b.y);
-      }
-      for (const b of w.eBullets) {
-        if (b.color) {
-          r.disc(b.x, b.y, b.r + 1, CB.Pal.C.ink);
-          r.disc(b.x, b.y, b.r, b.color);
-        } else r.sprite('ebullet', b.x, b.y);
-      }
+    // `layer` is 'player' (bolts), 'enemy' (bullets) or undefined (both, player first). WorldDraw draws the enemy layer last so shots stay on top.
+    draw(w, r, t, layer) {
+      const now = t || 0;
+      if (layer !== 'enemy') drawBolts(w, r);
+      if (layer !== 'player') drawBullets(w, r, now);
     },
   };
 })(window.CB);

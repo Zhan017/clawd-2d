@@ -166,6 +166,9 @@
         deaths: run.deaths,
         time: run.time,
         history: run.history.slice(),
+        bossRush: !!run.bossRush,
+        yolo: !!run.yolo,
+        squashed: Object.assign({}, run.stageSquashed), // the tally as the stage began: the resume restarts at that stage's intro
       };
     } catch (e) {
       return {};
@@ -179,6 +182,9 @@
   }
 
   // ---- boot ------------------------------------------------------------------------------------
+  // The terminal line typed by the scene-change wipe, by 'from>to'. The first scene of a session (title, a debug start, a hot resume) has no wipe.
+  const WIPES = { 'title>play': '$ ./clawd --fight', 'play>title': '$ exit' };
+
   function boot(hotData) {
     installCrashHandlers();
     canvas = document.getElementById('game');
@@ -191,10 +197,13 @@
     const game = {
       r, input, debug, scene: null, sceneName: '', t: 0,
       go(name, data) {
+        const from = game.scene ? game.sceneName : '';
         game.scene = CB.Scenes[name];
         game.sceneName = name;
         input.releaseAll();
         game.scene.enter(game, data || {});
+        const label = from ? WIPES[from + '>' + name] : null;
+        if (label && CB.Transition && CB.Transition.start) CB.Transition.start(label);
       },
     };
     CB.game = game;
@@ -222,7 +231,10 @@
 
     if (debug.active) game.go('play', { runOpts: debug });
     else if (hotData && hotData.stageIndex != null) {
-      game.go('play', { runOpts: { startStage: hotData.stageIndex, patches: hotData.patches || {} }, restore: hotData });
+      game.go('play', {
+        runOpts: { startStage: hotData.stageIndex, patches: hotData.patches || {}, bossRush: !!hotData.bossRush, yolo: !!hotData.yolo },
+        restore: hotData,
+      });
     } else game.go('title');
 
     loop = CB.createLoop({
@@ -231,10 +243,12 @@
         const inp = input.sample();
         if (inp.mute) CB.Audio.toggleMute();
         game.scene.update(dt, inp);
+        if (CB.Transition && CB.Transition.update) CB.Transition.update(dt);
       },
       render() {
         r.resize();
         game.scene.draw(r, game.t);
+        if (CB.Transition && CB.Transition.draw) CB.Transition.draw(r, game.t);
         r.present();
       },
       onError: crash,

@@ -328,3 +328,70 @@ test('hot data: resumes at the saved stage; hot.ready(start) defers the boot', (
   env3.runMain();
   assert.equal(env3.CB.game.sceneName, 'title', 'an empty snapshot means a normal start');
 });
+
+// ---- rev 3 (A3-2): the snapshot carries the modes and the stage-start tally ---------------------------------------------
+
+test('hot snapshot: carries bossRush, yolo and the stage-start tally (a copy), so a resume keeps the run intact', () => {
+  let snap = null;
+  const env = bootEnv({ claude: { hot: { snapshot: (fn) => { snap = fn; }, data: {} } } });
+  env.runMain();
+  const { CB } = env;
+  CB.game.go('play', { runOpts: { startStage: 1, bossRush: true, yolo: true } });
+  const run = CB.Scenes.play.run;
+  run.stageSquashed = { syntaxError: 3, nullPointer: 1 };
+  run.squashed = { syntaxError: 7, nullPointer: 1, offByOne: 2 };
+  run.state = 'wave';
+  let s = H.plain(snap());
+  assert.equal(s.bossRush, true);
+  assert.equal(s.yolo, true);
+  assert.deepEqual(s.squashed, { syntaxError: 3, nullPointer: 1 }, 'the tally as the stage began, not the live one');
+  const raw = snap();
+  raw.squashed.syntaxError = 99;
+  assert.equal(run.stageSquashed.syntaxError, 3, 'the snapshot holds a copy');
+  CB.game.go('play', { runOpts: { startStage: 0 } });
+  CB.Scenes.play.run.state = 'boss';
+  s = H.plain(snap());
+  assert.equal(s.bossRush, false);
+  assert.equal(s.yolo, false);
+  assert.deepEqual(s.squashed, {});
+});
+
+test('hot data: a resume keeps Boss Rush, YOLO and the tally; the live and stage-start tallies are separate objects', () => {
+  const data = { stageIndex: 2, patches: { rapid: 1 }, deaths: 1, time: 50, history: ['rapid'], bossRush: true, yolo: true, squashed: { syntaxError: 5, offByOne: 1 } };
+  const env = bootEnv({ claude: { hot: { data } } });
+  env.runMain();
+  const run = env.CB.Scenes.play.run;
+  assert.equal(env.CB.game.sceneName, 'play');
+  assert.equal(run.bossRush, true);
+  assert.equal(run.skipWaves, true);
+  assert.equal(run.yolo, true);
+  assert.equal(run.world.mode.yolo, true);
+  assert.deepEqual(H.plain(run.squashed), { syntaxError: 5, offByOne: 1 });
+  assert.deepEqual(H.plain(run.stageSquashed), { syntaxError: 5, offByOne: 1 });
+  assert.notEqual(run.squashed, run.stageSquashed);
+  assert.notEqual(run.squashed, data.squashed, 'the host data is not mutated by play');
+  const plain = bootEnv({ claude: { hot: { data: { stageIndex: 1 } } } });
+  plain.runMain();
+  const r2 = plain.CB.Scenes.play.run;
+  assert.equal(r2.bossRush, false);
+  assert.equal(r2.yolo, false);
+  assert.deepEqual(H.plain(r2.squashed), {});
+});
+
+test('hot snapshot round trip: what one session saves, the next boots into', () => {
+  let snap = null;
+  const a = bootEnv({ claude: { hot: { snapshot: (fn) => { snap = fn; }, data: {} } } });
+  a.runMain();
+  a.CB.game.go('play', { runOpts: { startStage: 3, patches: { dash: 1 }, yolo: true, bossRush: true }, restore: { deaths: 2, time: 77, history: ['dash'], squashed: { memoryLeak: 4 } } });
+  a.CB.Scenes.play.run.state = 'bossWarn';
+  const saved = JSON.parse(JSON.stringify(H.plain(snap())));
+  const b = bootEnv({ claude: { hot: { data: saved } } });
+  b.runMain();
+  const run = b.CB.Scenes.play.run;
+  assert.equal(run.stageIndex, 3);
+  assert.equal(run.yolo, true);
+  assert.equal(run.bossRush, true);
+  assert.equal(run.deaths, 2);
+  assert.deepEqual(H.plain(run.patches), { dash: 1 });
+  assert.deepEqual(H.plain(run.squashed), { memoryLeak: 4 });
+});

@@ -18,6 +18,9 @@ test('patches: each patch effect matches the spec table', () => {
   assert.ok(Math.abs(S({ rapid: 1 }).fireCooldown - 0.16) < 1e-9);
   assert.ok(Math.abs(S({ rapid: 2 }).fireCooldown - 0.128) < 1e-9);
   assert.equal(S({ pierce: 2 }).pierce, 2);
+  assert.ok(Math.abs(S({ pierce: 1 }).dmg - 1.15) < 1e-9);
+  assert.ok(Math.abs(S({ pierce: 2 }).dmg - 1.3) < 1e-9);
+  assert.ok(Math.abs(S({ pierce: 2, heavy: 2 }).dmg - 2.0) < 1e-9, 'pierce and heavy damage add');
   assert.ok(Math.abs(S({ heavy: 1 }).dmg - 1.35) < 1e-9);
   assert.ok(Math.abs(S({ heavy: 2 }).dmg - 1.7) < 1e-9);
   assert.equal(S({ heavy: 1 }).boltR, 3);
@@ -32,6 +35,7 @@ test('patches: descriptions match the retuned numbers', () => {
   const CB = H.load(FILES);
   assert.equal(CB.Patches.DEFS.rapid.desc, 'Fire 25% faster');
   assert.equal(CB.Patches.DEFS.heavy.desc, '+35% damage, bigger sparks');
+  assert.equal(CB.Patches.DEFS.pierce.desc, 'Sparks pass through +1 bug, +15% damage');
 });
 
 test('patches: apply increments and refuses past max', () => {

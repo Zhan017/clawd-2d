@@ -49,19 +49,57 @@ test('impact: hits, clinks and small kills add nothing; an r=6 kill adds 0.04', 
   assert.ok(w.shake > 1);
 });
 
-test('impact: stacked boss events never exceed hitstop 0.25 or shake 6', () => {
+test('impact: stacked boss events never exceed hitstop 0.25 or shake 6, and keep the strongest of each', () => {
   const { CB, w } = setup();
   const evs = [];
   for (let i = 0; i < 10; i++) evs.push({ type: 'bossPhase', x: 1, y: 1, phase: 2 }, { type: 'bossDie', x: 1, y: 1 });
   emitInStep(CB, w, evs);
   assert.ok(w.hitstop <= 0.25 + 1e-9);
+  assert.ok(Math.abs(w.hitstop - 0.14) < 1e-9, `hitstop ${w.hitstop}`); // the largest single entry (bossPhase), never a sum
   assert.ok(w.shake <= 6);
+  assert.ok(w.shake > 5, `shake ${w.shake}`); // bossDie's 6, less one tick of decay
+  assert.ok(w.flash > 0.2, `flash ${w.flash}`); // bossDie's 0.25, less one tick of decay
+  assert.equal(w.flashColor, '#FFFFFF');
 });
 
-test('impact: god mode never freezes', () => {
+test('impact: god mode never freezes but still shakes and flashes', () => {
   const { CB, w } = setup(true);
   emitInStep(CB, w, [{ type: 'bossPhase', x: 1, y: 1, phase: 2 }]);
   assert.equal(w.hitstop, 0);
+  assert.ok(w.shake > 0, `shake ${w.shake}`);
+  assert.ok(w.flash > 0.05, `flash ${w.flash}`);
+});
+
+test('impact: a weaker flash never recolours a stronger one (bossDie then compact in one step stays white)', () => {
+  const { CB, w } = setup();
+  emitInStep(CB, w, [{ type: 'bossDie', x: 1, y: 1 }, { type: 'compact', x: 1, y: 1 }]);
+  assert.equal(w.flashColor, '#FFFFFF');
+  assert.ok(w.flash > 0.2, `flash ${w.flash}`);
+});
+
+test('impact: a stronger or equal flash takes over the colour; a weaker one keeps the old colour', () => {
+  const { CB, w } = setup();
+  emitInStep(CB, w, [{ type: 'compact', x: 1, y: 1 }]); // gold, 0.12
+  assert.equal(w.flashColor, '#FFD27A');
+  CB.Fx.impact(w, 'bossDie'); // white, 0.25: stronger
+  assert.equal(w.flashColor, '#FFFFFF');
+  const f = w.flash;
+  CB.Fx.impact(w, 'compact'); // gold, 0.12: weaker
+  assert.equal(w.flashColor, '#FFFFFF');
+  assert.equal(w.flash, f);
+  w.flash = 0.12;
+  w.flashColor = '#FFFFFF';
+  CB.Fx.impact(w, 'compact'); // equal: the newer one wins
+  assert.equal(w.flashColor, '#FFD27A');
+});
+
+test('impact: with no flash left, any flash sets its colour', () => {
+  const { CB, w } = setup();
+  w.flash = 0;
+  w.flashColor = null;
+  CB.Fx.impact(w, 'bossPhase');
+  assert.equal(w.flashColor, '#FFFFFF');
+  assert.ok(Math.abs(w.flash - 0.1) < 1e-9);
 });
 
 test('heartbeat: at 1 heart beats at ~0.3 s then every 0.85 s; "context low" fires once', () => {

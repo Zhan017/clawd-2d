@@ -89,13 +89,9 @@
     }
     if (p.dead) return;
     for (const eb of w.eBullets) {
-      if (eb.dead) continue;
-      const hit = M.circleHit(eb.x, eb.y, eb.r, p.x, p.y, p.r);
-      if (hit && CB.Player.hurt(p, w, eb)) {
-        eb.dead = true;
-        continue;
-      }
-      if (CB.Compact) CB.Compact.graze(w, eb, hit);
+      if (eb.dead || !M.circleHit(eb.x, eb.y, eb.r, p.x, p.y, p.r)) continue;
+      if (CB.Player.hurt(p, w, eb)) eb.dead = true;
+      else if (p.dashInvulnT > EPS && !eb.grazed && CB.Compact && CB.Compact.perfect) CB.Compact.perfect(w, eb); // only a dash counts, not hurt, spawn or /compact invuln
     }
     for (const e of w.enemies) {
       if (e.dead || !e.visible || !e.contact || e.noContactT > EPS) continue;
@@ -145,13 +141,18 @@
       hitstop: 0,
       dashBuffered: false,
       flash: 0,
-      // Context meter / chain / graze (Task 7B). Values mirror CB.Compact (MAX 60, GRAZE_RATE 4.5); compact.js is optional.
-      context: { value: 0, max: 60, announced: false },
-      chain: { n: 0, t: 0, mul: 1 },
-      grazeTokens: 4.5,
+      flashColor: null, // colour of the current flash (Fx.impact keeps the strongest one's)
+      glitchT: 0,
+      fxQueue: [],
+      quipT: 0,
+      // Context meter (Task 7B, rev 3). Values mirror CB.Compact (MAX 45, INCOME_CAP 7); compact.js is optional.
+      context: { value: 0, max: 45, announced: false },
+      incomeTokens: 7,
       compactWave: null,
       compactBannerT: 0,
-      stats: { wouldHits: 0, shots: 0, kills: 0, damageDealt: 0, maxChain: 0, compacts: 0, grazes: 0 },
+      compactBuffered: false, // an E pressed during hitstop, cast on the first live tick
+      seenCompact: !!(CB.Save && CB.Save.get && CB.Save.get('seenCompact', false)), // the "/compact" hint shows until the first cast ever
+      stats: { wouldHits: 0, shots: 0, kills: 0, damageDealt: 0, compacts: 0, perfects: 0 },
     };
 
     w.emit = function (type, data) {
@@ -323,6 +324,7 @@
       if (w.hitstop > 0) {
         w.hitstop = Math.max(0, w.hitstop - dt);
         if (input && input.dash) w.dashBuffered = true;
+        if (input && input.compact) w.compactBuffered = true;
         return;
       }
       const evStart = w.events.length;
