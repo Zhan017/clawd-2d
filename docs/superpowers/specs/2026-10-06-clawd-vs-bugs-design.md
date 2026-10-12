@@ -1,7 +1,7 @@
 # Clawd vs Bugs — Design Spec
 
 Date: 2026-10-06
-Status: approved in conversation, pending written-spec review
+Status: approved by the user 2026-10-12. Rev 2 (2026-10-12) folds in plan refinement round 1: bug fixes, balance retune and feature additions (§2.11). Wherever rev 2 changed a number, the new number is the one written here.
 
 ## 1. Intent
 
@@ -27,7 +27,8 @@ Status: approved in conversation, pending written-spec review
 | Platform | Desktop only: WASD + mouse |
 | Structure | Boss rush with short gauntlets |
 | Delivery | claude.ai Artifact; plain JS, no build step to run the game |
-| Scoring | None (no leaderboard, no personal best) |
+| Scoring | None (no leaderboard, no personal best). The victory screen shows a tally, not a score. |
+| Rev 2 autonomy | The user granted Claude approval to pick the most logical options and asked for "more cool features" (2026-10-12) |
 | Tech | Plain Canvas 2D, no libraries, classic scripts |
 
 **Assumptions the user accepted**
@@ -38,7 +39,7 @@ Status: approved in conversation, pending written-spec review
 - Clawd is drawn from scratch and labelled a fan game.
 - Synth sound effects with a mute key.
 
-**Non-goals:** touch/gamepad controls, music tracks, scoring/leaderboards, save/resume across sessions, difficulty settings, localisation.
+**Non-goals:** touch/gamepad controls, scoring/leaderboards, save/resume of a run across sessions, a difficulty settings menu, localisation. (Rev 2 adds a procedural chiptune and an unlockable YOLO mode, which is a joke flag run and not a settings menu. Only cosmetic unlock flags persist.)
 
 ## 2. Gameplay
 
@@ -67,7 +68,13 @@ Status: approved in conversation, pending written-spec review
   - Any enemy contact or enemy bullet costs 1 heart.
   - Then 1.0 s of hurt-invulnerability, with the sprite blinking at 10 Hz.
   - At 0 hearts, Clawd dies.
-- **Other keys:** Esc or P pauses. M mutes; the mute setting persists in `localStorage` inside try/catch.
+- **Other keys:**
+  - Esc or P pauses.
+  - M mutes everything and N toggles only the music; both settings persist in `localStorage` inside try/catch.
+  - E casts /compact (§2.11).
+- **Fire cadence:** cooldown timers keep their sub-tick remainder, so the base 0.2 s cooldown really gives 5 shots/s.
+- **Bolt hit test:** a new bolt does not move on its spawn tick, so an enemy hugging Clawd can still be hit (no point-blank dead zone).
+- **Dash buffer:** a dash pressed during a hit-stop freeze is buffered and fires on the first live tick.
 
 ### 2.3 Enemy bullets
 - Default speed 80 px/s, r = 2.
@@ -75,21 +82,21 @@ Status: approved in conversation, pending written-spec review
 - Contact with the player costs 1 heart.
 
 ### 2.4 Gauntlet bugs (regular enemies)
-All enemies deal 1 heart on contact. They spawn at the arena edge, at least 60 px from the player, after a **0.6 s spawn telegraph**: a blinking `!` marker where they will appear. During the telegraph they cannot hurt or be hurt.
+All enemies deal 1 heart on contact. They spawn at the arena edge, at least 60 px from the player, after a **0.6 s spawn telegraph**: a blinking `!` marker where they will appear. During the telegraph they cannot hurt or be hurt. After appearing, a regular enemy has a further **0.3 s contact grace**: it can be shot but cannot hurt. Overlapping regular enemies are gently pushed apart, so a pile can't collapse onto one point.
 
 | Kind | Look | HP | r | Speed | Behaviour |
 |---|---|---|---|---|---|
 | `syntaxError` | red beetle with a squiggly underline | 3 | 5 | 38 | Walks toward the player with a slight sine wobble. |
 | `nullPointer` | pale grey moth, semi-transparent | 2 | 5 | 30 (wander) | Loops through four steps (see below). |
-| `raceCondition` | pair of yellow ants | 2 each | 4 | 75 | Always spawned as a pair. Moves toward the player plus a perpendicular zigzag (amplitude 40 px/s sideways, 2 Hz). The two ants are in opposite zigzag phase. |
+| `raceCondition` | pair of yellow ants | 1 each | 4 | 62 | Always spawned as a pair. Moves toward the player plus a perpendicular zigzag (amplitude 40 px/s sideways, 2 Hz). The two ants are in opposite zigzag phase. |
 | `memoryLeak` | green blob | 4 (big) / 2 (small) | 6 / 4 | 30 / 45 | Chases the player. A big blob splits into 2 small blobs on death; small blobs do not split. |
-| `offByOne` | purple spider | 4 | 5 | 50 | Keeps 70–110 px from the player, strafing. Every 2.2 s fires a 3-bullet burst (0.12 s apart). It aims "one tile ahead": at the player position plus 8 px in the player's current move direction. |
+| `offByOne` | purple spider | 4 | 5 | 50 | Keeps 70–110 px from the player, strafing. Every 2.8 s (first volley 3.0 s after spawn) fires a 2-bullet burst at 70 px/s, 0.12 s apart. It aims "one tile ahead": at the player position plus 8 px in the player's current move direction. |
 
 **`nullPointer` loop**
 1. Wanders visibly for 1.5 s.
 2. Vanishes for 0.8 s. While vanished it is untargetable, has no collision and is not drawn.
-3. Reappears 30–40 px from the player in a random direction, with a 0.4 s fade-in telegraph. It is still untargetable during the fade-in.
-4. Lunges at 140 px/s for 0.35 s toward the player's position at lunge start.
+3. Reappears 50–60 px from the player in a random direction, with a 0.5 s fade-in telegraph. A dashed ring is drawn at full alpha from the start of the telegraph. It is still untargetable during the fade-in.
+4. Lunges at 130 px/s for 0.4 s toward the player's position at lunge start.
 
 ### 2.5 Stages
 
@@ -102,7 +109,7 @@ All enemies deal 1 heart on contact. They spawn at the arena edge, at least 60 p
 
 **Spawning within a wave**
 - Spawns are staggered: one spawn group every 0.7 s, in the listed order, round-robin by kind.
-- No more than 8 regular enemies are alive at once; the remaining spawns wait.
+- No more than 6 regular enemies are alive or pending at once; the remaining spawns wait. Memory Leak splits count toward the cap.
 - A wave ends when everything is spawned and every enemy is dead.
 
 **Arena floor**
@@ -112,39 +119,46 @@ All enemies deal 1 heart on contact. They spawn at the arena edge, at least 60 p
 - `prod/` slowly pulses its wall tint red.
 
 ### 2.6 Bosses
-Every boss has a **2.5 s warning card** before the fight: flashing `⚠ WARNING`, the boss name and a one-line code joke. During the fight, the boss HP bar sits at the top centre with the name above it. Boss phases trigger at HP fractions. Phases never revert, and every HP-threshold event (phase change, Memory Leak split) fires at most once per fight, even if HP regenerates back above the threshold. At each phase change:
+Every boss has a **2.5 s warning card** before the fight: flashing `⚠ WARNING`, the boss name and a one-line code joke. During the fight, the boss HP bar sits at the top centre with the name above it. Boss phases trigger when HP drops strictly below a fraction of max HP (`hp < f × maxHp`). Phases never revert, and every HP-threshold event (phase change, Memory Leak split) fires at most once per fight, even if HP regenerates back above the threshold. At each phase change:
 - emit `bossPhase`;
 - shake the screen;
 - give the boss 0.5 s of invulnerability with a flash.
 
+**Rules for every boss (rev 2):**
+- **Safe spawn:** the player gets 1.0 s of invulnerability when a boss spawns, and boss parts have no contact damage for their first 0.5 s. Each boss spawns at the farthest of its candidate points from the player.
+- **Periodic attacks:** their timers start full, so the first attack comes one full period after the fight or phase starts.
+- **Controller-moved parts:** they publish `vx`/`vy` every tick.
+- **After defeat:** a defeated controller is never updated or drawn again.
+- **Data:** each boss module carries a code `diff` and a `file` for the finale, a `portrait` sprite, and `deathPoints()` for chained explosions (§2.11).
+
 **Boss 1 — The Infinite Loop** (`infiniteLoop`)
 - **Tagline:** `while (true) { bite(); }`
-- **Body:** a centipede of 1 head (r = 8) and 12 segments (r = 6). Segments follow the head's path with 10 px spacing.
+- **Body:** a centipede of 1 head (r = 8) and 8 segments (r = 5). Segments follow the head's recorded path with 10 px of path length between them, so they always lie on the circle.
 - **Damage rules:**
   - Only the head takes damage (HP 150).
   - Segments are `solid`: they absorb player bolts (Pierce passes through them).
   - Head and segments deal contact damage.
 - **Phase 1 (100–50%):**
   - The head travels a circle centred on the arena centre: radius 60, angular speed 0.9 rad/s.
-  - Every 3 s it fires a 3-bullet fan (±15°) at the player.
+  - Every 3 s it fires a 3-bullet fan (±15°) at the player. Every fan is telegraphed by a 0.35 s white flash on the head.
 - **Phase 2 (<50%):**
   - The radius eases to 40 over 2 s and the angular speed rises to 1.4 rad/s.
   - Every 4–6 s it reverses direction, after a 0.5 s white flash telegraph on the head.
   - Every 5 s the tail segment detaches and becomes a `syntaxError` (stops at 4 segments left).
-  - Every 2.5 s it fires a 5-bullet fan (±30°).
+  - Every 2.5 s it fires a 5-bullet fan (±30°), with the same 0.35 s telegraph.
 
 **Boss 2 — Memory Leak** (`memoryLeakBoss`)
 - **Tagline:** `heap: 99% used`
 - **Body:**
-  - A giant green slime with HP 240.
+  - A giant green slime with HP 340.
   - Its `size` runs from 1.0 to 2.0, and its radius is `14 × size`.
   - It drifts toward the player at `18 / size` px/s.
 - **Leak mechanic:**
-  - If it has taken no damage for 1.5 s, it regenerates 4 HP/s (never above max) and grows 0.04 size/s (cap 2.0).
+  - If it has taken no damage for 1.5 s, it regenerates 4 HP/s (never above max) and grows 0.10 size/s (cap 2.0).
   - Each point of damage shrinks size by 0.004 (floor 1.0).
 - **Lob attack:**
   - Every 2.5 s it lobs 2 blobs (3 in phase 2).
-  - Each blob flies in an arc for 1.0 s to a point within 24 px of the player.
+  - Each blob flies in an arc for 1.0 s to a point within 24 px of the player (uniform over the disc).
   - The arc is purely visual: a parabola over the straight line, with its shadow drawn on the ground.
   - On landing a blob becomes a **puddle hazard** (r = 12, lasts 6 s). The player moves at 50% speed while inside it. Puddles do no damage.
 - **Splits:** at 66% and 33% HP it spawns 3 `memoryLeak` (big) enemies around itself.
@@ -152,7 +166,7 @@ Every boss has a **2.5 s warning card** before the fight: flashing `⚠ WARNING`
 
 **Boss 3 — Merge Conflict** (`mergeConflict`)
 - **Tagline:** `<<<<<<< HEAD`
-- **Body:** twin beetles, **HEAD** (blue) and **incoming** (green), r = 8, HP 90 each. The combined bar shows the sum (max 180).
+- **Body:** twin beetles, **HEAD** (blue) and **incoming** (green), r = 8, HP 130 each. The combined bar shows the sum (max 260). Each twin also has its own 24×3 HP bar with a notch at 17 HP (the "finish zone").
 - **Movement:**
   - HEAD moves toward random waypoints in the arena at 50 px/s.
   - Incoming always sits at the point reflection of HEAD through the arena centre.
@@ -160,17 +174,19 @@ Every boss has a **2.5 s warning card** before the fight: flashing `⚠ WARNING`
 - **Attacks** run on a 2.8 s cycle, alternating between the two:
   - **Crossfire:** both fire aimed 3-bullet bursts (0.12 s apart).
   - **Conflict line:** a thin line between the twins flashes for 0.8 s (telegraph). Then it becomes a beam for 0.5 s that damages the player if the player's circle touches the segment.
-- **Phase 2** (combined HP < 50%) adds a **charge** to the rotation: both dash at the player at 160 px/s for 0.5 s after a 0.4 s shake telegraph.
+- **Phase 2** (combined HP < 130) adds a **charge** to the rotation: both dash at the player at 160 px/s for 0.5 s after a 0.4 s shake telegraph. A twin within 40 px of the player skips the charge.
 - **Resolve rule:**
-  - When one twin dies, a banner "RESOLVE THE CONFLICT" appears with a 4.0 s countdown.
+  - Whenever exactly one twin is dead, a banner "FINISH <side>!" appears with a 6.0 s countdown.
   - If the other twin dies before the countdown ends, the boss is defeated.
-  - Otherwise the dead twin revives at 45 HP (50% of its max) beside the arena centre, with a "merge failed" text pop.
+  - Otherwise the dead twin revives at 20 HP at the farthest of 3 candidate points from the player (at least 70 px), with no contact for 0.5 s and a "merge failed" text pop.
+  - The puzzle the bars teach: wear both twins down evenly, then finish them inside the window.
 
 **Boss 4 — The Heisenbug** (`heisenbug`)
 - **Tagline:** `works on my machine`
-- **Body:** a glitchy moth with chromatic-offset rendering, r = 9, HP 260.
+- **Body:** a glitchy moth with chromatic-offset rendering, r = 9, HP 240.
 - **Observation rule (all phases):**
-  - If the aim point stays within 14 px of the real Heisenbug continuously for 1.0 s, it is "observed".
+  - If the aim point stays within 14 px of the real Heisenbug continuously for 2.0 s, it is "observed".
+  - **Tell:** an observer ring of 16 dots around the real body fills as the timer runs, the chromatic offset grows from 1 to 3 px, and it flashes white at 1.0 s.
   - It immediately teleports (a "!?" pop and glitch burst) to a random arena point at least 80 px from the player.
   - The observe timer resets on teleport or when the aim leaves the 14 px radius.
 - **Phase 1 (100–60%):**
@@ -182,6 +198,7 @@ Every boss has a **2.5 s warning card** before the fight: flashing `⚠ WARNING`
   - Decoys are removed and replaced on every blink.
   - Only the real one flickers white when hit.
 - **Phase 3 (<25%):**
+  - Decoys are removed and no longer appear.
   - It blinks every 5 s.
   - It fires a rotating 2-arm spiral: 8 bullets/s, rotating 2.2 rad/s.
   - Every 8 s it summons 2 `nullPointer`s, with at most 4 alive.
@@ -198,9 +215,9 @@ After bosses 1–3 the player is offered **3 distinct patches** not yet at max s
 | Id | Name | Max | Effect per stack |
 |---|---|---|---|
 | `spread` | Spread Shot | 2 | +2 extra bolts at ±12° × stack (stack 2: ±12° and ±24°) |
-| `rapid` | Rapid Fire | 2 | fire cooldown × 0.7 |
+| `rapid` | Rapid Fire | 2 | fire cooldown × 0.8 |
 | `pierce` | Pierce | 2 | bolts pass through +1 enemy/solid |
-| `heavy` | Heavy Bolts | 2 | damage +0.5, bolt r +1 |
+| `heavy` | Heavy Bolts | 2 | damage +0.35, bolt r +1 |
 | `heart` | Extra Heart | 2 | +1 max heart and heal to full |
 | `dash` | Quick Dash | 1 | dash cooldown 0.8 → 0.45 s |
 | `ricochet` | Ricochet | 1 | bolts bounce off arena walls once, with lifetime refreshed to 0.6 s |
@@ -216,8 +233,17 @@ dead → retry: restart current stage at stageIntro (full hearts, patches as the
      → quit: title
 ```
 
-- Hearts refill to max at every `stageIntro`.
-- Player bullets, enemies, hazards and enemy bullets are cleared on every state change into `stageIntro`, `bossWarn` or `dead`.
+- **Hearts:**
+  - Refill to max at every `stageIntro`.
+  - +2 (capped) at `waveBreak`.
+  - Refill to max when `bossWarn` starts.
+- **Boss checkpoint:** a death during `boss` (or while dying from a boss fight) retries at `bossWarn`, skipping the waves, with full hearts and the patches from stage start. A death during the waves retries at `stageIntro`.
+- **Same-tick death:** if the player dies in the same tick as the boss, or while `dying`, the boss defeat wins. The player is revived with at least 1 heart.
+- **Modes (rev 2):**
+  - **Boss Rush:** all four stages with `skipWaves`.
+  - **YOLO:** 3 base hearts, enemy bullets ×1.15 faster, 0.7 s hurt-invulnerability.
+  - Both are unlocked after a first victory and chosen on the title screen.
+- Player bullets, enemies, hazards and enemy bullets are cleared on every state change into `stageIntro`, `bossWarn` or `dead`. Boss-death explosions are created on the defeat tick.
 - Run time accumulates during every play state except pause and patchPick. Deaths are counted.
 
 ### 2.9 Screens
@@ -247,6 +273,63 @@ dead → retry: restart current stage at stageIntro (full hearts, patches as the
 - Sounds are driven by world events: `shoot`, `hit`, `enemyDie`, `playerHurt`, `dash`, `bossPhase`, `bossDie`, `patchPick`, `uiSelect`, `spawn`.
 - Mute toggles master gain.
 
+### 2.11 Feature additions (rev 2)
+
+**Context meter and /compact** (key E):
+- **Charging:** player-bolt damage charges a `context` meter (max 60), scaled by the chain multiplier.
+- **Cast:** at full, E casts /compact:
+  - the meter empties and Clawd gets 0.5 s of invulnerability;
+  - a shockwave expands at 520 px/s to radius 360;
+  - it deals 3 damage to regular enemies and 5 to boss parts, hitting each enemy once;
+  - it deletes enemy bullets and puddles inside its radius;
+  - a banner reads "Compacting conversation...".
+- **Never:** /compact can't be cast while dead or after a boss defeat, and its own damage never recharges the meter.
+
+**Graze and chain:**
+- **Graze:** an enemy bullet passing within 6 px of Clawd's hitbox without hitting him grazes, once per bullet, for +0.75 meter. Grazing is capped at 4.5 meter/s.
+- **Perfect dash:** dashing through a bullet is a "perfect" graze for +3 meter.
+- **Chain:** each applied bolt hit within 1.5 s of the last increments the chain. The multiplier is ×(1 + min(n, 20)/20) on hit charge. A real heart loss resets it. At 20+ the HUD shows a rainbow "ULTRATHINK" tag (cosmetic).
+
+**Elite "P0" bugs:**
+- **Count:** each wave flags some queued syntaxError / memoryLeak (big) / offByOne spawns as elite. Per stage, [wave 1, wave 2] counts are [0, 1], [0, 1], [1, 1] and [1, 2].
+- **Stats:** elites have ×1.75 HP (rounded up), move 20% faster, wear a gold ring and a "P0" tag.
+- **Drop:** on a normal death an elite drops a hotfix pickup. It heals 1 heart, or +15 meter at full health, lasts 8 s (blinking in the last 2 s) and the field is capped at 6.
+
+**Impact and feel:**
+- **Impact table:** one table of hit-stop, shake and flash values covers big kills, boss-part kills, boss phase changes, boss death and /compact. Ordinary hits have none. Hit-stop is capped at 0.25 s and never applies in god mode.
+- **Low health:** at 1 heart a heartbeat thumps every 0.85 s, the last heart throbs, the screen edge pulses red, and a "context low" pop appears once.
+- **Bug life cycle:** spawn pop-in (squash and stretch), hit squash, a white pop plus coloured debris on death, and floor stains that fade over 6 s (at most 40).
+
+**Clawd:**
+- **Quips:**
+  - **Stage intros:** each prints a terminal-style prompt and a "✻ Thinking..." line.
+  - **Kills:** pop tool-call-style text such as `Fix(;)`, `await` and `free()`.
+  - **Boss phase changes and game over:** each gets a one-liner.
+  - Every quip is generic software humour and never implies Anthropic affiliation.
+- **Body language:**
+  - a muzzle flash and a 2 px recoil (draw-only);
+  - squash and stretch on dash and hurt;
+  - expressions: hurt, determined while dashing, worried at 1 heart, squint while idle and happy on victory;
+  - a "✻ Thinking..." bubble after 2.5 s idle.
+
+**Bosses:**
+- **Finale:** on a boss's death, 12 chained blasts walk its `deathPoints()`, then a white ring and confetti. The BUG FIXED card shows the boss's 2–4 line code `diff` with `-`/`+` lines and "✓ 1 test passing".
+- **Stagecraft:**
+  - the warning card slides in a glitching boss portrait;
+  - the arena gets a per-boss overlay: the loop orbit ring, a heap gauge, a HEAD/incoming split and glitch bands;
+  - a phase change sweeps a scan bar;
+  - the Heisenbug observer ring makes its rule learnable.
+
+**Meta and replay:**
+- **Victory tally:** bugs squashed by type (with icons) and a `git log` of the four fixes. It is a receipt, not a score.
+- **Music:** a procedural chiptune loop per stage (bass, arpeggio, hats). It intensifies in boss fights and phase 2, is silent during the boss warning and stops on death. N toggles it and M mutes all.
+- **Unlocks (cosmetic):**
+  - beating each boss earns a hat (loopcap, slime, branch, shades), victory earns a crown, a YOLO victory earns a `sudo` hat, and secrets earn a halo;
+  - the hat is picked on the title screen with A/D;
+  - typing the Konami code on the title unlocks the halo, and typing `ultrathink` unlocks rainbow sparks;
+  - unlocks are stored in `localStorage` and degrade to in-memory storage when it is blocked.
+- **Modes:** Boss Rush and YOLO (see §2.8), offered on the title screen after a first victory.
+
 ## 3. Architecture
 
 ### 3.1 Files
@@ -266,7 +349,12 @@ src/art/render.js          320×180 buffer, integer scaling + letterbox, screen 
 src/game/world.js          entity containers, spawn/damage/collision/event queue, caps, hazards
 src/game/player.js         player create/update (move, aim, fire, dash, hurt), draw
 src/game/projectiles.js    bullet create/update for both teams (pierce, ricochet, lifetime)
-src/game/fx.js             particles, afterimages, text pops, explosions (driven by events)
+src/game/fx.js             particles, afterimages, text pops, explosions, impact table, decals, finale (driven by events)
+src/game/compact.js        context meter, /compact shockwave, graze and chain (rev 2)
+src/game/pickups.js        elite "P0" marking and hotfix pickups (rev 2)
+src/game/quips.js          Clawd's quip text data (rev 2)
+src/game/unlocks.js        Save (localStorage-safe), hats, secret codes (rev 2)
+src/core/music.js          procedural chiptune with a lookahead scheduler (rev 2)
 src/game/patches.js        patch definitions, apply(), offer(rng, owned)
 src/game/stages.js         stage data (waves, boss id, palette, path label, jokes)
 src/game/waves.js          wave spawner (telegraphs, stagger, alive cap)
@@ -398,7 +486,7 @@ controller = { id, hp, maxHp, phase, defeated, update(world, dt), draw(r, t) /*o
 - **`localStorage`** access (mute only) is wrapped in try/catch.
 
 ## 5. Testing
-- All tests use `node --test tests/` with no npm dependencies.
+- All tests run with `node --test`, auto-discovering `tests/*.test.js`, with no npm dependencies. (On Node 21+, the directory form `node --test tests/` doesn't recurse.)
 - `tests/harness.js` parses `index.html` for `<script src>` order and runs each file in one `vm` context. The context has `window = globalThis` and a stub `document`/canvas whose 2D context methods are no-ops.
 
 **Unit suites**
@@ -442,4 +530,4 @@ controller = { id, hp, maxHp, phase, defeated, update(world, dt), draw(r, t) /*o
   - `node tools/build-artifact.mjs` reads `index.html`, strips the doctype/html/head/body wrapper (the Artifact skeleton adds its own) and inlines every `<script src>` in order. It writes `dist/clawd-vs-bugs.html` with `<title>Clawd vs Bugs</title>` and a `<style>` block first.
   - That file is published as a private claude.ai Artifact (icon: `game`) with a one-sentence description.
   - The page commits to a single dark look: `color-scheme: dark` on `:root`, an explicit body background, and every colour set explicitly.
-- **Git:** local repo only. The spec, plan and code are committed. Nothing is pushed.
+- **Git:** commits are pushed to github.com/Zhan017/clawd-2d (the user authorized this on 2026-10-12).

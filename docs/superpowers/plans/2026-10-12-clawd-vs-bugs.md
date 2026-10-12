@@ -30,7 +30,7 @@
   - Crash `KERNEL PANIC`.
 - **Artifact page:** `<title>Clawd vs Bugs</title>`, single dark look (`color-scheme: dark` on `:root`), explicit body background, no horizontal page scroll at 400 px width.
 - **Parallel-agent safety:** implementers never run `git` and never edit files outside their task's **Files** list. The orchestrator commits.
-- **Tests:** `node --test tests/` from the repo root. Test files are named `tests/<area>.test.js`.
+- **Tests:** `node --test` from the repo root (auto-discovers `tests/*.test.js`; on Node 21+ the directory form `node --test tests/` does not recurse). Test files are named `tests/<area>.test.js`. One file: `node --test tests/<area>.test.js`.
 
 ## Review Focus
 
@@ -54,7 +54,7 @@ These are the failure modes the spec implies but no happy-path test covers, most
 | File | Responsibility | Task |
 |---|---|---|
 | `index.html` | Local page: canvas, small-screen notice, ordered script tags | 1 |
-| `package.json`, `.gitignore` | `npm test` → `node --test tests/`; ignore `dist/` | 1 |
+| `package.json`, `.gitignore` | `npm test` → `node --test`; ignore `dist/` | 1 |
 | `src/core/ns.js` | `window.CB` namespace, constants | 1 |
 | `src/core/math.js` | `CB.M` vector/collision helpers | 1 |
 | `src/core/rng.js` | `CB.createRng(seed)` mulberry32 | 1 |
@@ -69,8 +69,13 @@ These are the failure modes the spec implies but no happy-path test covers, most
 | `src/game/world.js` | `CB.createWorld`, `CB.makeEnemy`, spawning, damage, collisions, hazards, events | 3 |
 | `src/game/projectiles.js` | `CB.Projectiles.update/draw`, bolt sprites | 3 |
 | `src/game/patches.js` | `CB.Patches` defs, `computeStats`, `offer`, `apply` | 3 |
-| `src/game/player.js` | `CB.Player` create/update/fire/hurt/draw, Clawd sprites | 3 |
-| `src/game/fx.js` | `CB.Fx.consume/update/draw` particles, text pops, explosions | 3 |
+| `src/game/player.js` | `CB.Player` create/update/fire/hurt/draw, Clawd sprites | 3 (+7A/7B/7D, 21A look and hats) |
+| `src/game/fx.js` | `CB.Fx.consume/update/draw` particles, text pops, explosions | 3 (+7A impact, 21B juice) |
+| `src/game/compact.js` | `CB.Compact` context meter, /compact wave, graze, chain | 7B |
+| `src/game/pickups.js` | `CB.Pickups` elites and hotfix pickups | 7C |
+| `src/game/quips.js` | `CB.Quips` text pools | 21C |
+| `src/game/unlocks.js` | `CB.Save`, `CB.HATS`, `CB.Unlocks`, `CB.Secrets` | 7E |
+| `src/core/music.js` | `CB.Music` procedural chiptune | 9B |
 | `src/game/enemies/*.js` | 5 gauntlet bugs | 10–14 |
 | `src/game/bosses/*.js` | 4 bosses | 15–18 |
 | `src/game/stages.js` | `CB.STAGES` data | 4 |
@@ -93,18 +98,32 @@ These are the failure modes the spec implies but no happy-path test covers, most
 | `tests/smoke.test.js`, `tests/build.test.js` | whole-game load/draw smoke, build output checks | 23 |
 | `README.md`, `.claude/launch.json` | docs, preview server | 24 |
 
-## Execution Order
+## Execution Order (rev 2)
 
 | Phase | Tasks | Mode | Gate before the next phase |
 |---|---|---|---|
-| A: Foundation | 1 → 2 → 3 → 4 → 5 → 6 → 7 | sequential (each depends on the previous) | `node --test tests/` green; orchestrator reads every file |
-| B: Content | 8, 9, 10–14, 15–18, 19, 20, 21 | parallel, one agent per task; agents touch only their **Files** | each task's own test green; reviewer pass per task; then the full suite green |
+| A: Foundation | 1 → 2 → 3 → 4 → 5 → 6 → 7 | sequential; the code is given in full (rev 2, verified by a dry run) | `node --test` green; orchestrator reads every file |
+| A2: Mechanics | 7A → 7B → 7C → 7D → 7E | sequential (they share `world.js`, `player.js`, `stageRunner.js`, `play.js`) | `node --test` green; orchestrator reads every diff |
+| B: Content | 8, 9, 9B, 10–14, 15–18, 19, 20, 21, 21A, 21B, 21C | parallel, one agent per task; agents touch only their **Files** | each task's own test green; reviewer pass per task; then the full suite green |
 | C: Integration | 22 → 23 → 24 | sequential | sim green + balance log; build test green; browser QA clean |
 
-Phase B dependency notes:
-- Boss tasks load real enemy files at test time: 15 needs 10 (`syntaxError`), 16 needs 13 (`memoryLeak`) and 18 needs 11 (`nullPointer`).
-- Run the enemy tasks first, or let the boss agent wait for that file. They never write each other's files.
-- Tasks 19–21 stub `CB.Font` when `src/art/font.js` isn't present, so they don't wait on Task 8.
+**Phase B dependencies** (start a task only after the listed tasks finish):
+
+| Task | Waits for | Why |
+|---|---|---|
+| 15 | 10 | loads `syntaxError` at test time |
+| 16 | 13 | loads `memoryLeak` at test time |
+| 18 | 11 | loads `nullPointer` at test time |
+| 21C | 8 | glyph lint needs the font |
+| 9B | 9 | uses `CB.Audio.context()` and `output()` |
+
+All other Phase B tasks are independent, and agents never write each other's files. Tasks 19–21, 21A and 21B stub `CB.Font` when `src/art/font.js` is absent, and they guard every call into `CB.Quips`, `CB.Unlocks`, `CB.Compact`, `CB.Pickups`, `CB.Music`, `CB.Fx.pose` and `CB.Fx.drawUnder`.
+
+**Phase B file ownership:**
+- `player.js` belongs to Task 21A.
+- `fx.js` belongs to Task 21B.
+- `projectiles.js` and `play.js` are frozen after Phase A2.
+- If a Phase B task needs a change in a file it doesn't own, it reports that instead of editing.
 
 ## Cross-Task Contracts (read by every implementer)
 
@@ -118,7 +137,9 @@ Phase B dependency notes:
   pause: bool, mute: bool,           // Esc|P, M pressed this tick (edge)
   confirm: bool,                     // left click or Enter pressed this tick (edge)
   choice: 0|1|2|3,                   // digit 1..3 pressed this tick (edge), else 0
-  retry: bool, quit: bool }          // R, Q pressed this tick (edge)
+  retry: bool, quit: bool,           // R, Q pressed this tick (edge)
+  compact: bool, music: bool,        // E (cast /compact), N (toggle music) pressed this tick (edge)
+  keys: string[] }                   // KeyboardEvent.code of every key pressed this tick (secrets), max 16
 ```
 
 ### Enemy entity (plain object, created only via `CB.makeEnemy`)
@@ -132,6 +153,9 @@ Phase B dependency notes:
   hitFlash, invuln, dead,
   boss,         // part of a boss (excluded from wave counts)
   regular,      // counts toward a wave's alive total (default true; boss parts false)
+  noContactT,   // > 0: no contact damage yet (spawn grace 0.3 s regulars, 0.5 s boss parts)
+  elite, timeScale,   // P0 elites: x1.75 hp, update dt x timeScale (Task 7C)
+  z,            // optional draw order key (default y); boss heads draw on top
   facing, alpha, data }
 ```
 
@@ -152,24 +176,26 @@ CB.Enemies[kind] = {
 ### Boss module and controller
 
 ```js
-CB.Bosses[id] = { id, name, tagline, commitMsg, create(world) → controller };
+CB.Bosses[id] = { id, name, tagline, commitMsg, file, diff: [2–4 lines], portrait: spriteName, deathPoints(controller) → [{x, y}], create(world) → controller };
 controller = { id, x, y, hp, maxHp, phase, defeated, update(world, dt), draw(r, t) };
 ```
 
 - `create` spawns the boss's part entities with `boss: true, regular: false`.
 - The controller keeps `hp`, `x`, `y`, `phase` current every tick and sets `defeated = true` exactly once.
 - `draw` renders overlays only (beams, banners, telegraph lines). Parts draw themselves through their enemy module.
+- Once `defeated` is true, `world.step` never calls `update` and `WorldDraw` never calls `draw` again. The update that sets `defeated` also sets `hp = 0`, kills remaining parts silently and clears overlay state.
+- See the Tasks 15–18 rules for thresholds (strict `<`, latched), safe spawn, periodic timers starting full, and `vx`/`vy` publishing.
 
 ### World events (`world.emit(type, data)`)
 
-Every event has `type`, and `x`, `y` where meaningful.
+Every event has `type` and **must** carry finite `x`, `y`, except `patchPick`, `uiSelect`, `victory` and `unlock`, which come from the run or scenes and are audio-only.
 
 | Event | Fields | Meaning |
 |---|---|---|
 | `shoot` | `angle` | the player fired |
 | `hit` | `kind`, `boss` | an enemy took damage |
 | `clink` | | a bolt was absorbed by a solid or invulnerable target |
-| `enemyDie` | `kind`, `r`, `boss` | an enemy died |
+| `enemyDie` | `kind`, `r`, `boss`, `silent` | an enemy died; `silent` kills (boss clear-out, sheds, blob landings) get no burst, decal or sound |
 | `spawn` | `kind` | a spawn telegraph resolved |
 | `playerHurt` | `god` | the player lost a heart (or would have, in god mode) |
 | `playerDie` | | the player died |
@@ -183,6 +209,14 @@ Every event has `type`, and `x`, `y` where meaningful.
 | `lob` / `splat` | | Memory Leak blob thrown / landed |
 | `text` | `text`, `color` | generic floating text |
 | `revive` | | a Merge Conflict twin revived |
+| `heartbeat` | | the player is at 1 heart (every 0.85 s) |
+| `compact` / `compactReady` | | /compact cast / meter just filled |
+| `graze` | `perfect` | an enemy bullet grazed (perfect = dashed through) |
+| `pickup` | `heal` | a hotfix was collected |
+| `blast` | | one chained finale explosion (emitted from `Fx.update`) |
+| `bossWarn` | | the boss warning card started (run → audio) |
+| `victory` | | the run entered `victory` (run → unlocks/audio) |
+| `unlock` | | something was unlocked (scene → audio) |
 | `patchPick` | `id` | emitted by the run, not the world |
 | `uiSelect` | | emitted by scenes |
 
@@ -202,16 +236,24 @@ Every event has `type`, and `x`, `y` where meaningful.
 | `r.measure(str, scale)` | text width in px |
 | `r.alpha(a, fn)` | run `fn` with `globalAlpha = a` |
 | `r.shaken(dx, dy, fn)` | run `fn` with a translation |
+| `r.squash(ax, ay, sx, sy, fn)` | run `fn` scaled by (sx, sy) around anchor (ax, ay) |
 
 All coordinates are rounded to whole pixels inside the renderer.
 
-### Run (Task 12)
+### Run (Task 4; rev 2 extras from Task 7D)
 
 `CB.createRun({ seed = 1, startStage = 0, patches = {}, god = false, skipWaves = false })` returns:
 - `run.step(input)`, which returns this tick's events array.
 - `run.state`, one of `stageIntro | wave | waveBreak | bossWarn | boss | bossDead | patchPick | dying | dead | victory`.
 - State fields: `run.stateT`, `run.stageIndex`, `run.waveIndex`, `run.world`, `run.patches` (counts object, e.g. `{spread: 1}`), `run.history` (patch ids in pick order), `run.offer` (3 ids during `patchPick`), `run.time`, `run.deaths`, `run.spawner`.
 - `run.choosePatch(i)` → bool.
+- Rev 2 fields: `run.bossRush`, `run.yolo`, `run.squashed` (kills by kind), `run.bossesFixed`, `run.maxChain`, and `run.diedInBoss` (true when the last death was in a boss fight, so retry resumes at `bossWarn`).
+
+### World additions (rev 2)
+- `w.hurtPlayer(src)`, `w.mode = { yolo }`, `w.flashColor`, `w.glitchT`, `w.fxQueue` (Task 21B).
+- `w.context { value, max, announced }`, `w.chain { n, t, mul }`, `w.grazeTokens`, `w.compactWave`, `w.compactBannerT` (Task 7B).
+- `w.pickups` (Task 7C).
+- `w.stats` gains `maxChain`, `compacts`, `grazes`.
 - `run.retryStage()` → bool.
 
 ---
@@ -3442,6 +3484,727 @@ test('play: restore data carries deaths, time and history', () => {
 
 ---
 
+## Phase A2 — Feature mechanics (sequential, after Task 7; rev 2)
+
+These tasks add the rev-2 mechanics (spec §2.11) to the Phase A files. They run one at a time, in order, because several of them edit the same files (`world.js`, `player.js`, `stageRunner.js`, `play.js`). Each task:
+- lists the exact hook points it adds;
+- keeps every existing test green (`node --test`);
+- guards every call into an optional module with `if (CB.X)`, so the Phase A test lists (`GAME_BASE`) keep working without the new files.
+
+### Task 7A: Impact table, heartbeat, flash colour
+
+**Files:**
+- Modify: `src/game/fx.js`, `src/game/player.js`.
+- Test: `tests/impact.test.js`.
+
+**Spec:**
+- **`fx.js`** defines `CB.IMPACT`:
+
+  ```js
+  CB.IMPACT = {
+    bigKill:     { stop: 0.04, shake: 1.5 },
+    bossPartDie: { stop: 0.10, shake: 3 },
+    bossPhase:   { stop: 0.14, shake: 4, flash: 0.10, color: '#FFFFFF' },
+    bossDie:     { stop: 0.08, shake: 6, flash: 0.25, color: '#FFFFFF' },
+    beam:        { shake: 2 },
+    compact:     { stop: 0.06, shake: 3, flash: 0.12, color: '#FFD27A' },
+  };
+  ```
+
+  It also defines `CB.Fx.impact(w, key)`:
+  - if `!w.god && k.stop`: `w.hitstop = Math.min(0.25, Math.max(w.hitstop, k.stop))`;
+  - if `k.shake`: `w.addShake(k.shake)`;
+  - if `k.flash`: `w.flash = Math.max(w.flash, k.flash); w.flashColor = k.color`.
+- **`Fx.consume` calls `impact`** for:
+
+  | Event | Impact key |
+  |---|---|
+  | `enemyDie` with `!silent && !boss && r >= 6` | `bigKill` |
+  | `enemyDie` with `boss && !silent` | `bossPartDie` |
+  | `bossPhase` | `bossPhase` |
+  | `bossDie` | `bossDie` |
+  | `beam` | `beam` |
+  | `compact` | `compact` |
+
+  Ordinary `hit`, `clink` and small kills get no impact.
+- **`Player.hurt`** sets `w.flashColor = CB.Pal.C.hurt` next to `w.flash = 0.15`.
+- **Heartbeat** (`player.js`): new player fields `beatT: 0.3, beatPulse: 0, lowWarned: false`. In `update`, right after the `if (p.dead) return;` guard:
+
+  ```js
+  if (p.hearts === 1 && !w.god) {
+    if (!p.lowWarned) {
+      p.lowWarned = true;
+      w.emit('text', { x: p.x, y: p.y - 12, text: 'context low', color: CB.Pal.C.hurt });
+    }
+    p.beatT -= dt;
+    if (p.beatT <= EPS) {
+      p.beatT += 0.85;
+      p.beatPulse = 1;
+      w.emit('heartbeat', { x: p.x, y: p.y });
+    }
+  } else {
+    p.beatT = 0.3;
+    p.lowWarned = false;
+  }
+  p.beatPulse = Math.max(0, p.beatPulse - dt * 5);
+  ```
+
+```js
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const H = require('./harness');
+
+function setup(god) {
+  const CB = H.loadWith();
+  const w = CB.createWorld({ seed: 5, god: !!god });
+  return { CB, w };
+}
+// Events must be emitted inside world.step to reach Fx.consume.
+function emitInStep(CB, w, evs) {
+  CB.Enemies.emitter = {
+    create: (w2, x, y) => CB.makeEnemy('emitter', x, y, { hp: 1, contact: false, targetable: false, regular: false }),
+    update(e, w2) {
+      if (!e.data.done) {
+        e.data.done = true;
+        for (const ev of evs) w2.emit(ev.type, ev);
+      }
+    },
+    draw() {},
+  };
+  w.spawnEnemy('emitter', 20, 30);
+  H.stepN(w, 1, H.makeInput());
+}
+
+test('impact: bossPhase sets hitstop 0.14, a white flash and shake; time freezes then resumes', () => {
+  const { CB, w } = setup();
+  emitInStep(CB, w, [{ type: 'bossPhase', x: 100, y: 60, phase: 2 }]);
+  assert.ok(Math.abs(w.hitstop - 0.14) < 1e-9, `hitstop ${w.hitstop}`);
+  assert.ok(w.flash > 0.05);
+  assert.equal(w.flashColor, '#FFFFFF');
+  assert.ok(w.shake > 0);
+  const t0 = w.time;
+  H.stepN(w, 8, H.makeInput());
+  assert.equal(w.time, t0);
+  H.stepN(w, 3, H.makeInput());
+  assert.ok(w.time > t0);
+});
+
+test('impact: hits, clinks and small kills add nothing; an r=6 kill adds 0.04', () => {
+  let { CB, w } = setup();
+  emitInStep(CB, w, [{ type: 'hit', x: 1, y: 1 }, { type: 'clink', x: 1, y: 1 }, { type: 'enemyDie', x: 1, y: 1, kind: 'k', r: 5, boss: false }]);
+  assert.equal(w.hitstop, 0);
+  assert.equal(w.shake, 0);
+  ({ CB, w } = setup());
+  emitInStep(CB, w, [{ type: 'enemyDie', x: 1, y: 1, kind: 'k', r: 6, boss: false }]);
+  assert.ok(Math.abs(w.hitstop - 0.04) < 1e-9);
+  assert.ok(w.shake > 1);
+});
+
+test('impact: stacked boss events never exceed hitstop 0.25 or shake 6', () => {
+  const { CB, w } = setup();
+  const evs = [];
+  for (let i = 0; i < 10; i++) evs.push({ type: 'bossPhase', x: 1, y: 1, phase: 2 }, { type: 'bossDie', x: 1, y: 1 });
+  emitInStep(CB, w, evs);
+  assert.ok(w.hitstop <= 0.25 + 1e-9);
+  assert.ok(w.shake <= 6);
+});
+
+test('impact: god mode never freezes', () => {
+  const { CB, w } = setup(true);
+  emitInStep(CB, w, [{ type: 'bossPhase', x: 1, y: 1, phase: 2 }]);
+  assert.equal(w.hitstop, 0);
+});
+
+test('heartbeat: at 1 heart beats at ~0.3 s then every 0.85 s; "context low" fires once', () => {
+  const { w } = setup();
+  w.player.hearts = 1;
+  H.stepN(w, 180, H.makeInput());
+  const beats = w.events.filter((e) => e.type === 'heartbeat').length;
+  assert.ok(beats >= 3 && beats <= 4, `beats ${beats}`);
+  assert.equal(w.events.filter((e) => e.type === 'text' && e.text === 'context low').length, 1);
+});
+
+test('heartbeat: none at 2 hearts; re-arms after healing', () => {
+  const { w } = setup();
+  w.player.hearts = 2;
+  H.stepN(w, 120, H.makeInput());
+  assert.equal(w.events.filter((e) => e.type === 'heartbeat').length, 0);
+  w.player.hearts = 1;
+  H.stepN(w, 30, H.makeInput());
+  w.player.hearts = 2;
+  H.stepN(w, 5, H.makeInput());
+  w.player.hearts = 1;
+  H.stepN(w, 5, H.makeInput());
+  assert.equal(w.events.filter((e) => e.type === 'text' && e.text === 'context low').length, 2);
+});
+
+test('impact: hurt sets a red flash colour', () => {
+  const { CB, w } = setup();
+  CB.Player.hurt(w.player, w, null);
+  assert.equal(w.flashColor, CB.Pal.C.hurt);
+});
+```
+
+- [ ] Write the test, see it fail, implement, see it pass, then run the full `node --test`.
+
+### Task 7B: Context meter, /compact, graze and chain
+
+**Files:**
+- Create: `src/game/compact.js`.
+- Modify: `src/game/world.js`, `src/game/player.js`, `src/game/stageRunner.js` (`NEUTRAL` gets `compact: false, music: false, keys: []`).
+- Test: `tests/compact.test.js`.
+
+**Spec.** `compact.js` defines:
+
+```js
+CB.Compact = {
+  MAX: 60, WAVE_SPEED: 520, WAVE_RMAX: 360, DMG_REGULAR: 3, DMG_BOSS: 5,
+  GRAZE: 0.75, PERFECT: 3, GRAZE_RATE: 4.5, GRAZE_BAND: 6, CHAIN_T: 1.5, CHAIN_CAP: 20, BANNER_T: 1.0,
+  charge(w, n), onBoltHit(w, applied), onHurt(w), cast(w) → bool, update(w, dt), graze(w, b, overlapping), draw(w, r, t),
+};
+```
+
+**World state** (added in `createWorld`):
+- `context: { value: 0, max: 60, announced: false }`
+- `chain: { n: 0, t: 0, mul: 1 }`
+- `grazeTokens: 4.5`, `compactWave: null`, `compactBannerT: 0`
+- `stats` gains `maxChain: 0, compacts: 0, grazes: 0`.
+
+**`charge(w, n)`:**
+- `value = min(max, value + n)`.
+- On reaching max when `!announced`: set `announced = true` and emit `compactReady` with the player's x, y.
+
+**`onBoltHit(w, applied)`:**
+- `n++`, `t = CHAIN_T`, `mul = 1 + min(n, 20)/20`, and `stats.maxChain = max(…)`.
+- Then `charge(w, applied * mul)`.
+- Called from `world.damageEnemy` when `applied > 0 && src && src.dmg != null && !src.compact`.
+
+**`onHurt(w)`:** `chain.n = 0; chain.t = 0; chain.mul = 1`. Called from `Player.hurt` on a real (non-god) heart loss.
+
+**`cast(w)`:**
+- Refused (returns false) when any of these hold: `p.dead`, `value < max`, `w.compactWave`, or `(w.boss && w.boss.defeated)`.
+- Otherwise:
+  - `value = 0`, `announced = false`;
+  - `p.invuln = max(p.invuln, 0.5)`;
+  - `w.compactWave = { x: p.x, y: p.y, r: 0, hits: [] }` and `w.compactBannerT = 1.0`;
+  - `stats.compacts++`, emit `compact` with x, y.
+- Called from `Player.update` when `input.compact`, after the timers are decremented and before movement.
+
+**`update(w, dt)`:** called in `world.step` right after `CB.Projectiles.update`.
+1. **Chain:** `chain.t -= dt`. At `≤ 0`, set `n = 0` and `mul = 1`.
+2. **Graze tokens:** `grazeTokens = min(4.5, grazeTokens + 4.5*dt)`.
+3. **Banner:** `compactBannerT = max(0, compactBannerT - dt)`.
+4. **Wave:** if a wave exists:
+   - `r += 520*dt`.
+   - For each live, visible, targetable enemy not in `hits` with `dist ≤ r + e.r`: push it to `hits`, then call `w.damageEnemy(e, e.boss ? 5 : 3, { compact: true })`.
+   - For each live enemy bullet within `r`: `b.dead = true` and `CB.Fx.spark(w, b.x, b.y, CB.Pal.C.gold, 1, 20, 0.2)`.
+   - For each puddle within `r`: `dead = true`.
+   - When `r ≥ 360`: `w.compactWave = null`.
+
+**`graze(w, b, overlapping)`:** called in `world` collide for each live enemy bullet that did not hurt the player, after the hit test:
+
+```js
+for (const eb of w.eBullets) {
+  if (eb.dead) continue;
+  const hit = M.circleHit(eb.x, eb.y, eb.r, p.x, p.y, p.r);
+  if (hit && CB.Player.hurt(p, w, eb)) { eb.dead = true; continue; }
+  if (CB.Compact) CB.Compact.graze(w, eb, hit);
+}
+```
+
+- If `b.grazed`, return.
+- **Overlapping:** if `p.invuln > 1e-9 && p.hurtT <= 1e-9` (dash protection, not hurt protection), it is a perfect graze:
+  - `b.grazed = true`, `charge(w, 3)`, `stats.grazes++`;
+  - emit `graze` with `{ x, y, perfect: true }`;
+  - emit `text` "perfect" (gold).
+  Any other overlap does nothing.
+- **Not overlapping:** if `dist ≤ b.r + p.r + 6`:
+  - `b.grazed = true`;
+  - if `grazeTokens ≥ 0.75`: `grazeTokens -= 0.75`, `charge(w, 0.75)`, `stats.grazes++`, emit `graze` with x, y.
+
+**`draw(w, r, t)`:** if a wave exists, draw a 2-ring gold/white expanding circle at radius `r` (alpha fading with `r / 360`). WorldDraw calls it (Task 19).
+
+```js
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const H = require('./harness');
+const FILES = [...H.GAME_BASE, 'src/game/compact.js'];
+
+function setup(o) {
+  const CB = H.load(FILES);
+  CB.Enemies.dummy = { create: (w, x, y, op) => CB.makeEnemy('dummy', x, y, Object.assign({ hp: 1000, r: 5, contact: false }, op || {})), update() {}, draw() {} };
+  const w = CB.createWorld(Object.assign({ seed: 9 }, o || {}));
+  return { CB, w };
+}
+const idle = () => H.makeInput({ aimX: 160, aimY: 30 });
+const count = (w, type) => w.events.filter((e) => e.type === type).length;
+
+test('compact: bolt damage charges the meter scaled by chain, capped at 60, announced once', () => {
+  const { w } = setup();
+  const e = w.spawnEnemy('dummy', 100, 60);
+  w.damageEnemy(e, 1, { dmg: 1 });
+  assert.ok(Math.abs(w.context.value - 1.05) < 1e-9, `${w.context.value}`);
+  for (let i = 0; i < 100; i++) w.damageEnemy(e, 1, { dmg: 1 });
+  assert.equal(w.context.value, 60);
+  assert.equal(count(w, 'compactReady'), 1);
+});
+
+test('compact: damage with no bolt source, or from the wave itself, never charges', () => {
+  const { w } = setup();
+  const e = w.spawnEnemy('dummy', 100, 60);
+  w.damageEnemy(e, 5);
+  w.damageEnemy(e, 5, { compact: true });
+  assert.equal(w.context.value, 0);
+});
+
+test('compact: refused below full; at full it empties the meter, gives 0.5 s invuln and emits compact', () => {
+  const { w } = setup();
+  H.stepN(w, 1, () => H.makeInput({ compact: true }));
+  assert.equal(count(w, 'compact'), 0);
+  w.context.value = 60;
+  H.stepN(w, 1, () => H.makeInput({ compact: true }));
+  assert.equal(count(w, 'compact'), 1);
+  assert.equal(w.context.value, 0);
+  assert.ok(w.player.invuln > 0.45);
+  assert.ok(w.compactWave || w.compactBannerT > 0);
+});
+
+test('compact: the wave hits each enemy once, 3 to regulars and 5 to boss parts, skipping untouchables', () => {
+  const { w } = setup();
+  const reg = w.spawnEnemy('dummy', 100, 100, { hp: 10 });
+  const boss = w.spawnEnemy('dummy', 220, 60, { hp: 10, boss: true, regular: false });
+  const untarg = w.spawnEnemy('dummy', 60, 60, { hp: 10, targetable: false });
+  const hidden = w.spawnEnemy('dummy', 260, 140, { hp: 10, visible: false });
+  const solid = w.spawnEnemy('dummy', 40, 150, { hp: 10, targetable: false, solid: true });
+  w.context.value = 60;
+  H.stepN(w, 60, (i) => H.makeInput({ compact: i === 0 }));
+  assert.equal(reg.hp, 7);
+  assert.equal(boss.hp, 5);
+  assert.equal(untarg.hp, 10);
+  assert.equal(hidden.hp, 10);
+  assert.equal(solid.hp, 10);
+  assert.equal(w.compactWave, null);
+});
+
+test('compact: deletes enemy bullets and puddles inside the radius and leaves player bolts', () => {
+  const { w } = setup();
+  const p = w.player;
+  for (let i = 0; i < 20; i++) w.fireEnemyBullet(p.x + Math.cos(i) * 50, p.y + Math.sin(i) * 30, 0, 0);
+  w.addHazard({ x: p.x - 80, y: p.y - 20 });
+  const bolt = w.firePlayerBolt(p.x, 40, 0);
+  bolt.vx = 0;
+  bolt.vy = 0;
+  w.context.value = 60;
+  H.stepN(w, 40, (i) => H.makeInput({ compact: i === 0 }));
+  assert.equal(w.eBullets.length, 0);
+  assert.equal(w.hazards.length, 0);
+  assert.ok(w.pBullets.length >= 1);
+});
+
+test('compact: cannot cast while dead or after a boss defeat', () => {
+  const { CB, w } = setup();
+  w.context.value = 60;
+  w.boss = { defeated: true, update() {}, draw() {} };
+  assert.equal(CB.Compact.cast(w), false);
+  w.boss = null;
+  w.player.dead = true;
+  assert.equal(CB.Compact.cast(w), false);
+});
+
+test('graze: a bullet passing within the band charges 0.75 once', () => {
+  const { w } = setup();
+  const p = w.player;
+  w.fireEnemyBullet(p.x - 40, p.y + 9, 0, 80);
+  H.stepN(w, 60, idle);
+  assert.ok(Math.abs(w.context.value - 0.75) < 1e-9, `${w.context.value}`);
+  assert.equal(count(w, 'graze'), 1);
+  assert.equal(p.hearts, 5);
+});
+
+test('graze: a perfect dash through a bullet gives +3 once; hurt-invuln overlap gives nothing', () => {
+  let { w } = setup();
+  H.stepN(w, 1, () => H.makeInput({ dash: true, moveX: 1 }));
+  w.fireEnemyBullet(w.player.x, w.player.y, 0, 0);
+  H.stepN(w, 2, () => H.makeInput({ moveX: 1 }));
+  assert.equal(w.context.value, 3);
+  assert.ok(w.events.some((e) => e.type === 'graze' && e.perfect));
+  ({ w } = setup());
+  w.player.invuln = 1;
+  w.player.hurtT = 1;
+  w.fireEnemyBullet(w.player.x, w.player.y, 0, 0);
+  H.stepN(w, 2, idle);
+  assert.equal(w.context.value, 0);
+});
+
+test('graze: 100 grazing bullets at once never exceed the 4.5 budget', () => {
+  const { w } = setup();
+  const p = w.player;
+  for (let i = 0; i < 100; i++) w.fireEnemyBullet(p.x + Math.cos(i) * 10, p.y + Math.sin(i) * 10, 0, 0);
+  H.stepN(w, 1, idle);
+  assert.ok(w.context.value <= 4.5 + 1e-9, `${w.context.value}`);
+});
+
+test('chain: grows per applied hit, decays after 1.5 s, resets on a real heart loss, multiplier caps at 2', () => {
+  const { CB, w } = setup();
+  const e = w.spawnEnemy('dummy', 100, 60);
+  for (let i = 0; i < 30; i++) w.damageEnemy(e, 1, { dmg: 1 });
+  assert.equal(w.chain.n, 30);
+  assert.equal(w.chain.mul, 2);
+  H.stepN(w, 95, idle);
+  assert.equal(w.chain.n, 0);
+  for (let i = 0; i < 5; i++) w.damageEnemy(e, 1, { dmg: 1 });
+  CB.Player.hurt(w.player, w, null);
+  assert.equal(w.chain.n, 0);
+});
+```
+
+> For `graze: a bullet passing within the band`, the bullet's centre passes 9 px from Clawd's centre. Contact needs ≤ 7 (2 + 5) and the band reaches 13, so it grazes once and never hits. The perfect-dash test places a stationary bullet on Clawd on the tick after a dash starts: dash protection is active, `hurtT` is 0, and Clawd has moved only about 4 px, so they still overlap.
+
+- [ ] Write the test, see it fail, implement, see it pass, then run the full `node --test`.
+
+### Task 7C: Elite "P0" bugs and hotfix pickups
+
+**Files:**
+- Create: `src/game/pickups.js`.
+- Modify: `src/game/stages.js`, `src/game/waves.js`, `src/game/world.js`, `src/game/stageRunner.js`.
+- Test: `tests/elites.test.js`.
+
+**Spec:**
+- **`stages.js`:** each stage gains `elites: [wave1Count, wave2Count]`. The values are `[0, 1]`, `[0, 1]`, `[1, 1]` and `[1, 2]` for stages 1–4.
+- **`pickups.js`:**
+
+  ```js
+  CB.ELITE_KINDS = { syntaxError: true, memoryLeak: true, offByOne: true };
+  CB.Pickups = {
+    CAP: 6, LIFE: 8, RADIUS: 9,
+    applyElite(e)   // e.elite = true; e.hp = e.maxHp = Math.ceil(e.hp * 1.75); e.timeScale = 1.2
+    drop(w, x, y)   // push { kind: 'hotfix', x, y, life: 8, t: 0, dead: false } unless the CAP of 6 is reached
+    update(w, dt)   // t += dt; life -= dt; expire at 0. Within RADIUS of a live player: heal +1 heart
+                    // (≤ stats.maxHearts) and emit pickup {x, y, heal: true} plus text '+1 ♥'; at full health
+                    // call CB.Compact && CB.Compact.charge(w, 15) and emit pickup {x, y, heal: false} plus
+                    // text '+15 ctx'. Collected pickups die. Remove dead ones in place.
+    draw(w, r, t)   // 9×8 'pickup_hotfix' heart sprite bobbing ±1.5 px at 2 Hz, a ring, and blinking at 8 Hz
+                    // in the last 2 s
+  };
+  ```
+- **`waves.js`:** `CB.createWaveSpawner(w, waveDef, eliteCount = 0)`.
+  - After building `queue`, pick `eliteCount` distinct queue indices whose kind is in `CB.ELITE_KINDS`, using `w.rng.shuffle(candidates).slice(0, n)`.
+  - Store them in a parallel boolean array `sp.eliteFlags`, aligned with `queue` and shifted with it. `queue` stays a plain array of kinds.
+  - `spawnGroup` passes `{ elite: true }` in the opts for a flagged single spawn.
+  - `CB.ELITE_KINDS` may be missing (Phase A tests): treat it as an empty set.
+- **`world.js`:**
+  - `createWorld` adds `pickups: []`.
+  - `spawnEnemy`: after `create`, `if (o2 && o2.elite && CB.Pickups) CB.Pickups.applyElite(e);`.
+  - Enemy update call: `CB.Enemies[e.kind].update(e, w, dt * (e.timeScale || 1));` (`e.t`/`e.stateT` still use the raw dt).
+  - `killEnemy`: `if (!silent && e.elite && CB.Pickups) CB.Pickups.drop(w, e.x, e.y);`.
+  - `step`: after `updateHazards`, `if (CB.Pickups) CB.Pickups.update(w, dt);`.
+- **`stageRunner.js` `startWave(i)`:** `CB.createWaveSpawner(run.world, stage().waves[i], stage().elites ? stage().elites[i] : 0)`.
+- Memory Leak splits never inherit `elite`.
+
+```js
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const H = require('./harness');
+const FILES = [...H.GAME_BASE, 'src/game/compact.js', 'src/game/pickups.js', 'src/game/stages.js', 'src/game/waves.js'];
+
+function setup() {
+  const CB = H.load(FILES);
+  for (const k of ['syntaxError', 'nullPointer', 'raceCondition', 'memoryLeak', 'offByOne']) {
+    CB.Enemies[k] = { create: (w, x, y) => CB.makeEnemy(k, x, y, { hp: 4, contact: false }), update(e, w, dt) { e.x += 30 * dt; }, draw() {} };
+  }
+  const w = CB.createWorld({ seed: 21 });
+  return { CB, w };
+}
+const idle = () => H.makeInput({ aimX: 160, aimY: 30 });
+
+test('elites: stage data has two counts per stage', () => {
+  const { CB } = setup();
+  assert.deepEqual(H.plain(CB.STAGES.map((s) => s.elites)), [[0, 1], [0, 1], [1, 1], [1, 2]]);
+});
+
+test('elites: marking picks exactly N spawns from allowed kinds and leaves the queue unchanged', () => {
+  const { CB, w } = setup();
+  const def = [{ kind: 'offByOne', count: 3 }, { kind: 'raceCondition', count: 2 }, { kind: 'nullPointer', count: 2 }];
+  const plain = CB.createWaveSpawner(w, def, 0);
+  const sp = CB.createWaveSpawner(w, def, 2);
+  assert.deepEqual(H.plain(sp.queue), H.plain(plain.queue));
+  assert.equal(sp.eliteFlags.filter(Boolean).length, 2);
+  sp.queue.forEach((k, i) => { if (sp.eliteFlags[i]) assert.equal(k, 'offByOne'); });
+});
+
+test('elites: hp is ceil(base × 1.75) and they move 20% farther', () => {
+  const { w } = setup();
+  const a = w.spawnEnemy('syntaxError', 40, 40);
+  const b = w.spawnEnemy('syntaxError', 40, 80, { elite: true });
+  assert.equal(b.hp, 7);
+  assert.equal(b.maxHp, 7);
+  assert.equal(b.elite, true);
+  H.stepN(w, 60, idle);
+  assert.ok(Math.abs((b.x - 40) - 1.2 * (a.x - 40)) < 0.5);
+});
+
+test('elites: a normal kill drops exactly one hotfix; a silent kill drops none', () => {
+  const { w } = setup();
+  const a = w.spawnEnemy('syntaxError', 40, 40, { elite: true });
+  const b = w.spawnEnemy('syntaxError', 80, 40, { elite: true });
+  w.damageEnemy(a, 99);
+  w.killEnemy(b, true);
+  assert.equal(w.pickups.length, 1);
+});
+
+test('hotfix: heals below max, gives +15 context at full, expires at 8 s, cap 6', () => {
+  const { CB, w } = setup();
+  const p = w.player;
+  p.hearts = 3;
+  CB.Pickups.drop(w, p.x, p.y);
+  H.stepN(w, 1, idle);
+  assert.equal(p.hearts, 4);
+  assert.equal(w.pickups.length, 0);
+  p.hearts = p.stats.maxHearts;
+  CB.Pickups.drop(w, p.x, p.y);
+  H.stepN(w, 1, idle);
+  assert.equal(w.context.value, 15);
+  CB.Pickups.drop(w, 30, 30);
+  H.stepN(w, 8.1 * 60, idle);
+  assert.equal(w.pickups.length, 0);
+  for (let i = 0; i < 10; i++) CB.Pickups.drop(w, 30, 30);
+  assert.equal(w.pickups.length, 6);
+});
+
+test('elites: the alive cap of 6 still holds with elites', () => {
+  const { CB, w } = setup();
+  const sp = CB.createWaveSpawner(w, [{ kind: 'syntaxError', count: 12 }], 3);
+  let peak = 0;
+  for (let i = 0; i < 60 * 20; i++) {
+    w.step(CB.DT, idle());
+    sp.update(CB.DT);
+    peak = Math.max(peak, sp.alive());
+  }
+  assert.equal(peak, 6);
+});
+```
+
+> In the hotfix test the player's movement (idle input) doesn't move Clawd, so the pickup at the player's own position is collected on the first tick.
+
+- [ ] Write the test, see it fail, implement, see it pass, then run the full `node --test`.
+
+### Task 7D: Run extras: tally, Boss Rush, YOLO, victory event, music hook
+
+**Files:**
+- Modify: `src/game/stageRunner.js`, `src/game/world.js`, `src/game/player.js`, `src/scenes/play.js`, `src/main.js` (debug keys).
+- Test: `tests/modes.test.js`.
+
+**Spec:**
+- **`createRun` opts gain `bossRush` and `yolo`:**
+  - `bossRush` sets `run.bossRush = true` and forces `skipWaves = true`.
+  - `yolo` sets `run.yolo = true`, and every world is created with `mode: { yolo: true }`.
+  - `run.mode` mirrors `{ bossRush, yolo }`.
+- **`world.js`:** `w.mode = o.mode || {}`. In `fireEnemyBullet`, the speed is `(speed == null ? 80 : speed) * (w.mode.yolo ? 1.15 : 1)`.
+- **`player.js`:** in `create`, if `w.mode && w.mode.yolo`, set `stats.maxHearts = Math.max(1, stats.maxHearts - 2)` and `p.hurtInvuln = 0.7`. Hearts start at the reduced max.
+- **Tally:**
+  - `run.squashed = {}` counts kinds. At the end of `run.step`, for every collected `enemyDie` event with `!boss && !silent && kind`, increment `squashed[kind]`.
+  - `run.bossesFixed` increments on each `bossDie`.
+  - `run.maxChain = Math.max(run.maxChain, w.stats.maxChain || 0)`.
+  - `beginStage` snapshots `run.stageSquashed = {...run.squashed}`, and `retryStage` restores it.
+- **Victory event:** entering `victory` pushes `{ type: 'victory' }` into `run.pending`, so it is returned by the next `step`.
+- **Debug hash:** recognises `rush` and `yolo` (added to `KNOWN`), mapping to `bossRush: true` and `yolo: true`.
+- **`play.js`:**
+  - `enter` passes `data.runOpts` through unchanged (bossRush/yolo come from the title, Task 21).
+  - In `update`, after stepping, call `if (CB.Music) CB.Music.update(this.run, false);`. While paused, call `CB.Music.update(this.run, true)` before returning.
+  - When leaving to title, call `CB.Music && CB.Music.stop()`.
+
+```js
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const H = require('./harness');
+
+function setup() {
+  const CB = H.loadWith('src/game/stages.js', 'src/game/waves.js', 'src/game/stageRunner.js');
+  CB.Enemies.dummy = { create: (w, x, y) => CB.makeEnemy('dummy', x, y, { hp: 1, contact: false }), update() {}, draw() {} };
+  CB.Bosses.stub = { id: 'stub', name: 'S', tagline: 't', commitMsg: 'c', create: () => { const c = { x: 160, y: 60, hp: 1, maxHp: 1, phase: 1, defeated: false, update() { if (c.hp <= 0) c.defeated = true; }, draw() {} }; return c; } };
+  CB.STAGES = [0, 1, 2, 3].map((i) => ({ id: 's' + i, n: i + 1, path: '~/s/', palette: 'src', boss: 'stub', waves: [[{ kind: 'dummy', count: 2 }], [{ kind: 'dummy', count: 1 }]], elites: [0, 0] }));
+  return CB;
+}
+function until(run, pred, max, each) {
+  for (let i = 0; i < max; i++) {
+    if (pred(run)) return true;
+    if (each) each(run);
+    run.step(H.makeInput({ choice: run.state === 'patchPick' && run.stateT > 0.7 ? 1 : 0 }));
+  }
+  return pred(run);
+}
+
+test('modes: Boss Rush visits all four stages with only boss states and ends in victory', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1, bossRush: true });
+  const seen = new Set();
+  until(run, (r) => r.state === 'victory', 60 * 60 * 3, (r) => {
+    seen.add(r.state);
+    if (r.state === 'boss') r.world.boss.hp = 0;
+  });
+  assert.equal(run.state, 'victory');
+  assert.ok(!seen.has('wave') && !seen.has('waveBreak'));
+  assert.equal(run.bossesFixed, 4);
+});
+
+test('modes: YOLO has 3 hearts, 15% faster bullets and 0.7 s hurt invuln; normal runs are unchanged', () => {
+  const CB = setup();
+  const y = CB.createRun({ seed: 1, yolo: true });
+  assert.equal(y.world.player.hearts, 3);
+  assert.equal(y.world.player.hurtInvuln, 0.7);
+  const b = y.world.fireEnemyBullet(50, 50, 0);
+  assert.ok(Math.abs(b.vx - 92) < 1e-9);
+  const n = CB.createRun({ seed: 1 });
+  assert.equal(n.world.player.hearts, 5);
+  assert.ok(Math.abs(n.world.fireEnemyBullet(50, 50, 0).vx - 80) < 1e-9);
+});
+
+test('tally: counts non-boss non-silent kills by kind; a retry restores the stage-start tally', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1 });
+  until(run, (r) => r.state === 'wave', 300);
+  until(run, (r) => r.state === 'waveBreak', 600, (r) => { for (const e of r.world.enemies) if (!e.dead) r.world.killEnemy(e); });
+  assert.equal(run.squashed.dummy, 2);
+  const p = run.world.player;
+  p.hearts = 1;
+  CB.Player.hurt(p, run.world, null);
+  until(run, (r) => r.state === 'dead', 200);
+  until(run, (r) => r.stateT > 0.7, 60);
+  run.step(H.makeInput({ retry: true }));
+  assert.equal(run.squashed.dummy || 0, 0);
+});
+
+test('modes: victory emits a victory event', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1, startStage: 3, skipWaves: true });
+  let got = false;
+  for (let i = 0; i < 2000 && !got; i++) {
+    if (run.state === 'boss') run.world.boss.hp = 0;
+    got = run.step(H.makeInput()).some((e) => e.type === 'victory');
+  }
+  assert.ok(got);
+});
+```
+
+- [ ] Write the test, see it fail, implement, see it pass, then run the full `node --test`.
+
+### Task 7E: Unlocks, hats, secret codes (`unlocks.js`) and the unlock toast
+
+**Files:**
+- Create: `src/game/unlocks.js`.
+- Modify: `src/scenes/play.js` (toast), `src/game/projectiles.js` (rainbow bolts).
+- Test: `tests/unlocks.test.js`.
+
+**Spec:**
+
+```js
+CB.Save = { get(key, def), set(key, value), _mem }   // JSON in localStorage under 'cb.' + key, every access in try/catch.
+                                                      // _mem is a write-through cache: set() writes _mem[key] and then tries storage;
+                                                      // get() returns _mem[key] if present, else the parsed storage value (cached), else def.
+CB.HATS = [
+  { id: 'loopcap', name: 'Loop cap', from: 'infiniteLoop' },
+  { id: 'slime', name: 'Slime hat', from: 'memoryLeakBoss' },
+  { id: 'branch', name: 'Branch beanie', from: 'mergeConflict' },
+  { id: 'shades', name: 'Shades', from: 'heisenbug' },
+  { id: 'crown', name: 'Crown', from: 'victory' },
+  { id: 'sudo', name: 'sudo hat', from: 'yoloVictory' },
+  { id: 'halo', name: 'Halo', from: 'konami' },
+];
+CB.Unlocks = {
+  has(id), unlock(id) → true if new, list() → ids, hats() → unlocked hat ids in HATS order,
+  hat() → selected hat id | null, setHat(id | null), cycleHat(dir) → id | null,   // cycles [null, ...hats()]
+  onEvents(events, run) → newly unlocked ids,
+};
+CB.Secrets = { CODES: { konami: [...10 codes], ultrathink: [...10 codes] }, create() → { feed(code) → 'konami' | 'ultrathink' | null } };
+```
+
+**`onEvents` rules:**
+- **`bossDie`:** unlock the hat whose `from === CB.STAGES[run.stageIndex].boss`.
+- **`victory`:** unlock `crown` and `modes` (`modes` makes Boss Rush and YOLO appear on the title), plus `sudo` if `run.yolo`.
+
+**Secrets:**
+- `CODES.konami` = `ArrowUp ArrowUp ArrowDown ArrowDown ArrowLeft ArrowRight ArrowLeft ArrowRight KeyB KeyA`, which unlocks `halo`.
+- `CODES.ultrathink` = `KeyU KeyL KeyT KeyR KeyA KeyT KeyH KeyI KeyN KeyK`, which unlocks `rainbow`.
+- The matcher keeps the last 12 codes and matches by suffix, so it fires once per completed sequence.
+
+**`play.js`:** after each `run.step`:
+
+```js
+const fresh = CB.Unlocks ? CB.Unlocks.onEvents(evs, run) : [];
+for (const id of fresh) {
+  const hat = CB.HATS.find((h) => h.id === id);
+  if (hat) this.toast = { text: 'NEW HAT: ' + hat.name, t: 2.5 };
+}
+```
+
+- `toast.t` decays in `update`.
+- `draw` shows it centred at y 168 in gold, with a dark band behind.
+- Each unlock pushes `{ type: 'unlock' }` to the audio handler.
+
+**`projectiles.js` draw:** `if (CB.Unlocks && CB.Unlocks.has('rainbow'))` draw bolts as discs of radius `b.r` coloured `RAINBOW[Math.floor(b.t * 20) % 6]` (red, ember, yellow, green, cyan, purple from `CB.Pal.C`) with a white centre pixel. Otherwise draw the sprite.
+
+```js
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const H = require('./harness');
+const FILES = [...H.GAME_BASE, 'src/game/stages.js', 'src/game/unlocks.js'];
+
+function load(storage) {
+  const { CB, sandbox } = H.load(FILES, { returnSandbox: true });
+  if (storage === 'throw') Object.defineProperty(sandbox, 'localStorage', { get() { throw new Error('blocked'); } });
+  return CB;
+}
+
+test('save: works with a throwing localStorage via the memory fallback', () => {
+  const CB = load('throw');
+  CB.Save.set('x', { a: 1 });
+  assert.equal(CB.Save.get('x').a, 1);
+  assert.equal(CB.Unlocks.unlock('crown'), true);
+  assert.equal(CB.Unlocks.unlock('crown'), false);
+  assert.equal(CB.Unlocks.has('crown'), true);
+});
+
+test('unlocks: bossDie in stage i gives that boss hat; victory gives crown and modes (+ sudo in YOLO)', () => {
+  const CB = load();
+  assert.deepEqual(H.plain(CB.Unlocks.onEvents([{ type: 'bossDie' }], { stageIndex: 1 })), ['slime']);
+  assert.deepEqual(H.plain(CB.Unlocks.onEvents([{ type: 'bossDie' }], { stageIndex: 1 })), []);
+  const v = H.plain(CB.Unlocks.onEvents([{ type: 'victory' }], { stageIndex: 3, yolo: true }));
+  assert.ok(v.includes('crown') && v.includes('modes') && v.includes('sudo'));
+});
+
+test('unlocks: hat cycling goes through none and the unlocked hats in order', () => {
+  const CB = load();
+  CB.Unlocks.unlock('shades');
+  CB.Unlocks.unlock('loopcap');
+  assert.equal(CB.Unlocks.hat(), null);
+  assert.equal(CB.Unlocks.cycleHat(1), 'loopcap');
+  assert.equal(CB.Unlocks.cycleHat(1), 'shades');
+  assert.equal(CB.Unlocks.cycleHat(1), null);
+  assert.equal(CB.Unlocks.cycleHat(-1), 'shades');
+});
+
+test('secrets: konami and ultrathink fire once on completion, even mid-stream', () => {
+  const CB = load();
+  const m = CB.Secrets.create();
+  let hits = [];
+  for (const c of ['KeyX', ...CB.Secrets.CODES.konami]) { const r = m.feed(c); if (r) hits.push(r); }
+  assert.deepEqual(hits, ['konami']);
+  hits = [];
+  for (const c of ['KeyQ', 'KeyU', ...CB.Secrets.CODES.ultrathink]) { const r = m.feed(c); if (r) hits.push(r); }
+  assert.deepEqual(hits, ['ultrathink']);
+  assert.equal(m.feed('KeyA'), null);
+});
+```
+
+- [ ] Write the test, see it fail, implement, see it pass, then run the full `node --test`.
+
+---
+
 ## Phase B — Content (parallel; each task owns only its listed files)
 
 Rules for every Phase B task:
@@ -3467,7 +4230,7 @@ Rules for every Phase B task:
 - Lowercase sits in rows 2–6. `g j p q y` don't descend; draw them raised so they still read.
 - Advance is the glyph width + 1 px. Space is 3 px wide. Unknown characters render as `?`.
 
-**Required characters:** `A–Z a–z 0–9`, space, `. , : ; ! ? ' " - _ / \ ( ) [ ] { } < > = + * # % & @ ~ | ^ $` and backtick, plus `✓ ⚠ ✻ ♥ · — × →`. `⚠` and `✻` may be 5 wide; `—` is 5 wide.
+**Required characters:** `A–Z a–z 0–9`, space, `. , : ; ! ? ' " - _ / \ ( ) [ ] { } < > = + * # % & @ ~ | ^ $` and backtick, plus `✓ ⚠ ✻ ♥ · — × → …`. `⚠`, `✻` and `…` may be 5 wide; `—` is 5 wide.
 
 **Draw:** fill one `fillRect(x + col*scale, y + row*scale, scale, scale)` per lit pixel using `ctx.fillStyle = color`.
 
@@ -3478,7 +4241,7 @@ Rules for every Phase B task:
 const test = require('node:test');
 const assert = require('node:assert');
 const H = require('./harness');
-const REQUIRED = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:;!?\'"-_/\\()[]{}<>=+*#%&@~|^$`✓⚠✻♥·—×→';
+const REQUIRED = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:;!?\'"-_/\\()[]{}<>=+*#%&@~|^$`✓⚠✻♥·—×→…';
 
 test('font: every required glyph is 7 equal-width rows of . and #', () => {
   const CB = H.load(['src/core/ns.js', 'src/art/font.js']);
@@ -3607,9 +4370,137 @@ test('audio: toggleMute flips and reports state', () => {
 
 ---
 
+**Rev 2 additions (Task 9):**
+- **New sounds:**
+
+| Sound | Recipe |
+|---|---|
+| `heartbeat` | two sine thumps 70→45 Hz, 80 ms each, at t and t + 0.14 s, gain 0.3 |
+| `compact` | sine sweep 120→1400 Hz over 0.5 s plus highpass noise 0.4 s, gain 0.2 |
+| `compactReady` | chime 880 then 1320 Hz, 60 ms each |
+| `graze` | square 1800 Hz, 12 ms, gain 0.05 |
+| `perfect` | rising two-tone 1200 → 1800 Hz, 40 ms each |
+| `pickup` | triangle arpeggio C6 E6 G6, 50 ms each |
+| `blast` | noise pop 90 ms (lowpass 1.2 kHz), pitch falling |
+| `victory` | 6-note square fanfare G5 C6 E6 G6 E6 C7, 110 ms each |
+| `unlock` | chime A5 C#6 E6 A6 |
+
+- **Event mapping:** `EVENT_SOUND` gains `heartbeat`, `compact`, `compactReady`, `graze`, `pickup`, `blast`, `victory` and `unlock`.
+  - `graze` with `perfect: true` plays `perfect`.
+  - `enemyDie` with `silent: true` plays nothing.
+- **Throttles:** add `graze` at 50 ms and `blast` at 60 ms.
+- **For Task 9B:** expose `CB.Audio.context()` (the AudioContext or null) and `CB.Audio.output()` (the master gain node or null).
+- **Mute:** applies to the master gain, so it silences the music too.
+- **Extra test.** It uses an injected fake `AudioContext` in the sandbox: `sandbox.AudioContext = FakeCtx` before `init()`. FakeCtx is a minimal object with `currentTime`, `destination`, the `createGain`/`createOscillator`/`createBufferSource`/`createBiquadFilter`/`createBuffer` factories returning objects with `connect`, `start`, `stop`, `frequency`/`gain`/`Q` params (`setValueAtTime`, `linearRampToValueAtTime`, `exponentialRampToValueAtTime`), and `resume() → Promise.resolve()`. The test checks:
+  - two `shoot` events in one call start only one oscillator;
+  - a silent `enemyDie` starts nothing;
+  - `setMuted(true)` sets master gain to 0.
+
+
+### Task 9B: Procedural chiptune (`music.js`)
+
+**Files:** Create `src/core/music.js`. Test: `tests/music.test.js`.
+
+**Interfaces:**
+
+```js
+CB.Music = {
+  pattern(stageId, bar) → [{ step: 0..15, freq, ch: 'bass' | 'lead' | 'hat', len }],
+  intensityFor(run) → -1 | 0 | 1 | 2,   // -1 = silent
+  update(run, paused), start(), stop(), toggle() → enabled, isEnabled(),
+};
+```
+
+**Spec:**
+- **Patterns:** each stage's `pattern` is pure and deterministic. It is seeded by a string hash of the stage id through `CB.createRng`. There are 16 steps per bar and 8 bars per loop. Use the RNG only to vary note order and rests; never `Math.random`.
+
+| Stage | Scale | BPM | Notes |
+|---|---|---|---|
+| `src` | A minor pentatonic | 124 | |
+| `node_modules` | D dorian | 108 | lead detuned +6 cents |
+| `git` | E minor | 136 | bass rhythm 3+3+2 |
+| `prod` | C# diminished | 152 | |
+
+- **Channels:**
+  - bass: triangle, root/fifth 8ths, gain 0.07;
+  - lead: square 16th arpeggio, gain 0.035, played only at intensity ≥ 1;
+  - hat: noise on the off-beats, gain 0.02, highpass 6 kHz.
+- **Intensity by run state:**
+
+| State | Intensity |
+|---|---|
+| `stageIntro`, `wave`, `waveBreak` | 0 |
+| `bossWarn` | -1 (the warning sound is the stinger) |
+| `boss` | 1 |
+| `boss` with `world.boss.phase ≥ 2` | 2 (tempo ×1.1, lead up an octave) |
+| `bossDead`, `dying`, `dead` | -1 |
+| `patchPick` | 0 (half gain) |
+| `victory` | 1 |
+
+  `paused` mutes the scheduler. Track and intensity changes take effect at bar boundaries.
+- **Scheduler:** a `setInterval` every 30 ms schedules notes whose start is before `ctx.currentTime + 0.15` (the lookahead pattern).
+- **Output:** the music gain node (0.10) connects into `CB.Audio.output()`, so M mutes everything. If `CB.Audio.context()` is null, every method is a safe no-op.
+- **Toggle:** `toggle()` flips the enabled flag, which persists in `localStorage['cb.music']` (`'1'`/`'0'`, try/catch). It defaults to on.
+
+```js
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const H = require('./harness');
+const FILES = ['src/core/ns.js', 'src/core/math.js', 'src/core/rng.js', 'src/core/audio.js', 'src/core/music.js'];
+
+test('music: patterns are deterministic per stage and differ across stages', () => {
+  const CB = H.load(FILES);
+  const a = JSON.stringify(CB.Music.pattern('src', 0));
+  assert.equal(a, JSON.stringify(CB.Music.pattern('src', 0)));
+  assert.notEqual(a, JSON.stringify(CB.Music.pattern('prod', 0)));
+});
+
+test('music: every note has a legal step, channel and audible frequency', () => {
+  const CB = H.load(FILES);
+  for (const id of ['src', 'node_modules', 'git', 'prod']) {
+    for (let bar = 0; bar < 8; bar++) {
+      const notes = CB.Music.pattern(id, bar);
+      assert.ok(notes.length > 0);
+      for (const n of notes) {
+        assert.ok(Number.isInteger(n.step) && n.step >= 0 && n.step <= 15);
+        assert.ok(['bass', 'lead', 'hat'].includes(n.ch));
+        if (n.ch !== 'hat') assert.ok(n.freq >= 55 && n.freq <= 1760, `${id} ${n.freq}`);
+      }
+    }
+  }
+});
+
+test('music: intensity follows run state', () => {
+  const CB = H.load(FILES);
+  const I = (state, phase) => CB.Music.intensityFor({ state, world: { boss: phase ? { phase } : null } });
+  assert.equal(I('wave'), 0);
+  assert.equal(I('bossWarn'), -1);
+  assert.equal(I('boss', 1), 1);
+  assert.equal(I('boss', 2), 2);
+  assert.equal(I('dead'), -1);
+});
+
+test('music: with no AudioContext every call is a safe no-op', () => {
+  const CB = H.load(FILES);
+  CB.Music.start();
+  CB.Music.update({ state: 'boss', stageIndex: 0, world: { boss: { phase: 2 }, stage: { id: 'src' } } }, false);
+  CB.Music.stop();
+  assert.equal(typeof CB.Music.toggle(), 'boolean');
+});
+```
+
+- [ ] Write the test, see it fail, implement, see it pass.
+
 ### Tasks 10–14: Gauntlet bugs
 
 Each task creates one file under `src/game/enemies/` and one test file. All enemies use `CB.makeEnemy`, keep themselves inside the arena with `CB.M.clampToArena(e, w.arena)`, set `e.facing` from horizontal velocity, and draw a small ground shadow (`r.alpha(0.3, () => r.rect(x - r, y + r - 1, 2r, 2, ink))`) before the sprite.
+
+**Rev 2 rules for all enemies:**
+- Publish `e.vx`/`e.vy` as the actual velocity every tick (the bot and the aim-lead rely on it).
+- Never touch `noContactT`: `world.spawnEnemy` gives regular enemies a 0.3 s contact grace, and soft separation is done by the world.
+- Fire only through `w.fireEnemyBullet(...)` at fire time.
+- Emit every event with `x, y`.
 
 #### Task 10: `syntaxError`
 
@@ -3673,7 +4564,7 @@ test('syntaxError: sprites are defined', () => {
 
 **Files:** `src/game/enemies/nullPointer.js`, `tests/enemy.nullPointer.test.js`.
 
-**Spec:**
+**Spec (rev 2):**
 - **Stats:** hp 2, r 5.
 - **States** (use `CB.setState`; transition when `e.stateT >= duration`):
 
@@ -3681,11 +4572,13 @@ test('syntaxError: sprites are defined', () => {
 |---|---|---|---|---|---|
 | `wander` | 1.5 s | speed 30; a new random heading from `w.rng` every 0.5 s | true | true | true |
 | `vanish` | 0.8 s | stand still | false | false | false |
-| `appear` | 0.4 s | on entry, move to a point 30–40 px from the player in a random direction (clamped to the arena); `e.alpha` ramps 0→1 | true | false | false |
-| `lunge` | 0.35 s | on entry, store the direction to the player's *current* position; move at 140 px/s | true | true | true |
+| `appear` | 0.5 s | on entry, move to a point 50–60 px from the player in a random direction (clamped to the arena); `e.alpha` ramps 0→1 | true | false | false |
+| `lunge` | 0.4 s | on entry, store the direction to the player's *current* position; move at 130 px/s | true | true | true |
 
   After `lunge` it returns to `wander`.
-- **Sprite:** a pale moth (`e`/`s`/`W` + `k`), 12×10, 2 wing frames, drawn with `alpha: e.alpha * (0.75 + 0.25*sin(t*10))` for a flickery semi-transparent look. During `appear`, also draw a dashed outline ring that tightens from radius 10 to 5.
+- **Velocity:** set `e.vx`/`e.vy` to the actual velocity every tick (0 while standing still).
+- **Sprite:** a pale moth (`e`/`s`/`W` + `k`), 12×10, 2 wing frames, drawn with `alpha: e.alpha * (0.75 + 0.25*sin(t*10))`.
+- **Telegraph:** during `appear`, draw a dashed ring at **full alpha** (not faded) that tightens from radius 12 to 5 over the state, so the telegraph is readable from its first frame.
 
 ```js
 'use strict';
@@ -3703,51 +4596,53 @@ function setup() {
   const e = w.spawnEnemy('nullPointer', 60, 60);
   return { CB, w, e };
 }
-const at = (w, e, seconds, from) => H.stepN(w, Math.round((seconds - (from || 0)) * 60), idle);
+const at = (w, seconds, from) => H.stepN(w, Math.round((seconds - (from || 0)) * 60), idle);
 
 test('nullPointer: full cycle with correct flags and timings', () => {
   const { w, e } = setup();
-  at(w, e, 0.5);
+  at(w, 0.5);
   assert.equal(e.state, 'wander');
   assert.equal(e.targetable, true);
-  at(w, e, 1.6, 0.5);
+  at(w, 1.6, 0.5);
   assert.equal(e.state, 'vanish');
   assert.equal(e.visible, false);
   assert.equal(e.targetable, false);
   assert.equal(e.contact, false);
-  at(w, e, 2.4, 1.6);
+  at(w, 2.45, 1.6);
   assert.equal(e.state, 'appear');
   assert.equal(e.targetable, false);
   assert.equal(e.contact, false);
   const d = Math.hypot(e.x - w.player.x, e.y - w.player.y);
-  assert.ok(d >= 29.5 && d <= 40.5, `appear distance ${d}`);
-  at(w, e, 2.8, 2.4);
+  assert.ok(d >= 49.5 && d <= 60.5, `appear distance ${d}`);
+  at(w, 2.9, 2.45);
   assert.equal(e.state, 'lunge');
   assert.equal(e.targetable, true);
-  assert.ok(Math.abs(Math.hypot(e.vx, e.vy) - 140) < 1, `lunge speed ${Math.hypot(e.vx, e.vy)}`);
-  at(w, e, 3.2, 2.8);
+  assert.ok(Math.abs(Math.hypot(e.vx, e.vy) - 130) < 1, `lunge speed ${Math.hypot(e.vx, e.vy)}`);
+  at(w, 3.35, 2.9);
   assert.equal(e.state, 'wander');
 });
 
 test('nullPointer: bolts pass through while vanished', () => {
   const { w, e } = setup();
-  at(w, e, 1.7);
+  at(w, 1.7);
   assert.equal(e.state, 'vanish');
-  const b = w.firePlayerBolt(e.x - 10, e.y, 0);
+  w.firePlayerBolt(e.x - 10, e.y, 0);
   H.stepN(w, 6, idle);
   assert.equal(e.hp, 2);
   assert.equal(w.damageEnemy(e, 1), 0);
-  assert.ok(b.dead || b.x > e.x, 'bolt not absorbed');
 });
 ```
+
+> Timings: wander→vanish at about 1.5 s, vanish→appear at about 2.3 s, appear→lunge at about 2.8 s, lunge→wander at about 3.2 s. Each check sits mid-state with at least 3 ticks of slack.
 
 #### Task 12: `raceCondition`
 
 **Files:** `src/game/enemies/raceCondition.js`, `tests/enemy.raceCondition.test.js`.
 
-**Spec:**
-- **Stats:** hp 2, r 4, forward speed 75 toward the player.
+**Spec (rev 2):**
+- **Stats:** hp 1, r 4, forward speed 62 toward the player.
 - **Zigzag:** a perpendicular velocity of `40 * sin(2π·2·e.t + phase)` px/s, where `phase` comes from `opts.phase` (default 0). Pairs are spawned with phases 0 and π.
+- **Velocity:** set `e.vx`/`e.vy` to the actual velocity every tick.
 - **Sprite:** a yellow ant (`y`/`Y` + `k`), 10×8, 3-frame scurry at 0.08 s per frame. Draw a 2 px speed-line streak behind it using alpha.
 
 ```js
@@ -3762,7 +4657,7 @@ test('raceCondition: stats', () => {
   const CB = H.load(FILES);
   const w = CB.createWorld({ seed: 1 });
   const e = w.spawnEnemy('raceCondition', 60, 96, { phase: 0 });
-  assert.equal(e.hp, 2);
+  assert.equal(e.hp, 1);
   assert.equal(e.r, 4);
 });
 
@@ -3771,22 +4666,26 @@ test('raceCondition: a pair zigzags in opposite phase', () => {
   const w = CB.createWorld({ seed: 1 });
   w.player.x = 280;
   w.player.y = 96;
-  const a = w.spawnEnemy('raceCondition', 60, 96, { phase: 0 });
-  const b = w.spawnEnemy('raceCondition', 60, 96, { phase: Math.PI });
+  const a = w.spawnEnemy('raceCondition', 60, 90, { phase: 0 });
+  const b = w.spawnEnemy('raceCondition', 60, 102, { phase: Math.PI });
+  const ay0 = a.y;
+  const by0 = b.y;
   H.stepN(w, 6, idle);
-  assert.ok((a.y - 96) * (b.y - 96) < 0, `a ${a.y} b ${b.y}`);
+  assert.ok((a.y - ay0) * (b.y - by0) < 0, `a ${a.y - ay0} b ${b.y - by0}`);
 });
 
-test('raceCondition: advances ~75 px/s toward the player', () => {
+test('raceCondition: advances ~62 px/s toward the player', () => {
   const CB = H.load(FILES);
   const w = CB.createWorld({ seed: 1 });
   w.player.x = 300;
   w.player.y = 96;
   const e = w.spawnEnemy('raceCondition', 40, 96, { phase: 0 });
   H.stepN(w, 60, idle);
-  assert.ok(e.x - 40 > 60 && e.x - 40 < 78, `dx ${e.x - 40}`);
+  assert.ok(e.x - 40 > 50 && e.x - 40 < 64, `dx ${e.x - 40}`);
 });
 ```
+
+> The pair test spawns the ants 12 px apart, because soft separation (Task 3 rev 2) would push two ants spawned on the same point apart and mask the zigzag. It compares each ant's displacement from its own start.
 
 #### Task 13: `memoryLeak`
 
@@ -3867,17 +4766,19 @@ test('memoryLeak: small blobs move ~45 px/s', () => {
 
 **Files:** `src/game/enemies/offByOne.js`, `tests/enemy.offByOne.test.js`.
 
-**Spec:**
+**Spec (rev 2):**
 - **Stats:** hp 4, r 5, speed 50.
 - **Range-keeping:** let `d` = distance to the player.
   - `d < 70`: move directly away.
   - `d > 110`: move directly toward.
   - Otherwise strafe perpendicular, with a direction sign that flips every `w.rng.range(1.5, 2.5)` s.
+- **Velocity:** publish `e.vx`/`e.vy`.
 - **Attack:**
-  - Every 2.2 s (first volley 2.2 s after spawn) it fires a burst of 3 bullets 0.12 s apart at speed 80. Each one is aimed at `aimPoint(w)` computed at the moment of that shot.
+  - Every 2.8 s (the timer starts at 3.0, so the first volley comes 3.0 s after spawn) it fires a burst of **2** bullets 0.12 s apart at **speed 70**. Each one is aimed at `aimPoint(w)` computed at the moment of that shot.
   - `aimPoint(w)` is exported as `CB.Enemies.offByOne.aimPoint`. It returns the player position plus 8 px × the normalised player velocity (`p.vx, p.vy`), or the exact player position when the player is still.
-  - Emit `enemyShoot` on the first bullet of each burst.
-- **Sprite:** a purple spider (`p`/`P` + `k`, with `r` eyes), 12×10, 2-frame leg shuffle. A thin purple tick mark is drawn 1 px off-centre above it (the "+1").
+  - Emit `enemyShoot` (with x, y) on the first bullet of each burst.
+  - Always fire through `w.fireEnemyBullet(...)` at fire time; never cache or bind it.
+- **Sprite:** a purple spider (`p`/`P` + `k`, with `r` eyes), 12×10, 2-frame leg shuffle. A thin purple tick mark is drawn 1 px off-centre above it (the "+1"). From 0.4 s before each burst, the eyes blink white as a tell.
 
 ```js
 'use strict';
@@ -3902,17 +4803,19 @@ test('offByOne: stats', () => {
   assert.equal(e.r, 5);
 });
 
-test('offByOne: fires a 3-bullet burst about 2.2 s after spawning', () => {
-  const { CB, w } = setup(60, 96);
-  let fired = 0;
+test('offByOne: fires a 2-bullet burst about 3.0 s after spawning, at 70 px/s', () => {
+  const { w } = setup(60, 96);
+  const shots = [];
   const orig = w.fireEnemyBullet;
-  w.fireEnemyBullet = (...a) => { fired++; return orig(...a); };
-  H.stepN(w, 120, idle);
-  assert.equal(fired, 0, 'nothing before 2.0 s');
-  H.stepN(w, 40, idle);
-  assert.equal(fired, 3);
+  w.fireEnemyBullet = (...a) => { const b = orig(...a); shots.push(b); return b; };
+  H.stepN(w, 170, idle);
+  assert.equal(shots.length, 0, 'nothing before 2.83 s');
+  H.stepN(w, 30, idle);
+  assert.equal(shots.length, 2);
+  for (const b of shots) assert.ok(Math.abs(Math.hypot(b.vx, b.vy) - 70) < 1e-6);
   assert.equal(w.events.filter((ev) => ev.type === 'enemyShoot').length, 1);
-  assert.ok(CB);
+  H.stepN(w, 170, idle);
+  assert.equal(shots.length, 4, 'second burst 2.8 s later');
 });
 
 test('offByOne: aims one tile ahead of a moving player', () => {
@@ -3937,6 +4840,8 @@ test('offByOne: backs off when close and closes in when far', () => {
   assert.ok(Math.hypot(e.x - w.player.x, e.y - w.player.y) < d1 - 15);
 });
 ```
+
+> Burst timing: the first bullet comes at about 3.0 s (tick 180–181), the second 0.12 s later (tick 188). The 200-tick check has slack. The next burst comes at about 5.8 s (tick 348–349) plus 0.12 s (tick 356), which falls within 370 ticks.
 
 For each of Tasks 10–14:
 - [ ] **Step 1:** Write the test file exactly as above.
@@ -3975,49 +4880,80 @@ For each of Tasks 10–14:
 
 ### Tasks 15–18: Bosses
 
-**Rules for every boss:**
-- Each boss file registers its part kinds in `CB.Enemies` (all `boss: true, regular: false`) and the boss in `CB.Bosses[id]`.
-- The controller is a plain object with the fields named below; tests poke them, so the names are part of the contract.
-- At a phase change, emit `bossPhase` (`x, y, phase`), call `w.addShake(4)`, and give the main targetable part `invuln = 0.5`.
-- HP-threshold events fire once per fight.
-- On defeat, kill all remaining parts with `w.killEnemy(part, true)` and set `controller.defeated = true`.
-- Bosses draw their health bar nowhere. The HUD does that.
+**Rules for every boss (rev 2). Each one is a requirement and is tested.**
+
+1. **Registration:** each boss file registers its part kinds in `CB.Enemies` (all `boss: true, regular: false`) and the boss in `CB.Bosses[id]`.
+2. **Controller fields:** the controller is a plain object with the fields named below. Tests poke them, so the names are part of the contract.
+3. **Thresholds:** phases begin when HP drops **strictly below** a fraction of max HP (`hp < f * maxHp`). Phases latch (`if (target > phase) { phase = target; … }`) and never revert, even if HP regenerates. Every HP-threshold event fires at most once per fight.
+4. **Phase change:**
+   - emit `bossPhase` (`x, y, phase`);
+   - call `w.addShake(4)`;
+   - give the main targetable part (or each twin) `invuln = 0.5`.
+5. **Safe spawn:**
+   - Every part is created with `noContactT: 0.5`, so it does no contact damage for its first 0.5 s. `world.step` decrements it and collide skips contact while it's positive.
+   - Each boss chooses its spawn from its candidate list by picking the candidate farthest from the player (the first one wins ties).
+   - The run also gives the player 1.0 s of invulnerability at boss start (Task 4).
+6. **Periodic attacks:** timers start full, so the first attack comes one full period after spawn or phase entry. Always fire through `w.fireEnemyBullet(...)` at fire time; never cache or bind it.
+7. **Velocity:** every part a controller moves directly publishes `vx = dx/dt`, `vy = dy/dt` each tick.
+8. **Defeat:**
+   - When the main part dies, the controller sets `defeated = true` and `hp = 0` in that same update.
+   - It kills all remaining parts with `w.killEnemy(part, true)` and clears overlay state (beams, banners, `resolveT`).
+   - `world.step` never calls `update` again once `defeated` is set (Task 3), and `WorldDraw` never calls its `draw` again (Task 19).
+9. **Finale data on the module object:**
+   - `diff: [2–4 strings]`: each line starts with `- ` or `+ `, is at most 46 characters, and uses only Task 8 glyphs.
+   - `file: '<name>'`.
+   - `portrait: '<spriteName>'`: an existing sprite, normally the main body's frame 0.
+   - `deathPoints(controller) → [{x, y}, …]`: finite positions, used by the finale's chained blasts (Task 21B).
+10. **Draw:** bosses draw no health bar of their own (the HUD does), except for the Merge Conflict twin mini-bars.
 
 #### Task 15: The Infinite Loop (`infiniteLoop`)
 
 **Files:** `src/game/bosses/infiniteLoop.js`, `tests/boss.infiniteLoop.test.js`. Depends at runtime on `syntaxError`.
 
-**Module:** `{ id: 'infiniteLoop', name: 'THE INFINITE LOOP', tagline: 'while (true) { bite(); }', commitMsg: 'fix: add a break condition', create }`.
+**Module fields:**
+- `id: 'infiniteLoop'`, `name: 'THE INFINITE LOOP'`, `tagline: 'while (true) { bite(); }'`, `commitMsg: 'fix: add a break condition'`.
+- `file: 'loop.js'`, `diff: ['- while (true) { bite(); }', '+ while (!done) { bite(); }', '+ if (++n > MAX) break;']`, `portrait: 'loopHead_0'`.
+- `deathPoints(c)` returns the head, then the segments from head to tail.
+- `create`.
 
 **Parts:**
 
 | Kind | r | hp | targetable | solid | contact |
 |---|---|---|---|---|---|
 | `loopHead` | 8 | 150 | yes | no | yes |
-| `loopSegment` ×12 | 6 | 9999 | no | yes | yes |
+| `loopSegment` ×8 | 5 | 9999 | no | yes | yes |
 
-**Controller fields:** `x, y, hp, maxHp, phase, defeated, head, segments (front→tail, alive only), angle, radius, angSpeed, dir, fanT, reverseT, shedT, cx: 160, cy: 96`.
+The head has `z: 1e6` and segments have `z: 1e5 - i`, so the head draws on top (Task 19 sorts by `z ?? y`).
+
+**Controller fields:** `x, y, hp, maxHp, phase, defeated, head, segments (front→tail, alive only), angle, radius, angSpeed, dir, fanT, fanTele, reverseT, shedT, path, cx: 160, cy: 96`.
 
 **Motion:**
 - The head sits at `(cx + cos(angle)*radius, cy + sin(angle)*radius)`, and `angle += dir*angSpeed*dt`.
-- Segments use follow-the-leader: each moves toward its predecessor to keep exactly 10 px spacing. Initialise them along the circle behind the head.
+- The start angle is the point on the circle farthest from the player: `angle = atan2(cy - p.y, cx - p.x)`.
+- **Path following:**
+  - Record the head's positions in `path`, newest first. Pre-fill it on creation by walking backwards along the circle in 1 px steps for 100 px.
+  - Each tick, place segment i at the point `10 × (i + 1)` px of cumulative path length behind the head, interpolating between recorded points.
+  - Trim `path` to the length needed.
+  - The segments therefore always lie on the head's actual path. This is not follow-the-leader chasing, which curls the tail inward.
 
 **Phases:**
 
-| | Phase 1 (hp > 75) | Phase 2 (hp ≤ 75) |
+| | Phase 1 | Phase 2 (`hp < 75`) |
 |---|---|---|
-| Radius | 60 | eases 60→40 over 2 s (linear) |
+| Radius | 60 | eases linearly 60→40 over 2 s |
 | `angSpeed` | 0.9 rad/s | 1.4 rad/s |
-| Fan | every 3 s (`fanT`): 3 bullets at ±15° around the aim at the player, speed 80 | every 2.5 s: 5 bullets at ±30° (15° steps) |
-| Reverse | | `reverseT = w.rng.range(4, 6)`. When `reverseT ≤ 0.5`, set `head.data.telegraph = true` (draw the head white-blinking). At 0, flip `dir`, clear the telegraph and re-roll. |
-| Shed | | every 5 s (`shedT`) while more than 4 segments remain: silently kill the tail segment and `w.spawnEnemy('syntaxError', tail.x, tail.y)` |
+| Fan | every 3.0 s (`fanT` starts 3.0): 3 bullets at ±15° around the aim at the player, speed 80 | every 2.5 s (`fanT` reset to 2.5 on phase entry): 5 bullets at ±30° in 15° steps |
+| Reverse | | `reverseT = w.rng.range(4, 6)` on phase entry. When `reverseT ≤ 0.5`, set `head.data.telegraph = true` (the head blinks white). At 0, flip `dir`, clear the telegraph and re-roll. |
+| Shed | | every 5 s (`shedT` starts 5 on phase entry) while more than 4 segments remain: silently kill the tail segment and `w.spawnEnemy('syntaxError', tail.x, tail.y)` |
+
+- **Fan telegraph:** when `fanT ≤ 0.35`, set `fanTele = true`. The head draws with `white: true` blinking at 20 Hz. Clear it when the fan fires.
 
 **Defeat:** when the head dies.
 
 **Sprites:**
-- Head: 18×18 purple (`p`/`P`) mandibled face with `w`/`k` eyes. 2 frames chomping.
-- Segment: 14×14 `p`/`P` ring with a `{ }` motif. Alternate a darker tint on every other segment.
-- `draw` overlay: nothing.
+- `loopHead_0/1`: 18×18 purple (`p`/`P`) mandibled face with `w`/`k` eyes, 2 frames chomping.
+- `loopSegment_0`: 12×12 `p`/`P` ring with a `{ }` motif. Draw every other segment with a darker variant (`loopSegment_1`).
+- Overlay `draw`: nothing.
 
 ```js
 'use strict';
@@ -4034,38 +4970,55 @@ function start() {
   return { CB, w, boss: w.boss };
 }
 const alive = (w, kind) => w.enemies.filter((e) => !e.dead && e.kind === kind);
+function countFires(w) {
+  const box = { n: 0 };
+  const orig = w.fireEnemyBullet;
+  w.fireEnemyBullet = (...a) => { box.n++; return orig(...a); };
+  return box;
+}
 
-test('infiniteLoop: one head and 12 solid untargetable segments', () => {
+test('infiniteLoop: one head and 8 solid untargetable r5 segments, all with spawn contact grace', () => {
   const { w, boss } = start();
   assert.equal(alive(w, 'loopHead').length, 1);
   const segs = alive(w, 'loopSegment');
-  assert.equal(segs.length, 12);
+  assert.equal(segs.length, 8);
   for (const s of segs) {
     assert.equal(s.targetable, false);
     assert.equal(s.solid, true);
+    assert.equal(s.r, 5);
     assert.equal(s.boss, true);
     assert.equal(s.regular, false);
+    assert.ok(s.noContactT >= 0.45);
   }
   assert.equal(boss.maxHp, 150);
   assert.equal(boss.hp, 150);
 });
 
-test('infiniteLoop: head circles the arena centre at radius 60 in phase 1', () => {
+test('infiniteLoop: head starts on the far side from the player and circles at radius 60', () => {
   const { w, boss } = start();
+  assert.ok(Math.hypot(boss.head.x - w.player.x, boss.head.y - w.player.y) > 85);
   H.stepN(w, 90, idle);
   const d = Math.hypot(boss.head.x - 160, boss.head.y - 96);
   assert.ok(Math.abs(d - 60) < 1, `radius ${d}`);
 });
 
-test('infiniteLoop: segments keep ~10 px spacing', () => {
+test('infiniteLoop: segments lie on the circle with ~10 px of path between them', () => {
   const { w, boss } = start();
   H.stepN(w, 120, idle);
   let prev = boss.head;
   for (const s of boss.segments) {
+    assert.ok(Math.abs(Math.hypot(s.x - 160, s.y - 96) - 60) < 1, 'on the circle');
     const d = Math.hypot(s.x - prev.x, s.y - prev.y);
-    assert.ok(d > 9 && d < 11.5, `spacing ${d}`);
+    assert.ok(d > 9 && d < 10.5, `chord ${d}`);
     prev = s;
   }
+});
+
+test('infiniteLoop: the head publishes its velocity (~54 px/s in phase 1)', () => {
+  const { w, boss } = start();
+  H.stepN(w, 30, idle);
+  const v = Math.hypot(boss.head.vx, boss.head.vy);
+  assert.ok(Math.abs(v - 54) < 1.5, `speed ${v}`);
 });
 
 test('infiniteLoop: segments absorb bolts; damage only lands on the head', () => {
@@ -4083,9 +5036,13 @@ test('infiniteLoop: segments absorb bolts; damage only lands on the head', () =>
   assert.equal(boss.hp, 140);
 });
 
-test('infiniteLoop: phase 2 at 50% eases the radius to 40 and emits bossPhase', () => {
-  const { w, boss } = start();
+test('infiniteLoop: exactly 75 HP is still phase 1; below 75 is phase 2', () => {
+  let { w, boss } = start();
   w.damageEnemy(boss.head, 75);
+  H.stepN(w, 1, idle);
+  assert.equal(boss.phase, 1);
+  ({ w, boss } = start());
+  w.damageEnemy(boss.head, 76);
   H.stepN(w, 1, idle);
   assert.equal(boss.phase, 2);
   assert.ok(w.events.some((e) => e.type === 'bossPhase'));
@@ -4111,20 +5068,22 @@ test('infiniteLoop: phase 2 sheds a segment into a syntaxError every 5 s, stoppi
   const { w, boss } = start();
   w.damageEnemy(boss.head, 80);
   H.stepN(w, 1, idle);
-  H.stepN(w, 5.2 * 60, idle);
-  assert.equal(alive(w, 'loopSegment').length, 11);
+  H.stepN(w, 5.3 * 60, idle);
+  assert.equal(alive(w, 'loopSegment').length, 7);
   assert.ok(alive(w, 'syntaxError').length >= 1);
-  H.stepN(w, 60 * 60, idle);
+  H.stepN(w, 40 * 60, idle);
   assert.equal(alive(w, 'loopSegment').length, 4);
 });
 
-test('infiniteLoop: phase 1 fires a 3-bullet fan every 3 s', () => {
-  const { w } = start();
-  let n = 0;
-  const orig = w.fireEnemyBullet;
-  w.fireEnemyBullet = (...a) => { n++; return orig(...a); };
-  H.stepN(w, 3.1 * 60, idle);
-  assert.equal(n, 3);
+test('infiniteLoop: phase 1 telegraphs then fires a 3-bullet fan every 3 s', () => {
+  const { w, boss } = start();
+  const c = countFires(w);
+  H.stepN(w, 2.8 * 60, idle);
+  assert.equal(c.n, 0);
+  assert.equal(boss.fanTele, true, 'telegraph shows 0.35 s before the fan');
+  H.stepN(w, 0.3 * 60, idle);
+  assert.equal(c.n, 3);
+  assert.equal(boss.fanTele, false);
 });
 
 test('infiniteLoop: killing the head defeats the boss and clears segments', () => {
@@ -4132,7 +5091,20 @@ test('infiniteLoop: killing the head defeats the boss and clears segments', () =
   w.damageEnemy(boss.head, 999);
   H.stepN(w, 1, idle);
   assert.equal(boss.defeated, true);
+  assert.equal(boss.hp, 0);
   assert.equal(alive(w, 'loopSegment').length, 0);
+});
+
+test('infiniteLoop: finale data', () => {
+  const { CB, boss } = start();
+  const B = CB.Bosses.infiniteLoop;
+  assert.ok(B.diff.length >= 2 && B.diff.length <= 4);
+  for (const l of B.diff) assert.match(l, /^[-+] /);
+  assert.equal(typeof B.file, 'string');
+  assert.ok(CB.Art.hasSprite(B.portrait));
+  const pts = B.deathPoints(boss);
+  assert.equal(pts.length, 9);
+  for (const p of pts) assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y));
 });
 ```
 
@@ -4140,37 +5112,40 @@ test('infiniteLoop: killing the head defeats the boss and clears segments', () =
 
 **Files:** `src/game/bosses/memoryLeakBoss.js`, `tests/boss.memoryLeakBoss.test.js`. Depends at runtime on `memoryLeak`.
 
-**Module:** `{ id: 'memoryLeakBoss', name: 'MEMORY LEAK', tagline: 'heap: 99% used', commitMsg: 'fix: free() what you malloc()', create }`.
+**Module fields:**
+- `id: 'memoryLeakBoss'`, `name: 'MEMORY LEAK'`, `tagline: 'heap: 99% used'`, `commitMsg: 'fix: free() what you malloc()'`.
+- `file: 'heap.c'`, `diff: ['- p = malloc(HEAP);', '+ p = malloc(HEAP);', '+ free(p);']`, `portrait: 'leakBoss_0'`.
+- `deathPoints(c)` returns the body centre plus 7 points on a circle of radius `body.r * 0.7`.
 
 **Parts:**
 
 | Kind | hp | r | targetable | solid | contact | notes |
 |---|---|---|---|---|---|---|
-| `leakBoss` | 240 | `14 × size` | yes | no | yes | spawned at (160, 70) |
+| `leakBoss` | 340 | `14 × size` | yes | no | yes | candidates (160, 60), (80, 96), (240, 96) |
 | `leakBlob` | n/a | 4 | no | no | no | `data = { sx, sy, tx, ty, t, dur: 1.0 }` |
 
 **`leakBoss`:**
-- Its `onHit` subtracts hp, sets `ctrl.idleT = 0`, and shrinks `ctrl.size = max(1, size − 0.004 × dmg)`.
-- It drifts toward the player at `18 / size` px/s.
+- Its `onHit` subtracts hp, sets `ctrl.idleT = 0`, and sets `ctrl.size = max(1, size − 0.004 × dmg)`.
+- It drifts toward the player at `18 / size` px/s and publishes `vx`/`vy`.
 
 **`leakBlob`:**
 - Its position lerps from the start to the target point (the parabola is cosmetic, in `draw` only).
-- At `t ≥ dur` it calls `w.addHazard({ kind: 'puddle', x: tx, y: ty, r: 12, life: 6, slow: 0.5 })`, emits `splat`, and kills itself silently.
+- At `t ≥ dur` it calls `w.addHazard({ kind: 'puddle', x: tx, y: ty, r: 12, life: 6, slow: 0.5 })`, emits `splat` (with x, y), and kills itself silently.
 
-**Controller fields:** `x, y, hp, maxHp: 240, phase, defeated, body, size (1.0..2.0), idleT, lobT, ringT, split66, split33`.
+**Controller fields:** `x, y, hp, maxHp: 340, phase, defeated, body, size (1.0..2.0), idleT, lobT, ringT, split66, split33`.
 - `idleT` accumulates and is reset by `onHit`.
-- When `idleT ≥ 1.5`: `body.hp = min(maxHp, body.hp + 4*dt)` and `size = min(2, size + 0.04*dt)`.
+- When `idleT ≥ 1.5`: `body.hp = min(maxHp, body.hp + 4*dt)` and `size = min(2, size + 0.10*dt)`.
 - `body.r = 14 * size`, and `hp` mirrors `body.hp` every tick.
 
 **Attacks and thresholds:**
-- **Lob:** every 2.5 s (`lobT`) it lobs 2 blobs (3 in phase 2), each to `player + (w.rng.range(-24, 24), w.rng.range(-24, 24))` clamped inside the arena, and emits `lob`.
-- **Splits:** when `hp ≤ 0.66 × maxHp` (once) and `hp ≤ 0.33 × maxHp` (once), spawn 3 `memoryLeak` (big) at 120° intervals 20 px from the body.
-- **Phase 2:** at `hp < 0.5 × maxHp`, add a ring of 8 bullets every 4 s (`ringT`).
+- **Lob:** every 2.5 s (`lobT` starts 2.5) it lobs 2 blobs (3 in phase 2). Each target is the player position plus a point uniform on the 24 px disc (`ang = w.rng.angle(); rad = 24*Math.sqrt(w.rng.next())`), clamped inside the arena. Emit `lob`.
+- **Splits:** when `hp < 0.66 × maxHp` (once) and `hp < 0.33 × maxHp` (once), spawn 3 `memoryLeak` (big) via `w.spawnEnemy` at 120° intervals 20 px from the body.
+- **Phase 2:** at `hp < 0.5 × maxHp` (latched), set `ringT = 4.0` and add a ring of 8 bullets (speed 70) every 4 s.
 - **Defeat:** when the body dies.
 
 **Sprites:**
-- `leakBoss`: 28×22 green slime (`g`/`G`/`k` + `w` shine), 2 wobble frames. Draw it at natural size and centred. Underneath, draw a translucent (alpha 0.35) green disc of radius `body.r`, so the true hitbox growth is visible. Above it, write `heap NN%` with `NN = round(50 + 49 × (size − 1))` in small text.
-- Blob: 6×6 green droplet, plus a dark shadow ellipse at the target.
+- `leakBoss_0/1`: 28×22 green slime (`g`/`G`/`k` + `w` shine), 2 wobble frames. Draw at natural size and centred. Underneath, draw a translucent (alpha 0.35) green disc of radius `body.r`, so the true hitbox growth is visible. Above it, write `heap NN%` with `NN = round(50 + 49 × (size − 1))` in small text.
+- `leakBlob_0`: 6×6 green droplet, plus a dark shadow ellipse at the target.
 
 ```js
 'use strict';
@@ -4187,24 +5162,31 @@ function start() {
   w.boss = CB.Bosses.memoryLeakBoss.create(w);
   return { CB, w, boss: w.boss };
 }
+function countFires(w) {
+  const box = { n: 0 };
+  const orig = w.fireEnemyBullet;
+  w.fireEnemyBullet = (...a) => { box.n++; return orig(...a); };
+  return box;
+}
 
-test('memoryLeakBoss: 240 HP, radius tracks size', () => {
+test('memoryLeakBoss: 340 HP, spawns at the farthest candidate, radius tracks size', () => {
   const { w, boss } = start();
-  assert.equal(boss.maxHp, 240);
-  assert.equal(boss.body.hp, 240);
+  assert.equal(boss.maxHp, 340);
+  assert.equal(boss.body.hp, 340);
+  assert.ok(Math.hypot(boss.body.x - w.player.x, boss.body.y - w.player.y) > 80);
   boss.size = 1.5;
   H.stepN(w, 1, idle);
   assert.ok(Math.abs(boss.body.r - 14 * boss.size) < 1e-9);
 });
 
-test('memoryLeakBoss: regenerates 4 HP/s and grows after 1.5 s without damage', () => {
+test('memoryLeakBoss: regenerates 4 HP/s and grows 0.10/s after 1.5 s without damage', () => {
   const { w, boss } = start();
   w.damageEnemy(boss.body, 40);
   const hp0 = boss.body.hp;
   H.stepN(w, 3.5 * 60, idle);
   const gained = boss.body.hp - hp0;
   assert.ok(gained > 7 && gained < 9, `gained ${gained}`);
-  assert.ok(boss.size > 1.05, `size ${boss.size}`);
+  assert.ok(boss.size > 1.15 && boss.size < 1.25, `size ${boss.size}`);
 });
 
 test('memoryLeakBoss: damage shrinks size with a floor of 1.0', () => {
@@ -4216,84 +5198,116 @@ test('memoryLeakBoss: damage shrinks size with a floor of 1.0', () => {
   assert.equal(boss.size, 1);
 });
 
-test('memoryLeakBoss: lobs 2 blobs every 2.5 s that become puddles after 1 s', () => {
+test('memoryLeakBoss: lobs 2 blobs every 2.5 s that land within 24 px of the player as puddles', () => {
   const { w } = start();
   H.stepN(w, 2.6 * 60, idle);
   assert.equal(alive(w, 'leakBlob').length, 2);
   H.stepN(w, 1.1 * 60, idle);
   assert.equal(alive(w, 'leakBlob').length, 0);
   assert.ok(w.hazards.length >= 2);
+  for (const h of w.hazards) assert.ok(Math.hypot(h.x - w.player.x, h.y - w.player.y) <= 24.5);
 });
 
-test('memoryLeakBoss: splits at 66% and 33%, each exactly once', () => {
+test('memoryLeakBoss: splits below 66% and 33%, each exactly once', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.body, 90);
+  w.damageEnemy(boss.body, 120);
   H.stepN(w, 1, idle);
   assert.equal(alive(w, 'memoryLeak').length, 3);
-  boss.body.hp = 200;
+  boss.body.hp = 300;
   H.stepN(w, 1, idle);
   w.damageEnemy(boss.body, 50);
   H.stepN(w, 1, idle);
   assert.equal(alive(w, 'memoryLeak').length, 3, 'no second 66% split');
-  w.damageEnemy(boss.body, 80);
+  w.damageEnemy(boss.body, 140);
   H.stepN(w, 1, idle);
   assert.equal(alive(w, 'memoryLeak').length, 6);
 });
 
-test('memoryLeakBoss: phase 2 below 50% adds an 8-bullet ring every 4 s', () => {
-  const { w, boss } = start();
-  w.damageEnemy(boss.body, 125);
+test('memoryLeakBoss: phase 2 strictly below 50% latches and adds an 8-bullet ring every 4 s', () => {
+  let { w, boss } = start();
+  w.damageEnemy(boss.body, 170);
+  H.stepN(w, 1, idle);
+  assert.equal(boss.phase, 1, 'exactly 50% is still phase 1');
+  ({ w, boss } = start());
+  w.damageEnemy(boss.body, 171);
   H.stepN(w, 1, idle);
   assert.equal(boss.phase, 2);
-  let n = 0;
-  const orig = w.fireEnemyBullet;
-  w.fireEnemyBullet = (...a) => { n++; return orig(...a); };
+  const c = countFires(w);
   H.stepN(w, 4.1 * 60, idle);
-  assert.ok(n >= 8, `bullets ${n}`);
+  assert.ok(c.n >= 8, `bullets ${c.n}`);
+  boss.body.hp = 330;
+  H.stepN(w, 1, idle);
+  assert.equal(boss.phase, 2, 'phases never revert');
 });
 
-test('memoryLeakBoss: defeat when the body dies', () => {
-  const { w, boss } = start();
+test('memoryLeakBoss: defeat when the body dies; finale data', () => {
+  const { CB, w, boss } = start();
   w.damageEnemy(boss.body, 999);
   H.stepN(w, 1, idle);
   assert.equal(boss.defeated, true);
+  const B = CB.Bosses.memoryLeakBoss;
+  assert.ok(CB.Art.hasSprite(B.portrait));
+  for (const l of B.diff) assert.match(l, /^[-+] /);
+  for (const p of B.deathPoints(boss)) assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y));
 });
 ```
 
-> In the regen test, the damage at t = 0 resets `idleT`, so regen runs from 1.5 s to 3.5 s: 2 s × 4 = 8 HP. Size also grows by 0.08 and shrinks by 0.16 from the hit, but it floors at 1.0 before growing: 1.0 → 1.08 > 1.05.
+> Regen test: the hit at t = 0 resets `idleT`, so regen runs from 1.5 s to 3.5 s: 8 HP (±1 tick). The hit's size shrink (0.16) floors at 1.0, then size grows by 0.20 to 1.2.
+>
+> Split test: 340 − 120 = 220, which is below 224.4 (66%), so it splits. Setting hp to 300 and dealing 50 gives 250: no new 66% split. Dealing 140 more gives 110, below 112.2 (33%), so it splits again.
 
 #### Task 17: Merge Conflict (`mergeConflict`)
 
 **Files:** `src/game/bosses/mergeConflict.js`, `tests/boss.mergeConflict.test.js`.
 
-**Module:** `{ id: 'mergeConflict', name: 'MERGE CONFLICT', tagline: '<<<<<<< HEAD', commitMsg: 'fix: resolve merge conflict', create }`.
+**Module fields:**
+- `id: 'mergeConflict'`, `name: 'MERGE CONFLICT'`, `tagline: '<<<<<<< HEAD'`, `commitMsg: 'fix: resolve merge conflict'`.
+- `file: 'merge.js'`, `diff: ['- <<<<<<< HEAD', '- =======', '- >>>>>>> incoming', '+ // kept both. you are welcome']`, `portrait: 'conflictHead_0'`.
+- `deathPoints(c)` returns both twins' last positions plus their midpoint.
 
-**Parts:** `conflictTwin` ×2 with `data.side = 'head' | 'incoming'`. Each has r 8, hp 90, is targetable and has contact. HEAD is blue (`b`/`B`), incoming is green (`g`/`G`).
+**Parts:** `conflictTwin` ×2 with `data.side = 'head' | 'incoming'`. Each has r 8, **hp 130**, is targetable and has contact.
+- Sprites are `conflictHead_0/1` (blue, `b`/`B`) and `conflictIncoming_0/1` (green, `g`/`G`).
+- Each twin draws a **24×3 mini HP bar** 4 px above its sprite: an `ink` background, a fill in its own colour, and a 1 px white **notch at 17 HP** (the finish zone).
+- Tiny `<<<<<<<` above HEAD and `>>>>>>>` above incoming.
 
-**Controller fields:** `x, y (midpoint of living twins), hp (sum of living twins' hp), maxHp: 180, phase, defeated, head, incoming, resolveT (null | seconds), deadSide (null | 'head' | 'incoming'), attackT, attackIdx, attack (null | {kind, t}), cx: 160, cy: 96`.
+**Controller fields:** `x, y (midpoint of living twins), hp (sum of living twins' hp, clamped ≥ 0), maxHp: 260, phase, defeated, head, incoming, resolveT (null | seconds), deadSide (null | 'head' | 'incoming'), attackT, attackIdx, attack (null | {kind, t}), cx: 160, cy: 96`.
+
+**Spawn:** HEAD goes at the candidate farthest from the player among (90, 56), (230, 56), (90, 136) and (230, 136). Incoming goes at its mirror point. Both are therefore at least 40 px from the arena centre.
 
 **Movement:**
 - HEAD moves toward a waypoint (`w.randomPoint(24)`) at 50 px/s and re-rolls the waypoint within 4 px of it.
-- Incoming sits at `(2*cx − head.x, 2*cy − head.y)` while HEAD is alive and not charging.
+- Incoming sits at `(2*cx − head.x, 2*cy − head.y)` while HEAD is alive and no charge or line attack is running.
 - If HEAD is dead, incoming wanders on its own waypoints. After a charge, incoming returns to its mirror point at up to 120 px/s.
+- Publish `vx`/`vy` for both twins.
 
-**Attacks:** every 2.8 s (`attackT`), start the next attack from the rotation `['crossfire', 'line']`. In phase 2 the rotation is `['crossfire', 'line', 'charge']`.
+**Attacks:** every 2.8 s (`attackT` starts 2.8), start the next attack from the rotation `['crossfire', 'line']`. In phase 2 the rotation is `['crossfire', 'line', 'charge']`.
 - **crossfire:** each living twin fires a 3-bullet aimed burst (0.12 s apart, speed 85).
-- **line:** needs both twins alive, otherwise it falls back to crossfire. Telegraph for 0.8 s (emit `beamCharge`), then a beam for 0.5 s (emit `beam` once). While the beam is active, if `CB.M.circleSegment(p.x, p.y, p.r + 1, head.x, head.y, incoming.x, incoming.y)`, call `CB.Player.hurt(p, w, null)`. Twins hold position during line.
-- **charge:** a 0.4 s jitter telegraph, then both living twins dash at the player's position at 160 px/s for 0.5 s.
+- **line:**
+  - Needs both twins alive, otherwise it falls back to crossfire.
+  - Twins hold position for the whole attack.
+  - Telegraph for 0.8 s (emit `beamCharge` with x1, y1, x2, y2), then a beam for 0.5 s (emit `beam` once, with coordinates).
+  - While the beam is active, if `CB.M.circleSegment(p.x, p.y, p.r + 1, head.x, head.y, incoming.x, incoming.y)`, call `w.hurtPlayer(null)`.
+- **charge:**
+  - A 0.4 s jitter telegraph, then each living twin dashes at the player's position at 160 px/s for 0.5 s.
+  - A twin within 40 px of the player at telegraph start does not charge.
 - `startAttack(kind)` is exposed on the controller for tests.
 
 **Resolve rule:**
-- The first time exactly one twin is dead: `resolveT = 4.0` and `deadSide` = that side. Emit `text` with "RESOLVE THE CONFLICT" at the arena centre.
+- Whenever exactly one twin is dead and `resolveT` is null: set `resolveT = 6.0` and `deadSide` = that side, and emit `text` "FINISH <SIDE>!" at the arena centre.
 - If the other twin dies while `resolveT > 0`, set `defeated`.
-- When `resolveT` reaches 0: spawn a new `conflictTwin` of `deadSide` at `(cx, cy − 30)` with hp 45, emit `revive`, emit `text` "merge failed", set `resolveT = null`, and wire it back as `head`/`incoming`.
+- When `resolveT` reaches 0:
+  - Spawn a new `conflictTwin` of `deadSide` with **hp 20** at the candidate farthest from the player among (60, 50), (260, 50) and (160, 150). Its distance must be ≥ 70 px, else use the farthest anyway.
+  - It gets `noContactT: 0.5`.
+  - Emit `revive` (x, y) and `text` "merge failed".
+  - Set `resolveT = null`, `deadSide = null`, and wire it back as `head`/`incoming`.
+- The window re-triggers every time exactly one twin is dead.
 - Both twins dying in the same tick defeats the boss.
 
-**Phase 2:** at combined hp < 90.
+**Phase 2:** when combined hp < 130 (latched).
 
-**Overlay `draw`:** the telegraph line (blinking 1 px) and beam (3 px with a bright core) between the twins. While `resolveT != null`, show the text `RESOLVE THE CONFLICT ` plus `resolveT.toFixed(1)` centred at y 30.
-
-**Twin `draw`:** each twin draws a 14×2 mini HP bar 3 px above its sprite (an `ink` background with a fill in its own colour). This is how players learn the real puzzle: the combined bar alone hides that the twins must be worn down evenly, so both can fall inside the 4 s window. Also draw `<<<<<<<` above HEAD and `>>>>>>>` above incoming in tiny text.
+**Overlay `draw`:**
+- The telegraph line (blinking 1 px) and the beam (3 px with a bright core) between the twins.
+- While `resolveT != null`: `FINISH <SIDE>!` and `resolveT.toFixed(1)`, centred at y 30, plus a blinking arrow over the surviving twin.
 
 ```js
 'use strict';
@@ -4311,14 +5325,17 @@ function start(god) {
   return { CB, w, boss: w.boss };
 }
 
-test('mergeConflict: two twins of 90 HP, combined 180', () => {
+test('mergeConflict: two twins of 130 HP, combined 260, at least 40 px from centre', () => {
   const { w, boss } = start();
   const t = twins(w);
   assert.equal(t.length, 2);
   assert.deepEqual(t.map((e) => e.data.side).sort(), ['head', 'incoming']);
-  for (const e of t) assert.equal(e.hp, 90);
-  assert.equal(boss.maxHp, 180);
-  assert.equal(boss.hp, 180);
+  for (const e of t) {
+    assert.equal(e.hp, 130);
+    assert.ok(Math.hypot(e.x - 160, e.y - 96) >= 40);
+  }
+  assert.equal(boss.maxHp, 260);
+  assert.equal(boss.hp, 260);
 });
 
 test('mergeConflict: incoming mirrors HEAD through the arena centre', () => {
@@ -4328,95 +5345,134 @@ test('mergeConflict: incoming mirrors HEAD through the arena centre', () => {
   assert.ok(Math.abs(boss.incoming.y - (192 - boss.head.y)) < 0.01);
 });
 
-test('mergeConflict: a missed resolve window revives the dead twin at 45 HP', () => {
+test('mergeConflict: a missed 6 s window revives the dead twin at 20 HP, far from the player', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.head, 90);
+  w.damageEnemy(boss.head, 130);
   H.stepN(w, 1, idle);
-  assert.ok(boss.resolveT > 3.9 && boss.resolveT <= 4.0, `resolveT ${boss.resolveT}`);
+  assert.ok(boss.resolveT > 5.9 && boss.resolveT <= 6.0, `resolveT ${boss.resolveT}`);
   assert.equal(boss.deadSide, 'head');
-  H.stepN(w, 4.1 * 60, idle);
+  H.stepN(w, 6.2 * 60, idle);
   const head = twins(w).find((e) => e.data.side === 'head');
   assert.ok(head, 'HEAD revived');
-  assert.equal(head.hp, 45);
+  assert.equal(head.hp, 20);
+  assert.ok(head.noContactT > 0);
   assert.equal(boss.resolveT, null);
   assert.ok(w.events.some((e) => e.type === 'revive'));
   assert.equal(boss.defeated, false);
+  w.damageEnemy(boss.head, 20);
+  H.stepN(w, 1, idle);
+  assert.ok(boss.resolveT > 5.9, 'the window re-triggers after a revive');
 });
 
 test('mergeConflict: killing the second twin inside the window defeats the boss', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.head, 90);
-  H.stepN(w, 60, idle);
-  w.damageEnemy(boss.incoming, 90);
+  w.damageEnemy(boss.head, 130);
+  H.stepN(w, 5 * 60, idle);
+  w.damageEnemy(boss.incoming, 130);
   H.stepN(w, 1, idle);
   assert.equal(boss.defeated, true);
+  assert.equal(boss.resolveT, null);
 });
 
 test('mergeConflict: both twins dying in the same tick defeats the boss', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.head, 90);
-  w.damageEnemy(boss.incoming, 90);
+  w.damageEnemy(boss.head, 130);
+  w.damageEnemy(boss.incoming, 130);
   H.stepN(w, 1, idle);
   assert.equal(boss.defeated, true);
 });
 
-test('mergeConflict: the conflict-line beam hurts a player standing on it', () => {
+test('mergeConflict: the conflict-line beam hurts a player standing on it, only after the telegraph', () => {
   const { w, boss } = start(false);
+  boss.head.x = 100;
+  boss.head.y = 60;
+  boss.incoming.x = 220;
+  boss.incoming.y = 132;
   w.player.x = 160;
   w.player.y = 96;
   boss.startAttack('line');
-  H.stepN(w, 0.95 * 60, idle);
-  assert.equal(w.player.hearts, 4);
+  H.stepN(w, 40, idle);
+  assert.equal(w.player.hearts, 5, 'no damage during the 0.8 s telegraph');
   assert.ok(w.events.some((e) => e.type === 'beamCharge'));
+  H.stepN(w, 17, idle);
+  assert.equal(w.player.hearts, 4);
   assert.ok(w.events.some((e) => e.type === 'beam'));
 });
 
-test('mergeConflict: phase 2 when combined HP drops below 90', () => {
-  const { w, boss } = start();
-  w.damageEnemy(boss.head, 50);
-  w.damageEnemy(boss.incoming, 45);
+test('mergeConflict: phase 2 strictly below 130 combined HP', () => {
+  let { w, boss } = start();
+  w.damageEnemy(boss.head, 65);
+  w.damageEnemy(boss.incoming, 65);
+  H.stepN(w, 1, idle);
+  assert.equal(boss.phase, 1);
+  ({ w, boss } = start());
+  w.damageEnemy(boss.head, 70);
+  w.damageEnemy(boss.incoming, 61);
   H.stepN(w, 1, idle);
   assert.equal(boss.phase, 2);
   assert.ok(w.events.some((e) => e.type === 'bossPhase'));
 });
+
+test('mergeConflict: finale data', () => {
+  const { CB, boss } = start();
+  const B = CB.Bosses.mergeConflict;
+  assert.ok(CB.Art.hasSprite(B.portrait));
+  for (const l of B.diff) assert.match(l, /^[-+] /);
+  for (const p of B.deathPoints(boss)) assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y));
+});
 ```
 
-> The beam test relies on the twins mirroring through the centre, so the HEAD–incoming segment always passes through (160, 96). Twins must hold position during `line`, which keeps the segment through the centre. The player stands at the centre with `contact` twins far away.
+> The beam test pins the twins so the segment passes through (160, 96). The first `line` tick is the start of the 0.8 s telegraph, so the beam starts at tick 48–49 and 57 ticks is inside the beam. The twins hold position during `line`, so the mirror rule doesn't move them.
 
 #### Task 18: The Heisenbug (`heisenbug`)
 
 **Files:** `src/game/bosses/heisenbug.js`, `tests/boss.heisenbug.test.js`. Depends at runtime on `nullPointer`.
 
-**Module:** `{ id: 'heisenbug', name: 'THE HEISENBUG', tagline: 'works on my machine', commitMsg: 'fix: cannot reproduce (closed)', create }`.
+**Module fields:**
+- `id: 'heisenbug'`, `name: 'THE HEISENBUG'`, `tagline: 'works on my machine'`, `commitMsg: 'fix: cannot reproduce (closed)'`.
+- `file: 'repro.js'`, `diff: ['- // works on my machine', '+ // works on every machine', '+ // (probably)']`, `portrait: 'heisenbug_0'`.
+- `deathPoints(c)` returns the body plus 6 points on a radius-14 ring.
 
 **Parts:**
 
 | Kind | r | hp | notes |
 |---|---|---|---|
-| `heisenbug` | 9 | 260 | the real one, spawned at (160, 60) |
-| `heisenDecoy` | 9 | 1 | `onDeath` emits `text` "404" (grey) |
+| `heisenbug` | 9 | 240 | the real one; candidates (160, 50), (60, 96), (260, 96) |
+| `heisenDecoy` | 9 | 1 | `onDeath` emits `text` "404" (grey, with x, y) |
 
-**Controller fields:** `x, y, hp, maxHp: 260, phase, defeated, body, decoys, observeT, blinkT, blink (null | {stage: 'out' | 'in', t}), spiralAngle, spiralT, summonT`.
+**Controller fields:** `x, y, hp, maxHp: 240, phase, defeated, body, decoys, observeT, blinkT, blink (null | {stage: 'out' | 'in', t}), spiralAngle, spiralT, summonT`.
 
 **Blink:**
 - When `blinkT ≤ 0`, start fading out for 0.3 s: the body is untargetable, has no contact, and its alpha goes 1→0.
-- Then teleport to `w.randomPoint(24, 80)`. In phase ≥ 2, replace the decoys: silently kill the old ones and spawn 2 new `heisenDecoy` at `w.randomPoint(24, 60)`, fading in with the body.
-- Fade in for 0.3 s while still untargetable, then become targetable and fire a ring of 10 bullets at speed 75 (each decoy fires a 6-bullet ring in phase 2+).
-- `blinkT` resets to `w.rng.range(2.5, 3.5)` in phases 1–2 and to 5 in phase 3.
+- Then teleport to `w.randomPoint(24, 80)`.
+- **In phase 2 only:** replace the decoys. Silently kill the old ones and spawn 2 new `heisenDecoy` at `w.randomPoint(24, 60)`, fading in with the body.
+- Fade in for 0.3 s while still untargetable, then become targetable and fire a ring of 10 bullets at speed 75 (each decoy fires a 6-bullet ring).
+- `blinkT` resets to `w.rng.range(2.5, 3.5)` in phases 1–2 and to 5 in phase 3. The first `blinkT` is `w.rng.range(2.5, 3.5)`.
 
 **Observation:**
 - Each tick, if the body is targetable and `dist(w.player.aimX, w.player.aimY, body) ≤ 14`, then `observeT += dt`. Otherwise `observeT = 0`.
-- At `observeT ≥ 1.0`, teleport instantly to `w.randomPoint(24, 80)`, emit `teleport` and `text` "!?", and reset `observeT` to 0.
+- At `observeT ≥ 2.0`, teleport instantly to `w.randomPoint(24, 80)`, emit `teleport` (x, y, x2, y2) and `text` "!?", and reset `observeT` to 0.
+
+**Tell (draw):**
+- **Observer ring:** while `observeT > 0`, light `floor(16 * observeT / 2.0)` of 16 dots on a radius-14 ring around the **real** body, with a small eye glyph above it that turns red after 1.5 s.
+- **Chromatic offset:** grows from 1 to 3 px linearly with `observeT / 2.0`.
+- **Flash:** the body flashes white once at `observeT ≥ 1.0`.
 
 **Phases:**
-- Phase 2 at hp ≤ 156 (60%).
-- Phase 3 at hp ≤ 65 (25%). It adds the spiral: every 0.25 s (`spiralT`) fire 2 bullets at `spiralAngle` and `spiralAngle + π` (speed 70), with `spiralAngle += 2.2*dt`. Every 8 s (`summonT`, first at 2 s into phase 3), spawn `min(2, 4 − aliveNullPointers)` `nullPointer`s via `w.queueSpawn` at `w.edgePoint(60)`.
+- **Phase 2** at hp < 144 (60%).
+- **Phase 3** at hp < 60 (25%):
+  - On entry, silently kill all decoys. No more decoys in phase 3.
+  - **Spiral:** every 0.25 s (`spiralT`, starts 0.25) fire 2 bullets at `spiralAngle` and `spiralAngle + π` (speed 70), with `spiralAngle += 2.2*dt`.
+  - **Summons:** every 8 s (`summonT`, starts 2 on phase-3 entry), spawn `min(2, 4 − (alive + pending nullPointers))` `nullPointer`s via `w.queueSpawn` at `w.edgePoint(60)`.
+- Multiple thresholds crossed in one hit apply in order (1→2→3).
 
 **Defeat:** when the body dies. Silently kill the decoys.
 
 **Sprites:**
-- 16×14 moth with chromatic offset. Draw the sprite three times: cyan copy shifted −1 px in x, magenta copy +1 px in x (both at 50% alpha), then the normal sprite. 3-frame wing flutter.
-- Decoys draw identically to the real one, except that only the real one flickers white when hit.
+- `heisenbug_0/1/2`: 16×14 moth, 3-frame wing flutter.
+- `heisenbug_cyan_N` and `heisenbug_mag_N`: made with `CB.Art.defineTint` (Task 2) in cyan `#5FD4E0` and magenta `#E055B0`.
+- Draw: cyan copy at −offset px x, magenta copy at +offset px x (both alpha 0.5), then the normal sprite.
+- Decoys draw identically, except that only the real one flickers white when hit and only the real one shows the observer ring.
 
 ```js
 'use strict';
@@ -4434,23 +5490,38 @@ function start() {
 }
 const aimAt = (boss) => () => H.makeInput({ aimX: boss.body.x, aimY: boss.body.y });
 const aimAway = () => H.makeInput({ aimX: 10, aimY: 170 });
+function countFires(w) {
+  const box = { n: 0 };
+  const orig = w.fireEnemyBullet;
+  w.fireEnemyBullet = (...a) => { box.n++; return orig(...a); };
+  return box;
+}
 
-test('heisenbug: teleports after 1.0 s of continuous observation, landing ≥ 80 px from the player', () => {
+test('heisenbug: 240 HP, spawns away from the player', () => {
+  const { w, boss } = start();
+  assert.equal(boss.maxHp, 240);
+  assert.ok(Math.hypot(boss.body.x - w.player.x, boss.body.y - w.player.y) > 70);
+});
+
+test('heisenbug: teleports after 2.0 s of continuous observation, landing ≥ 80 px from the player', () => {
   const { w, boss } = start();
   let tp = -1;
-  for (let i = 0; i < 80 && tp < 0; i++) {
+  for (let i = 0; i < 140 && tp < 0; i++) {
     H.stepN(w, 1, aimAt(boss));
     if (w.events.some((e) => e.type === 'teleport')) tp = i + 1;
   }
-  assert.ok(tp >= 59 && tp <= 63, `teleport tick ${tp}`);
+  assert.ok(tp >= 119 && tp <= 123, `teleport tick ${tp}`);
   assert.ok(Math.hypot(boss.body.x - w.player.x, boss.body.y - w.player.y) >= 80);
+  assert.equal(boss.observeT, 0);
 });
 
 test('heisenbug: observation resets when the aim leaves', () => {
   const { w, boss } = start();
-  H.stepN(w, 36, aimAt(boss));
+  H.stepN(w, 72, aimAt(boss));
+  assert.ok(boss.observeT > 1.1);
   H.stepN(w, 6, aimAway);
-  H.stepN(w, 36, aimAt(boss));
+  assert.equal(boss.observeT, 0);
+  H.stepN(w, 72, aimAt(boss));
   assert.equal(w.events.filter((e) => e.type === 'teleport').length, 0);
 });
 
@@ -4464,11 +5535,21 @@ test('heisenbug: untargetable while fading during a blink', () => {
   assert.equal(boss.body.targetable, true);
 });
 
-test('heisenbug: phase 2 places 2 one-HP decoys per blink that pop with 404', () => {
-  const { w, boss } = start();
-  w.damageEnemy(boss.body, 110);
+test('heisenbug: thresholds are strict (144 → phase 1, 143 → phase 2)', () => {
+  let { w, boss } = start();
+  w.damageEnemy(boss.body, 96);
+  H.stepN(w, 1, aimAway);
+  assert.equal(boss.phase, 1);
+  ({ w, boss } = start());
+  w.damageEnemy(boss.body, 97);
   H.stepN(w, 1, aimAway);
   assert.equal(boss.phase, 2);
+});
+
+test('heisenbug: phase 2 places 2 one-HP decoys per blink that pop with 404', () => {
+  const { w, boss } = start();
+  w.damageEnemy(boss.body, 97);
+  H.stepN(w, 1, aimAway);
   boss.blinkT = 0;
   H.stepN(w, 45, aimAway);
   const decoys = alive(w, 'heisenDecoy');
@@ -4478,17 +5559,21 @@ test('heisenbug: phase 2 places 2 one-HP decoys per blink that pop with 404', ()
   assert.ok(w.events.some((e) => e.type === 'text' && e.text === '404'));
 });
 
-test('heisenbug: phase 3 spiral fires ~8 bullets/s and never keeps more than 4 nullPointers', () => {
+test('heisenbug: phase 3 removes decoys, spirals ~8 bullets/s and keeps at most 4 nullPointers', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.body, 200);
+  w.damageEnemy(boss.body, 97);
+  H.stepN(w, 1, aimAway);
+  boss.blinkT = 0;
+  H.stepN(w, 45, aimAway);
+  assert.equal(alive(w, 'heisenDecoy').length, 2);
+  w.damageEnemy(boss.body, 90);
   H.stepN(w, 1, aimAway);
   assert.equal(boss.phase, 3);
+  assert.equal(alive(w, 'heisenDecoy').length, 0);
   boss.blinkT = 999;
-  let n = 0;
-  const orig = w.fireEnemyBullet;
-  w.fireEnemyBullet = (...a) => { n++; return orig(...a); };
+  const c = countFires(w);
   H.stepN(w, 120, aimAway);
-  assert.ok(n >= 14 && n <= 18, `spiral bullets in 2 s: ${n}`);
+  assert.ok(c.n >= 14 && c.n <= 18, `spiral bullets in 2 s: ${c.n}`);
   let peak = 0;
   for (let i = 0; i < 30 * 60; i++) {
     H.stepN(w, 1, aimAway);
@@ -4497,9 +5582,9 @@ test('heisenbug: phase 3 spiral fires ~8 bullets/s and never keeps more than 4 n
   assert.ok(peak >= 2 && peak <= 4, `peak ${peak}`);
 });
 
-test('heisenbug: defeat clears decoys', () => {
-  const { w, boss } = start();
-  w.damageEnemy(boss.body, 110);
+test('heisenbug: defeat clears decoys; finale data; tinted sprites exist', () => {
+  const { CB, w, boss } = start();
+  w.damageEnemy(boss.body, 97);
   H.stepN(w, 1, aimAway);
   boss.blinkT = 0;
   H.stepN(w, 45, aimAway);
@@ -4507,16 +5592,21 @@ test('heisenbug: defeat clears decoys', () => {
   H.stepN(w, 1, aimAway);
   assert.equal(boss.defeated, true);
   assert.equal(alive(w, 'heisenDecoy').length, 0);
+  const B = CB.Bosses.heisenbug;
+  assert.ok(CB.Art.hasSprite(B.portrait));
+  assert.ok(CB.Art.hasSprite('heisenbug_cyan_0') && CB.Art.hasSprite('heisenbug_mag_0'));
+  for (const l of B.diff) assert.match(l, /^[-+] /);
+  for (const p of B.deathPoints(boss)) assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y));
 });
 ```
 
-> `aimAt(boss)` reads `boss.body.x/y` each tick through the function form of `stepN`. Phase-change invulnerability (0.5 s) doesn't block observation. If the phase-2 test's `damageEnemy(boss.body, 110)` lands while the body is invulnerable, it returns 0. The body starts with `invuln = 0`, so the first hit lands.
+> Phase-change invulnerability (0.5 s) blocks a second `damageEnemy` within 0.5 s. In the phase-3 test, the 90-damage hit lands 46 ticks (0.77 s) after the phase-2 change, so it isn't blocked. 143 − 90 = 53 < 60, so it reaches phase 3.
 
 For each of Tasks 15–18:
 - [ ] **Step 1:** Write the test file exactly as above.
 - [ ] **Step 2:** Run it and confirm it fails.
 - [ ] **Step 3:** Implement the module. Every number in the spec block is a requirement.
-- [ ] **Step 4:** Run until it passes, then run `node --test tests/` to make sure nothing else broke.
+- [ ] **Step 4:** Run until it passes, then run the whole suite with `node --test` to make sure nothing else broke.
 
 ---
 
@@ -4639,6 +5729,89 @@ test('draw: world, HUD and both cursors render in wave and boss states', () => {
 ```
 
 - [ ] Step 1: Write the test. Step 2: Run it and confirm it fails. Step 3: Implement `arena.js` and `hud.js`, and paste `worldDraw.js` from above. Step 4: Run it until it passes.
+
+**Rev 2 additions (Task 19):**
+- **`CB.Arena.draw(r, stage, t, w)`:** the 4th argument is optional, since the title omits it. When `w` is given, draw per-frame overlays after the cached static floor and before entities. Every overlay alpha is ≤ 0.2 except the scan bar.
+  - **`infiniteLoop`:** a dashed ring at `(160, 96)` with radius `w.boss.radius`, in accent at alpha 0.18. In phase 2 the left-wall line numbers cycle `1 2 3`.
+  - **`memoryLeakBoss`:** a 4×100 gauge in the left wall filled bottom-up by `size − 1`, going green → yellow → red, plus a green floor tint at alpha `0.05 × (size − 1)`.
+  - **`mergeConflict`:**
+    - a vertical dashed divider at x 160;
+    - the left half tinted blue and the right half green, both at alpha 0.07;
+    - labels `<<<<<<< HEAD` (blue) at (12, 22) and `>>>>>>> incoming` (green), right-aligned at (308, 166).
+  - **`heisenbug`:**
+    - From phase 2, every 1.7 s a 0.12 s glitch band: 3 horizontal strips 4–8 px tall, offset ±3 px. Position and offset come from a hash of `floor(t × 8)`, never RNG.
+    - In phase 3, ghost `404` and `?` texts at hashed positions.
+  - **Scan bar:** while `w.glitchT > 0`, a bright 6 px scan bar sweeps top → bottom at alpha 0.35 over 0.4 s.
+  - **`CB.Arena.bossTheme(id, phase)`:** a pure lookup that returns `{ overlay: id, tint }` for the four ids and `null` otherwise.
+- **WorldDraw:** replace the Task 19 code with this rev-2 version.
+
+```js
+// Draw order for one world frame. Cosmetic only: nothing here mutates world state.
+(function (CB) {
+  'use strict';
+  function drawHazard(r, h, t) {
+    const k = Math.min(1, h.life / 0.5);
+    r.alpha(0.45 * k, () => r.disc(h.x, h.y, h.r, CB.Pal.C.greenDark));
+    r.alpha(0.6 * k, () => r.ring(h.x, h.y, h.r - (Math.floor(t * 6) % 3), CB.Pal.C.green));
+  }
+  function drawTelegraph(r, s, t) {
+    const blink = Math.floor(t * 12) % 2 === 0;
+    const k = 1 - Math.max(0, s.t) / (s.total || 0.6);
+    r.ring(s.x, s.y, Math.max(2, Math.round(10 - 7 * k)), blink ? CB.Pal.C.gold : CB.Pal.C.hurt);
+    r.text('!', s.x, s.y - 4, { align: 'center', color: blink ? CB.Pal.C.gold : CB.Pal.C.hurt, shadow: CB.Pal.C.ink });
+  }
+  function drawElite(r, e, t) {
+    r.alpha(0.6 + 0.3 * Math.sin(t * 6), () => r.ring(e.x, e.y, e.r + 3, CB.Pal.C.gold));
+    r.rect(e.x - 5, e.y - e.r - 10, 11, 7, CB.Pal.C.redDark);
+    r.text('P0', e.x, e.y - e.r - 10, { align: 'center', color: CB.Pal.C.white });
+  }
+  const zOf = (e) => (e.z != null ? e.z : e.y);
+  CB.WorldDraw = {
+    draw(r, w, t, opts) {
+      CB.Arena.draw(r, w.stage, t, w);
+      if (CB.Fx.drawUnder) CB.Fx.drawUnder(w, r, t);
+      for (const h of w.hazards) drawHazard(r, h, t);
+      for (const s of w.spawns) drawTelegraph(r, s, t);
+      if (CB.Pickups) CB.Pickups.draw(w, r, t);
+      const list = w.enemies.filter((e) => !e.dead && e.visible).sort((a, b) => zOf(a) - zOf(b));
+      for (const e of list) {
+        const mod = CB.Enemies[e.kind];
+        const pose = CB.Fx.pose && !e.boss ? CB.Fx.pose(e) : null;
+        if (pose && (pose.sx !== 1 || pose.sy !== 1)) r.squash(e.x, e.y + e.r, pose.sx, pose.sy, () => mod.draw(e, r, t));
+        else mod.draw(e, r, t);
+        if (e.elite) drawElite(r, e, t);
+      }
+      CB.Player.draw(w.player, r, t);
+      CB.Projectiles.draw(w, r, t);
+      if (w.boss && !w.boss.defeated) w.boss.draw(r, t);
+      if (CB.Compact) CB.Compact.draw(w, r, t);
+      CB.Fx.draw(w, r, t);
+      if (opts && opts.hitboxes) {
+        for (const e of w.enemies) if (!e.dead) r.ring(e.x, e.y, e.r, e.targetable ? '#00FF88' : e.solid ? '#FFAA00' : '#888888');
+        r.ring(w.player.x, w.player.y, w.player.r, '#00FFFF');
+        for (const b of w.eBullets) r.ring(b.x, b.y, b.r, '#FF00FF');
+      }
+    },
+  };
+})(window.CB);
+```
+
+- **HUD rev 2:**
+  - **Last heart:** at 1 heart, draw the remaining heart at `scale = 1 + 0.35 × player.beatPulse` (rounded down to 1 or 2 by the renderer's scale param: use `scale: beatPulse > 0.5 ? 2 : 1`, centred).
+  - **Low-health vignette:** at 1 heart, three nested 1 px `frame`s around the screen edge in `hurt`, at `alpha 0.10 + 0.20 × beatPulse`.
+  - **Context meter:** a 48×3 bar at (4, 13) with an `ink` background and a cyan fill of `context.value / max`. At full it flashes gold at 3 Hz and shows `[E] /compact` in gold at (56, 11).
+  - **Chain:** when `w.chain.n ≥ 3`, show `x<n>` in `pale` after the meter. At `n ≥ 20` show `ULTRATHINK` instead, coloured by `floor(t × 10) % 6` through red, ember, yellow, green, cyan and purple.
+  - **YOLO:** when `run.yolo`, a red `YOLO` tag at (78, 5).
+  - **/compact banner:** while `w.compactBannerT > 0`, `Compacting conversation...` centred at y 22 in gold, with alpha = `min(1, compactBannerT × 3)`.
+  - Everything is guarded, so the HUD works without `CB.Compact`.
+- **Extra test:** add draw cases to `tests/draw.world.test.js`:
+  - for each boss id (with stub `w.boss` objects carrying `id`, `phase`, `radius`, `size`), phases 1–3 and `w.glitchT` in {0, 0.2};
+  - hearts = 1 with beatPulse 1;
+  - `w.context = {value: 60, max: 60}` and `w.chain = {n: 25}`;
+  - `w.compactBannerT = 0.5` and `run.yolo = true`;
+  - an elite enemy (`elite: true`);
+  - `CB.Arena.draw(r, stage, t)` with no 4th argument;
+  - `CB.Arena.bossTheme('nope', 1) === null`.
 
 ### Task 20: Screens (overlays, patch pick, game over, victory, panic)
 
@@ -4771,6 +5944,35 @@ test('screens: panic screen never throws', () => {
 
 - [ ] Step 1: Write the test. Step 2: Run it and confirm it fails. Step 3: Implement. Step 4: Run it until it passes.
 
+**Rev 2 additions (Task 20):**
+- **`stageIntro`:** when `CB.Quips` exists, the band grows to 56 px (y 62–118). Under the path, type `CB.Quips.stage[run.stageIndex]` (2 lines) in `pale` at 0.02 s per character, starting at 0.5 s.
+- **`bossWarn`:** draw `CB.Bosses[id].portrait` (if the sprite exists) at scale 4, beneath the text:
+  - it slides from y 190 to y 138 over 0.6 s (easeOutCubic);
+  - two chromatic copies at ±2 px and alpha 0.35, with the offset flipping every 0.05 s via `floor(t × 20) % 2`;
+  - from `stateT ≥ 2.3`, it flashes `white: true` at 8 Hz.
+- **`bossDead`** (after `stateT > CB.RUN_T.slowmo`):
+  - `BUG FIXED ✓` at scale 2 in green, centred at y 40, then `git commit -m "<commitMsg>"` typed at y 58.
+  - A diff panel (x 40–280, from y 72) with a header `@@ <file> @@` in grey, then the boss `diff` lines, one every 0.25 s. `-` lines go on a `redDark` bar at alpha 0.3 with `red` text; `+` lines go on a `greenDark` bar at alpha 0.3 with `green` text.
+  - Then `✓ 1 test passing` in green.
+  - Everything must fit before `stateT = 3.0`.
+- **`victory`:**
+  - **Tally:** under the stats, a row of up to 5 cells, one per kind with `run.squashed[kind] > 0`. Each cell is sprite `<kind>_0` (guarded with `hasSprite`) with `x<count>` under it, spaced 56 px apart around y 132.
+  - **`git log`:** a list in grey of the fixed bosses, `<hash> <commitMsg>`, where `hash = ((run.seed × 2654435761 + i × 97) >>> 0).toString(16).padStart(8, '0').slice(0, 7)`.
+  - **Chain:** `longest chain x<run.maxChain>` when > 0.
+  - **Clawd:** drawn with `CB.Player.draw`-style sprites and `expr: 'happy'`, or the `clawd_idle0_happy` sprite if it exists.
+  - **Layout:** re-flow so nothing overlaps at 320×180. Drop the confetti density if needed.
+  - **Exports:** `CB.Screens.victory.commitHash(seed, i)` is exported for the test.
+- **`gameOver`:**
+  - Below `deaths: N`, a third line `CB.Quips.dead[(run.deaths × 3 + run.stageIndex) % n]` in grey (guarded).
+  - The retry hint reads `R / click: retry boss` when `run.diedInBoss`, else `retry stage`.
+  - The quit hint appears only after the input lock.
+- **`pause`:** when the play scene's `quitArmT > 0`, replace the hint line with `Press Q again to quit` in gold. The screen receives it via `ui.quitArmT`; Task 7's play.js passes `{ hover, quitArmT }` as `ui`.
+- **Test additions:**
+  - draw `bossDead` at `stateT` 1.6, 2.2 and 2.9 with each real boss's `diff`, using stub bosses with `diff` and `file`;
+  - draw `victory` with a populated `run.squashed`;
+  - `commitHash(1, 0)` is 7 lowercase hex chars and deterministic;
+  - draw `gameOver` with `diedInBoss` true and false.
+
 ### Task 21: Title scene
 
 **Files:** Create `src/scenes/title.js`. Test: `tests/draw.title.test.js`.
@@ -4834,6 +6036,361 @@ test('title: confirm is ignored during the first 0.3 s', () => {
 
 ---
 
+**Rev 2 additions (Task 21):**
+- **Enter:** call `CB.Music && CB.Music.stop()`. Create `this.secrets = CB.Secrets ? CB.Secrets.create() : null`.
+- **Hats:**
+  - When `CB.Unlocks && CB.Unlocks.hats().length > 0`, show `hat: <name> (A/D)` in `pale` at y 120. A rising edge of `input.moveX` (from 0 to ±1) calls `CB.Unlocks.cycleHat(sign)`.
+  - Draw the selected hat on the big title Clawd with `CB.Player.drawHat(r, 160, 104 - 20, id, 1, 3)` (guarded).
+- **Secrets:** feed every code in `input.keys` to `this.secrets.feed(code)`.
+  - `'konami'` calls `CB.Unlocks.unlock('halo')`.
+  - `'ultrathink'` calls `CB.Unlocks.unlock('rainbow')`.
+  - On a fresh unlock, show a 2 s toast at y 160 (`cheat codes are just undocumented features` for konami, `✻ ultrathink enabled` for ultrathink) and play `CB.Audio.play('unlock')`.
+- **Modes:** when `CB.Unlocks.has('modes')`, show two clickable lines under `Click to start`:
+  - `[ boss rush ]`;
+  - a toggle, `[ ] --yolo` or `[x] --yolo`.
+
+  Expose them for hit-testing as `CB.Scenes.title.BUTTONS = [{id: 'rush', x, y, w, h}, {id: 'yolo', …}]`. On `confirm`:
+  - inside `rush`: start play with `{ runOpts: { bossRush: true, yolo: this.yolo } }`;
+  - inside `yolo`: toggle `this.yolo`;
+  - anywhere else after 0.3 s: start a normal run with `{ runOpts: { yolo: this.yolo } }`.
+- **Status line:** `M: sound <on/off> · N: music <on/off>` in `greyDark` at y 177, read from `CB.Audio.isMuted()` and `CB.Music.isEnabled()` (both guarded). The footer moves to y 170.
+- **Cursor:** finish with `const a = game.input.peekAim(); CB.Screens.hud && CB.Screens.hud.cursor(r, a.x, a.y, 'pointer', t);`.
+- **Sprites:** for each of the 4 wandering bugs, use `CB.Art.hasSprite(name) ? r.sprite(…) : r.disc(…)`.
+- **Test additions** (stub `CB.Unlocks`/`CB.Secrets` objects):
+  - feeding the konami codes through `input.keys` calls `unlock('halo')`;
+  - with `has('modes')` true, a confirm inside the rush button starts play with `bossRush: true`;
+  - moveX edges cycle the hat.
+
+
+### Task 21A: Clawd body language and hats (owns `src/game/player.js` in Phase B)
+
+**Files:** Modify `src/game/player.js` (draw-side additions only; logic changes are limited to the cosmetic fields below). Test: `tests/player.look.test.js`.
+
+**Spec:**
+- **Expressions:**
+  - A helper `makeClawd(rowsBody, legA, legB, expr)` builds sprites by replacing the eye cells of `BODY` rows 2–3 at columns 6 and 11. The 3×2 eye templates use columns 5–7 and 10–12:
+
+    | Expression | Rows A / B |
+    |---|---|
+    | normal | `.k.` / `.k.` |
+    | hurt | `k.k` / `.k.` |
+    | happy | `.k.` / `k.k` |
+    | angry | left `kk.` / `.k.`, right `.kk` / `.k.` |
+    | squint | `...` / `kkk` |
+    | worried | normal, plus one `c` sweat pixel at column 13, row 1 |
+
+  - Define `clawd_<pose>_<expr>` for poses `idle0`, `idle1`, `walk0`, `walk2` and every expression. The original five names stay as they are and mean "normal".
+- **`Player.expression(p)`** is pure, with this priority:
+  1. `hurtT > 0.6` gives `hurt`;
+  2. `dashT > 0` gives `angry`;
+  3. `hearts === 1` gives `worried`;
+  4. `idleT > 2.5` gives `squint`;
+  5. otherwise `normal`.
+- **`Player.pose(p) → { sx, sy }`:**
+  - dashing (`dashT > 0`): horizontal dash gives `{1.3, 0.8}` and vertical gives `{0.8, 1.3}`, chosen by `|dashDX| ≥ |dashDY|`;
+  - `hurtT > 0.85`: `{1.3, 0.7}`, lerping back to 1 over 0.15 s;
+  - `kick > 0.5`: `{0.95, 1.05}`;
+  - otherwise exactly `{1, 1}`.
+  The anchor is the feet (`p.x, p.y + 4`), using `r.squash`.
+- **Recoil:** `Player.fire` sets `p.kick = 1`, and `update` decays it by `dt * 14` (min 0). `draw` offsets the sprite by `−aimDir × 2 × kick` px, rounded. `p.x`/`p.y` are never changed.
+- **Idle:** `p.idleT` grows while there is no move, fire or dash input, and resets otherwise. At `idleT ≥ 2.5`, draw `✻ Thinking...` in `pale` above Clawd, with the leading glyph cycling `·` `*` `✻` at 8 Hz.
+- **Hats:**
+  - 11×6 sprites `hat_loopcap`, `hat_slime`, `hat_branch` (a blue/green two-tone beanie), `hat_shades` (sunglasses worn over the eyes; draw them on the eye row instead of above the head), `hat_crown`, `hat_sudo` (a `#` hat) and `hat_halo` (yellow ring floating 2 px above).
+  - `CB.Player.drawHat(r, x, y, hatId, facing, scale = 1)` draws a hat for an arbitrary position. The title uses it too.
+  - `Player.draw` draws `CB.Unlocks && CB.Unlocks.hat()` on Clawd, bobbing with the idle frame.
+- **Draw override:** `Player.draw(p, r, t, opts)` accepts `opts.expr` (the victory screen passes `'happy'`).
+
+```js
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const H = require('./harness');
+
+function setup() {
+  const { CB, sandbox } = H.load([...H.GAME_BASE, 'src/art/render.js'], { returnSandbox: true });
+  CB.Font = CB.Font || { CELL_H: 7, measure: (s) => String(s).length * 6, draw() {} };
+  const r = CB.createRenderer(sandbox.document.createElement('canvas'), { innerWidth: 1280, innerHeight: 720, devicePixelRatio: 1 });
+  r.resize();
+  return { CB, r, w: CB.createWorld({ seed: 2 }) };
+}
+
+test('look: expression sprites exist at 16x12 and the original names are unchanged', () => {
+  const { CB } = setup();
+  for (const pose of ['idle0', 'idle1', 'walk0', 'walk2']) {
+    for (const ex of ['normal', 'hurt', 'happy', 'angry', 'squint', 'worried']) {
+      const d = CB.Art.spriteDef(`clawd_${pose}_${ex}`);
+      assert.ok(d, `${pose} ${ex}`);
+      assert.equal(d.w, 16);
+      assert.equal(d.h, 12);
+    }
+  }
+  assert.deepEqual(H.plain(CB.Art.spriteDef('clawd_idle0').rows), H.plain(CB.Art.spriteDef('clawd_idle0_normal').rows));
+});
+
+test('look: expression priority', () => {
+  const { CB, w } = setup();
+  const p = w.player;
+  assert.equal(CB.Player.expression(p), 'normal');
+  p.idleT = 3;
+  assert.equal(CB.Player.expression(p), 'squint');
+  p.hearts = 1;
+  assert.equal(CB.Player.expression(p), 'worried');
+  p.dashT = 0.1;
+  assert.equal(CB.Player.expression(p), 'angry');
+  p.hurtT = 0.9;
+  assert.equal(CB.Player.expression(p), 'hurt');
+});
+
+test('look: pose is (1,1) at rest and stays within 0.7..1.3', () => {
+  const { CB, w } = setup();
+  const p = w.player;
+  assert.deepEqual(H.plain(CB.Player.pose(p)), { sx: 1, sy: 1 });
+  for (const s of [{ dashT: 0.1, dashDX: 1, dashDY: 0 }, { dashT: 0.1, dashDX: 0, dashDY: 1 }, { hurtT: 0.95 }, { kick: 1 }]) {
+    const q = CB.Player.pose(Object.assign({}, p, s));
+    assert.ok(q.sx >= 0.7 && q.sx <= 1.3 && q.sy >= 0.7 && q.sy <= 1.3, JSON.stringify(q));
+  }
+});
+
+test('look: recoil kicks and decays without moving the hitbox; idle timer grows and resets', () => {
+  const { CB, w } = setup();
+  const p = w.player;
+  const x0 = p.x;
+  H.stepN(w, 1, () => H.makeInput({ fire: true, aimX: 300, aimY: p.y }));
+  assert.ok(p.kick > 0.7);
+  H.stepN(w, 8, () => H.makeInput({ aimX: 300, aimY: p.y }));
+  assert.equal(p.kick, 0);
+  assert.equal(p.x, x0);
+  H.stepN(w, 180, () => H.makeInput({ aimX: 300, aimY: p.y }));
+  assert.ok(p.idleT > 2.5);
+  H.stepN(w, 1, () => H.makeInput({ moveX: 1 }));
+  assert.equal(p.idleT, 0);
+});
+
+test('look: draw with every expression, the bubble and every hat runs headless', () => {
+  const { CB, r, w } = setup();
+  const p = w.player;
+  p.idleT = 3;
+  for (const ex of ['normal', 'hurt', 'happy', 'angry', 'squint', 'worried']) CB.Player.draw(p, r, 1.2, { expr: ex });
+  for (const id of ['loopcap', 'slime', 'branch', 'shades', 'crown', 'sudo', 'halo']) {
+    assert.ok(CB.Art.hasSprite('hat_' + id), id);
+    CB.Player.drawHat(r, 100, 100, id, -1, 2);
+  }
+});
+```
+
+- [ ] Write the test, see it fail, implement, see it pass, then run the full `node --test`.
+
+### Task 21B: FX juice: bug life cycle, muzzle flash, boss finale, glitch, quip hooks (owns `src/game/fx.js` in Phase B)
+
+**Files:** Modify `src/game/fx.js` (keep `CB.IMPACT` and all existing behaviour). Test: `tests/fx.juice.test.js`.
+
+**Spec:**
+- **`CB.Fx.pose(e) → { sx, sy }`** is pure:
+  - pop-in while `e.t < 0.25`: `sy` eases 0.2 → 1.2 (at 0.15 s) → 1.0 (at 0.25 s), with `sx = clamp(1/sy, 0.8, 1.4)`;
+  - hit squash while `e.hitFlash > 0`: `{1.12, 0.9}`;
+  - otherwise exactly `{1, 1}`;
+  - boss parts always return `{1, 1}`.
+- **Spawn:** the `spawn` event adds an `implode` effect: 8 white 1 px particles converging from radius 10 over 0.15 s.
+- **Death** (non-silent, non-boss `enemyDie`):
+  - a white `pop` disc of radius `r` for 0.06 s;
+  - `4 + r` debris squares (2×2) in the kind's colours, from `KIND_COLOR`, at speed 40–90, damped, life 0.5;
+  - a `decal`: a disc of radius `0.9 r`, alpha 0.35, in the kind's dark colour, life 6 s fading over the last 2 s. Keep at most 40 decals, dropping the oldest first.
+
+  `KIND_COLOR` maps syntaxError to red/redDark, nullPointer to pale/grey, raceCondition to yellow/yellowDark, memoryLeak to green/greenDark and offByOne to purple/purpleDark.
+- **`Fx.drawUnder(w, r, t)`** draws decals. WorldDraw calls it before entities.
+- **Muzzle:** each `shoot` event adds a `muzzle` effect (life 0.06 s): a 3×3 white core, a gold 5 px plus, and a 4 px streak along `angle`.
+- **Finale:** on `bossDie`, schedule 12 blasts into `w.fxQueue` at `w.time + 0.03*k`.
+  - Positions cycle through `CB.Bosses[w.boss.id].deathPoints(w.boss)`, falling back to the boss x/y plus `fxRng` jitter within 20 px.
+  - Each blast is a ring from 2 to 14 px, 14 sparks alternating gold, ember and white, and `w.addShake(2)`. It also emits a `blast` event with x, y; that event is for audio only, because it is emitted from `update` after `consume`.
+  - At `w.time + 0.45` comes a full-screen white ring growing from 0 to 300 px, and 60 confetti sparks drifting up in clawd, gold and spark colours.
+  - `Fx.update` runs due queue entries.
+- **Glitch:** `bossPhase` sets `w.glitchT = 0.4`, which decays in `Fx.update`.
+- **Quips** (when `CB.Quips` exists):
+  - **Kills:** text comes from `CB.Quips.pick(w.fxRng, CB.Quips.kill[kind])` at the existing 50% chance, falling back to `DEATH_TEXT`.
+  - **Hurt:** a 35% chance on `playerHurt` (not god), with a global cooldown `w.quipT = 5` s.
+  - **Boss phase:** `CB.Quips.bossPhase[w.boss.id][phase]` in gold above the boss, life 1.6 s.
+- **Caps:** everything respects `CAPS.fx` and uses `w.fxRng` only.
+
+```js
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const H = require('./harness');
+
+function setup() {
+  const { CB, sandbox } = H.load([...H.GAME_BASE, 'src/art/render.js'], { returnSandbox: true });
+  CB.Font = CB.Font || { CELL_H: 7, measure: (s) => String(s).length * 6, draw() {} };
+  CB.Enemies.dummy = { create: (w, x, y, o) => CB.makeEnemy('dummy', x, y, Object.assign({ hp: 2, r: 6 }, o || {})), update() {}, draw() {} };
+  const r = CB.createRenderer(sandbox.document.createElement('canvas'), { innerWidth: 1280, innerHeight: 720, devicePixelRatio: 1 });
+  r.resize();
+  return { CB, r, w: CB.createWorld({ seed: 4, god: true }) };
+}
+const idle = () => H.makeInput({ aimX: 160, aimY: 30 });
+
+test('juice: pose is exactly (1,1) after 0.25 s and bounded during pop-in', () => {
+  const { CB } = setup();
+  for (let t = 0; t < 0.25; t += 0.01) {
+    const q = CB.Fx.pose({ t, hitFlash: 0, boss: false });
+    assert.ok(q.sy >= 0.2 && q.sy <= 1.4 && q.sx >= 0.8 && q.sx <= 1.4);
+  }
+  assert.deepEqual(H.plain(CB.Fx.pose({ t: 0.3, hitFlash: 0 })), { sx: 1, sy: 1 });
+  assert.ok(CB.Fx.pose({ t: 1, hitFlash: 0.05 }).sy < 1);
+  assert.deepEqual(H.plain(CB.Fx.pose({ t: 0, hitFlash: 0.05, boss: true })), { sx: 1, sy: 1 });
+});
+
+test('juice: a kill leaves a decal and debris; a silent kill leaves no decal; decals cap at 40', () => {
+  const { w } = setup();
+  const e = w.spawnEnemy('dummy', 100, 80);
+  H.stepN(w, 1, idle);
+  w.damageEnemy(e, 5);
+  const f = w.spawnEnemy('dummy', 150, 80);
+  H.stepN(w, 1, idle);
+  w.killEnemy(f, true);
+  H.stepN(w, 1, idle);
+  assert.equal(w.fx.filter((x) => x.kind === 'decal').length, 0, 'decals only from in-step deaths');
+  for (let i = 0; i < 60; i++) {
+    const g = w.spawnEnemy('dummy', 40 + i, 60, { hp: 0.5 });
+    w.firePlayerBolt(g.x, g.y, 0);
+  }
+  H.stepN(w, 2, idle);
+  const decals = w.fx.filter((x) => x.kind === 'decal').length;
+  assert.ok(decals > 0 && decals <= 40, `decals ${decals}`);
+  assert.ok(w.fx.length <= 500);
+});
+
+test('juice: bossDie schedules 12 blasts that all fire within 0.4 world seconds', () => {
+  const { CB, w } = setup();
+  CB.Bosses.stub = { id: 'stub', deathPoints: () => [{ x: 100, y: 60 }, { x: 120, y: 70 }] };
+  w.boss = { id: 'stub', x: 110, y: 65, hp: 0, maxHp: 1, phase: 1, defeated: true, update() {}, draw() {} };
+  const from = w.events.length;
+  w.emit('bossDie', { x: 110, y: 65 });
+  CB.Fx.consume(w, from);
+  let blasts = 0;
+  for (let i = 0; i < 40; i++) {
+    const mark = w.events.length;
+    H.stepN(w, 1, idle);
+    blasts += w.events.slice(mark).filter((e) => e.type === 'blast').length;
+  }
+  assert.equal(blasts, 12);
+  assert.ok(w.fx.some((f) => f.kind === 'ring'));
+});
+
+test('juice: muzzle flash per volley and glitch on phase change; everything stays finite', () => {
+  const { CB, w, r } = setup();
+  H.stepN(w, 1, () => H.makeInput({ fire: true, aimX: 300, aimY: 126 }));
+  assert.equal(w.fx.filter((f) => f.kind === 'muzzle').length, 1);
+  CB.Enemies.ph = { create: (w2, x, y) => CB.makeEnemy('ph', x, y, { contact: false }), update(e, w2) { if (!e.data.d) { e.data.d = 1; w2.emit('bossPhase', { x: 1, y: 1, phase: 2 }); } }, draw() {} };
+  w.spawnEnemy('ph', 10, 30);
+  H.stepN(w, 1, idle);
+  assert.ok(w.glitchT > 0.3);
+  H.stepN(w, 200, idle);
+  for (const f of w.fx) assert.ok(Number.isFinite(f.x) && Number.isFinite(f.y));
+  CB.Fx.drawUnder(w, r, 1);
+  CB.Fx.draw(w, r, 1);
+});
+```
+
+> Kill-decal test: an enemy must die *inside* a step for its `enemyDie` to reach `consume`. The test fires zero-life-buffer bolts onto 60 fragile dummies, which collide during the next step.
+
+- [ ] Write the test, see it fail, implement, see it pass, then run the full `node --test`.
+
+### Task 21C: Quips data (`quips.js`)
+
+**Files:** Create `src/game/quips.js`. Test: `tests/quips.test.js`. Depends on Task 8 (font) for the glyph lint.
+
+**Spec:**
+
+```js
+CB.Quips = {
+  stage: [ [line1, line2] × 4 ],      // typed under STAGE n / path in the intro
+  waveBreak: [...], hurt: [...], lowHp: [...], dead: [...], victory: [...],
+  kill: { syntaxError: [...], nullPointer: [...], raceCondition: [...], memoryLeak: [...], offByOne: [...] },
+  bossPhase: { infiniteLoop: { 2: [...] }, memoryLeakBoss: { 2: [...] }, mergeConflict: { 2: [...] }, heisenbug: { 2: [...], 3: [...] } },
+  pick(rng, list, lastIdx = -1) → { text, idx },   // never repeats lastIdx when list.length > 1
+};
+```
+
+**Content seeds** (extend each pool to ≥ 3 lines in the same voice):
+
+| Pool | Lines |
+|---|---|
+| Stage 1 (`src`) | `> fix the failing tests`, `✻ Thinking... (esc to interrupt)` |
+| Stage 2 (`node_modules`) | `> why is the heap 99% full`, `✻ Compacting conversation...` |
+| Stage 3 (`git`) | `> resolve the merge conflict`, `✻ Reading MERGE_HEAD...` |
+| Stage 4 (`prod`) | `> it works on my machine`, `⚠ this is prod. continue? (y/n)` |
+| kill: syntaxError | `Fix(;)`, `missing ;`, `lint: ok` |
+| kill: nullPointer | `Fix(null)`, `?.`, `undefined` |
+| kill: raceCondition | `await`, `mutex`, `lock()` |
+| kill: memoryLeak | `free()`, `gc()`, `drop(x)` |
+| kill: offByOne | `i<n`, `n-1`, `<=` |
+| hurt | `ouch`, `NaN`, `undefined`, `403`, `rate limited` |
+| dead | `Clawd ran out of context`, `exit code 139`, `unexpected EOF`, `max turns reached` |
+| bossPhase | infiniteLoop 2: `// TODO: add exit condition`; memoryLeakBoss 2: `malloc(99%)`; mergeConflict 2: `git add -p ???`; heisenbug 2: `cannot reproduce`; heisenbug 3: `works on my machine` |
+
+**Rules:**
+- Generic software and CLI humour only. Never claim official strings or affiliation. No line may match `/anthropic|official|claude\.ai/i`.
+- Pop lines are ≤ 150 px at scale 1 and prompt lines ≤ 290 px.
+- Every character must have a glyph in `CB.Font.GLYPHS`.
+
+```js
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const H = require('./harness');
+const FILES = ['src/core/ns.js', 'src/core/math.js', 'src/core/rng.js', 'src/art/font.js', 'src/game/quips.js'];
+
+function allLines(Q) {
+  const out = [];
+  for (const pair of Q.stage) out.push(...pair);
+  for (const k of ['waveBreak', 'hurt', 'lowHp', 'dead', 'victory']) out.push(...Q[k]);
+  for (const k of Object.keys(Q.kill)) out.push(...Q.kill[k]);
+  for (const b of Object.keys(Q.bossPhase)) for (const ph of Object.keys(Q.bossPhase[b])) out.push(...Q.bossPhase[b][ph]);
+  return out;
+}
+
+test('quips: every character has a glyph and no line implies affiliation', () => {
+  const CB = H.load(FILES);
+  for (const line of allLines(CB.Quips)) {
+    for (const ch of line) assert.ok(CB.Font.GLYPHS[ch], `missing glyph ${JSON.stringify(ch)} in "${line}"`);
+    assert.doesNotMatch(line, /anthropic|official|claude\.ai/i);
+  }
+});
+
+test('quips: pool sizes and widths', () => {
+  const CB = H.load(FILES);
+  const Q = CB.Quips;
+  assert.equal(Q.stage.length, 4);
+  for (const pair of Q.stage) {
+    assert.equal(pair.length, 2);
+    for (const l of pair) assert.ok(CB.Font.measure(l) <= 290, l);
+  }
+  for (const k of ['waveBreak', 'hurt', 'lowHp', 'dead', 'victory']) assert.ok(Q[k].length >= 3, k);
+  for (const k of ['syntaxError', 'nullPointer', 'raceCondition', 'memoryLeak', 'offByOne']) {
+    assert.ok(Q.kill[k].length >= 3, k);
+    for (const l of Q.kill[k]) assert.ok(CB.Font.measure(l) <= 150, l);
+  }
+});
+
+test('quips: pick never repeats the previous index and is deterministic', () => {
+  const CB = H.load(FILES);
+  const a = CB.createRng(5);
+  const b = CB.createRng(5);
+  let last = -1;
+  for (let i = 0; i < 50; i++) {
+    const x = CB.Quips.pick(a, CB.Quips.hurt, last);
+    const y = CB.Quips.pick(b, CB.Quips.hurt, last);
+    assert.equal(x.idx, y.idx);
+    assert.notEqual(x.idx, last);
+    last = x.idx;
+  }
+});
+```
+
+- [ ] Write the test, see it fail, implement, see it pass.
+
+
+---
+
 ## Phase C — Integration, playthrough, delivery
 
 ### Task 22: Headless bot and full playthrough
@@ -4848,20 +6405,28 @@ test('title: confirm is ignored during the first 0.3 s', () => {
 
 ```js
 'use strict';
-// Deterministic headless bot: targets the nearest targetable enemy (bosses preferred), kites at ~80 px,
-// strafes, leads its aim, steers off walls and dashes across bullets about to hit it.
+// Deterministic headless bot.
+// Targeting: boss parts first. Among them it keeps its current target unless another part has 15+ more HP.
+// This level-keeping wears the Merge Conflict twins down evenly, so both can fall inside the resolve window,
+// and it ignores Heisenbug's 1-HP decoys while the real body is targetable. With no boss part it shoots the
+// nearest regular bug.
+// Movement: kite at ~80 px, strafe, lead the aim, steer off walls, dash across bullets about to hit.
+// /compact fires as soon as the meter is full during a boss fight, or when 6+ bullets are on screen.
 function clamp1(v) {
   return v < -1 ? -1 : v > 1 ? 1 : v;
 }
 
 function makeBot(opts) {
-  const o = Object.assign({ kite: 80 }, opts || {});
+  const o = Object.assign({ kite: 80, delayTicks: 0 }, opts || {});
   let strafe = 1;
   let strafeT = 1.5;
-  return function botInput(run) {
+  let current = null;
+  const queue = [];
+
+  function decide(run) {
     const w = run.world;
     const p = w.player;
-    const inp = { moveX: 0, moveY: 0, aimX: p.x + 40, aimY: p.y, fire: true, dash: false, pause: false, mute: false, confirm: false, choice: 0, retry: false, quit: false };
+    const inp = { moveX: 0, moveY: 0, aimX: p.x + 40, aimY: p.y, fire: true, dash: false, pause: false, mute: false, confirm: false, choice: 0, retry: false, quit: false, compact: false, music: false, keys: [] };
     if (run.state === 'patchPick') {
       if (run.stateT > 0.7) inp.choice = 1;
       inp.fire = false;
@@ -4871,19 +6436,24 @@ function makeBot(opts) {
       if (run.stateT > 0.7) inp.retry = true;
       return inp;
     }
-    // Boss parts first, highest HP first: keeps Merge Conflict twins level (so both can die inside the
-    // resolve window) and ignores Heisenbug's 1-HP decoys. Otherwise the nearest regular bug.
+    const live = (e) => e && !e.dead && e.visible && e.targetable;
+    const bossParts = w.enemies.filter((e) => live(e) && e.boss);
     let best = null;
-    let bestScore = Infinity;
-    for (const e of w.enemies) {
-      if (e.dead || !e.visible || !e.targetable) continue;
-      const d = Math.hypot(e.x - p.x, e.y - p.y);
-      const score = e.boss ? -10000 - e.hp + d * 0.01 : d;
-      if (score < bestScore) {
-        bestScore = score;
-        best = e;
+    if (bossParts.length) {
+      const top = bossParts.reduce((a, b) => (b.hp > a.hp ? b : a));
+      best = live(current) && current.boss && top.hp - current.hp < 15 ? current : top;
+    } else {
+      let bestD = Infinity;
+      for (const e of w.enemies) {
+        if (!live(e)) continue;
+        const d = Math.hypot(e.x - p.x, e.y - p.y);
+        if (d < bestD) {
+          bestD = d;
+          best = e;
+        }
       }
     }
+    current = best;
     let mx = 0;
     let my = 0;
     if (best) {
@@ -4933,9 +6503,20 @@ function makeBot(opts) {
         break;
       }
     }
+    if (w.context && w.context.value >= w.context.max && (bossParts.length || w.eBullets.length >= 6)) inp.compact = true;
     inp.moveX = clamp1(mx);
     inp.moveY = clamp1(my);
     return inp;
+  }
+
+  // delayTicks > 0 simulates human reaction time: the input acted on now was decided delayTicks ticks ago.
+  // Menu choices are never delayed.
+  return function botInput(run) {
+    const now = decide(run);
+    if (!o.delayTicks || run.state === 'patchPick' || run.state === 'dead') return now;
+    queue.push(now);
+    if (queue.length <= o.delayTicks) return Object.assign({}, now, { moveX: 0, moveY: 0, dash: false, compact: false });
+    return queue.shift();
   };
 }
 
@@ -4955,19 +6536,26 @@ const LIMIT_S = 240;
 const DONE = new Set(['bossDead', 'patchPick', 'victory']);
 const report = [];
 
+function finite(v) {
+  return typeof v === 'number' && Number.isFinite(v);
+}
+
 function healthCheck(CB, run, where) {
   const w = run.world;
-  const bad = (v) => typeof v !== 'number' || !Number.isFinite(v);
   const p = w.player;
-  if (bad(p.x) || bad(p.y)) throw new Error(`${where}: player position not finite`);
-  for (const e of w.enemies) if (bad(e.x) || bad(e.y) || bad(e.hp)) throw new Error(`${where}: ${e.kind} has non-finite x/y/hp`);
-  for (const b of w.eBullets) if (bad(b.x) || bad(b.y)) throw new Error(`${where}: enemy bullet not finite`);
-  for (const b of w.pBullets) if (bad(b.x) || bad(b.y)) throw new Error(`${where}: bolt not finite`);
+  if (!finite(p.x) || !finite(p.y)) throw new Error(`${where}: player position not finite`);
+  for (const e of w.enemies) if (!finite(e.x) || !finite(e.y) || !finite(e.hp) || !finite(e.r)) throw new Error(`${where}: ${e.kind} has non-finite x/y/hp/r`);
+  for (const b of w.eBullets) if (!finite(b.x) || !finite(b.y)) throw new Error(`${where}: enemy bullet not finite`);
+  for (const b of w.pBullets) if (!finite(b.x) || !finite(b.y)) throw new Error(`${where}: bolt not finite`);
+  for (const f of w.fx) if (!finite(f.x) || !finite(f.y)) throw new Error(`${where}: fx ${f.kind} not finite`);
+  for (const h of w.hazards) if (!finite(h.x) || !finite(h.y)) throw new Error(`${where}: hazard not finite`);
+  for (const k of w.pickups || []) if (!finite(k.x) || !finite(k.y)) throw new Error(`${where}: pickup not finite`);
   if (w.enemies.length > CB.CAPS.enemies) throw new Error(`${where}: enemy cap exceeded`);
   if (w.eBullets.length > CB.CAPS.eBullets) throw new Error(`${where}: bullet cap exceeded`);
   if (w.pBullets.length > CB.CAPS.pBullets) throw new Error(`${where}: bolt cap exceeded`);
   if (w.fx.length > CB.CAPS.fx) throw new Error(`${where}: fx cap exceeded`);
-  if (w.boss && (bad(w.boss.hp) || bad(w.boss.x) || bad(w.boss.y))) throw new Error(`${where}: boss state not finite`);
+  if (w.boss && (!finite(w.boss.hp) || !finite(w.boss.x) || !finite(w.boss.y))) throw new Error(`${where}: boss state not finite`);
+  if (w.context && !(w.context.value >= 0 && w.context.value <= w.context.max)) throw new Error(`${where}: context out of range`);
 }
 
 function makeRenderer(CB, sandbox) {
@@ -4976,18 +6564,19 @@ function makeRenderer(CB, sandbox) {
   return r;
 }
 
+const OV = { stageIntro: 'stageIntro', wave: 'waveBanner', waveBreak: 'waveBanner', bossWarn: 'bossWarn', bossDead: 'bossDead', patchPick: 'patchPick', dead: 'gameOver', victory: 'victory' };
 function drawFrame(CB, r, run, t) {
   CB.WorldDraw.draw(r, run.world, t, { hitboxes: false });
   CB.Screens.hud.draw(r, run, t);
-  const OV = { stageIntro: 'stageIntro', wave: 'waveBanner', waveBreak: 'waveBanner', bossWarn: 'bossWarn', bossDead: 'bossDead', patchPick: 'patchPick', dead: 'gameOver', victory: 'victory' };
-  if (OV[run.state]) CB.Screens[OV[run.state]].draw(r, run, t, { hover: -1 });
+  if (OV[run.state]) CB.Screens[OV[run.state]].draw(r, run, t, { hover: -1, quitArmT: 0 });
 }
 
-function playStage(seed, stageIndex, patches) {
+// Plays one stage. Stops when the boss is beaten (after checking the post-defeat world stays clear).
+function playStage(seed, stageIndex, runOpts, botOpts) {
   const { CB, sandbox } = H.load(undefined, { returnSandbox: true });
   const r = makeRenderer(CB, sandbox);
-  const run = CB.createRun({ seed, startStage: stageIndex, god: true, patches });
-  const bot = makeBot();
+  const run = CB.createRun(Object.assign({ seed, startStage: stageIndex, god: true }, runOpts || {}));
+  const bot = makeBot(botOpts);
   const maxTicks = (LIMIT_S + 10) * 60;
   let ticks = 0;
   while (ticks < maxTicks && !DONE.has(run.state)) {
@@ -4996,22 +6585,59 @@ function playStage(seed, stageIndex, patches) {
     healthCheck(CB, run, `seed ${seed} stage ${stageIndex + 1} tick ${ticks}`);
     if (ticks % 90 === 0) drawFrame(CB, r, run, ticks / 60);
   }
-  drawFrame(CB, r, run, ticks / 60);
-  return { CB, run, seconds: ticks / 60, wouldHits: run.world.stats.wouldHits };
+  const seconds = ticks / 60;
+  const wouldHits = run.world.stats.wouldHits;
+  if (run.state === 'bossDead') {
+    for (let i = 0; i < 150 && run.state === 'bossDead'; i++) {
+      run.step(bot(run));
+      healthCheck(CB, run, `seed ${seed} stage ${stageIndex + 1} bossDead +${i}`);
+      if (i % 30 === 0) drawFrame(CB, r, run, (ticks + i) / 60);
+    }
+    const w = run.world;
+    if (run.state === 'bossDead') {
+      const liveEnemies = w.enemies.filter((e) => !e.dead).length;
+      if (liveEnemies || w.eBullets.length || w.hazards.length) throw new Error(`post-defeat world not clear: enemies ${liveEnemies}, bullets ${w.eBullets.length}, hazards ${w.hazards.length}`);
+    }
+  }
+  drawFrame(CB, r, run, seconds);
+  return { CB, run, seconds, wouldHits };
 }
 
 for (const seed of [1, 2, 3]) {
   for (let s = 0; s < 4; s++) {
     for (const [kit, patches] of [['base', {}], ['patched', { spread: 1, rapid: 1, pierce: 1 }]]) {
-      test(`sim: seed ${seed} stage ${s + 1} ${kit} — boss beaten within ${LIMIT_S} s, state healthy`, () => {
-        const res = playStage(seed, s, patches);
+      test(`sim: seed ${seed} stage ${s + 1} ${kit}, boss beaten within ${LIMIT_S} s, state healthy`, () => {
+        const res = playStage(seed, s, { patches });
         report.push(`stage ${s + 1} seed ${seed} ${kit.padEnd(7)} ${res.seconds.toFixed(1).padStart(6)} s  would-be hits ${res.wouldHits}`);
         assert.ok(DONE.has(res.run.state), `stuck in ${res.run.state} after ${res.seconds.toFixed(1)} s`);
         assert.ok(res.seconds <= LIMIT_S, `took ${res.seconds.toFixed(1)} s`);
+        if (kit === 'base') assert.ok(res.wouldHits <= 40, `would-be hits ${res.wouldHits} (> 40 means a stage is unfair)`);
       });
     }
   }
 }
+
+test('sim: random patch sets (all 7 patches) on stages 3 and 4 stay healthy', () => {
+  const ids = ['spread', 'rapid', 'pierce', 'heavy', 'heart', 'dash', 'ricochet'];
+  const max = { spread: 2, rapid: 2, pierce: 2, heavy: 2, heart: 2, dash: 1, ricochet: 1 };
+  for (const seed of [4, 5, 6, 7]) {
+    const patches = {};
+    ids.forEach((id, i) => {
+      const n = (seed * 7 + i * 3) % (max[id] + 1);
+      if (n) patches[id] = n;
+    });
+    for (const s of [2, 3]) {
+      const res = playStage(seed, s, { patches });
+      assert.ok(DONE.has(res.run.state), `seed ${seed} stage ${s + 1} with ${JSON.stringify(patches)} stuck in ${res.run.state}`);
+    }
+  }
+});
+
+test('sim: YOLO mode stage 4 (god) is still beatable and healthy', () => {
+  const res = playStage(2, 3, { yolo: true });
+  assert.ok(DONE.has(res.run.state));
+  report.push(`YOLO stage 4: ${res.seconds.toFixed(1)} s, would-be hits ${res.wouldHits}`);
+});
 
 test('sim: a full run from stage 1 reaches victory', () => {
   const { CB } = H.load(undefined, { returnSandbox: true });
@@ -5024,7 +6650,28 @@ test('sim: a full run from stage 1 reaches victory', () => {
   }
   assert.equal(run.state, 'victory');
   assert.equal(run.history.length, 3);
-  report.push(`full run seed 99: ${(run.time / 60).toFixed(1)} min, patches ${run.history.join(', ')}`);
+  assert.equal(run.bossesFixed, 4);
+  report.push(`full run seed 99: ${(run.time / 60).toFixed(1)} min, patches ${run.history.join(', ')}, squashed ${JSON.stringify(run.squashed)}`);
+});
+
+test('sim: Boss Rush full run reaches victory', () => {
+  const { CB } = H.load(undefined, { returnSandbox: true });
+  const run = CB.createRun({ seed: 7, god: true, bossRush: true });
+  const bot = makeBot();
+  let ticks = 0;
+  while (ticks < 60 * 60 * 15 && run.state !== 'victory') {
+    run.step(bot(run));
+    ticks++;
+  }
+  assert.equal(run.state, 'victory');
+  report.push(`boss rush seed 7: ${(run.time / 60).toFixed(1)} min`);
+});
+
+test('sim: delayed-input bot (0.15 s reaction) difficulty report', () => {
+  for (let s = 0; s < 4; s++) {
+    const res = playStage(1, s, {}, { delayTicks: 9 });
+    report.push(`delayed bot stage ${s + 1}: ${res.seconds.toFixed(1)} s, would-be hits ${res.wouldHits}${DONE.has(res.run.state) ? '' : ' (NOT CLEARED)'}`);
+  }
 });
 
 test.after(() => {
@@ -5032,8 +6679,8 @@ test.after(() => {
 });
 ```
 
-- [ ] **Step 3: Run the playthrough.** Run `node --test tests/sim.test.js`. Expected: 25 PASS, with the difficulty report printed. A `stuck in boss` failure is a boss-logic bug (a unreachable/never-targetable part, an attack that blocks forever, etc.). Debug it with `superpowers:systematic-debugging`, and never by raising `LIMIT_S`.
-- [ ] **Step 4: Run every test.** Run `node --test tests/`. Expected: everything PASS.
+- [ ] **Step 3: Run the playthrough.** Run `node --test tests/sim.test.js`. Expected: 30 PASS, with the difficulty report printed (24 per-stage runs, random patches, YOLO, full run, Boss Rush and the delayed-bot report). A `stuck in boss` failure is a boss-logic bug (a unreachable/never-targetable part, an attack that blocks forever, etc.). Debug it with `superpowers:systematic-debugging`, and never by raising `LIMIT_S`.
+- [ ] **Step 4: Run every test.** Run `node --test`. Expected: everything PASS.
 - [ ] **Step 5: Balance pass (orchestrator reviews every number changed).** Targets with the base kit:
   - each stage clears in **45–150 s** of bot time;
   - **would-be hits** per stage are between 2 and 18 (the bot dodges worse than a human but has perfect aim). Too few hits means too easy, so raise bullet density or speed by ≤ 15%. Too many means too hard, so lower it.
@@ -5073,10 +6720,15 @@ test('smoke: every screen and scene is registered', () => {
   assert.equal(typeof CB.Audio.handleEvents, 'function');
 });
 
-test('smoke: all sprites bake headless', () => {
+test('smoke: all sprites bake headless and the required ones exist', () => {
   const CB = H.load();
   for (const n of CB.Art.spriteNames()) CB.Art.sprite(n);
-  assert.ok(CB.Art.spriteNames().length > 40);
+  const REQUIRED = ['clawd_idle0', 'clawd_idle0_happy', 'bolt', 'bolt_big', 'ebullet', 'heart_full', 'heart_empty', 'pickup_hotfix',
+    'syntaxError_0', 'nullPointer_0', 'raceCondition_0', 'memoryLeak_0', 'offByOne_0', 'loopHead_0', 'loopSegment_0', 'leakBoss_0',
+    'leakBlob_0', 'conflictHead_0', 'conflictIncoming_0', 'heisenbug_0', 'heisenbug_cyan_0', 'heisenbug_mag_0', 'hat_crown', 'hat_halo'];
+  for (const n of REQUIRED) assert.ok(CB.Art.hasSprite(n), n);
+  for (const id of CB.Patches.ORDER) assert.ok(CB.Art.hasSprite('patch_' + id), 'patch_' + id);
+  for (const s of CB.STAGES) assert.ok(CB.Art.hasSprite(CB.Bosses[s.boss].portrait), s.boss + ' portrait');
 });
 
 test('smoke: title and play scenes run and draw through a real renderer', () => {
@@ -5118,10 +6770,13 @@ export function build() {
   const body = (html.match(/<body>([\s\S]*?)<\/body>/) || [null, ''])[1];
   const srcs = [...html.matchAll(/<script\s+src="([^"]+)"\s*><\/script>/g)].map((m) => m[1]);
   const markup = body.replace(/<script\s+src="[^"]+"\s*><\/script>\s*/g, '').trim();
-  const code = srcs
-    .map((s) => `// ---- ${s} ----\n` + readFileSync(join(ROOT, s), 'utf8').replace(/<\/script/gi, '<\\/script'))
-    .join('\n;\n');
-  const out = `${title}\n${styles}\n${markup}\n<script>\n${code}\n</script>\n`;
+  // One <script> per source file: a load-time throw in one file can't stop the others, and the sourceURL
+  // makes stack traces (and the panic screen's src/ line) name the real file.
+  const chunks = srcs.map((s) => {
+    const code = readFileSync(join(ROOT, s), 'utf8').replace(/<\/script/gi, '<\\/script');
+    return `<script>\n// ---- ${s} ----\n${code}\n//# sourceURL=${s}\n</script>`;
+  });
+  const out = `${title}\n${styles}\n${markup}\n${chunks.join('\n')}\n`;
   mkdirSync(dirname(OUT), { recursive: true });
   writeFileSync(OUT, out);
   return { out, bytes: Buffer.byteLength(out), scripts: srcs };
@@ -5152,7 +6807,15 @@ test('build: Artifact page has no document wrapper and inlines every script in o
   assert.doesNotMatch(out, /<head[\s>]/i);
   assert.doesNotMatch(out, /<body[\s>]/i);
   assert.match(out, /<canvas id="game"/);
-  assert.equal((out.match(/<\/script/gi) || []).length, 1, 'only the closing tag');
+  assert.equal((out.match(/<\/script/gi) || []).length, scripts.length, 'one closing tag per file');
+  const vm = require('vm');
+  const chunks = [...out.matchAll(/<script>\n([\s\S]*?)\n<\/script>/g)].map((m) => m[1]);
+  assert.equal(chunks.length, scripts.length);
+  chunks.forEach((code, i) => {
+    assert.doesNotMatch(code, /<!--/, `${scripts[i]} contains an HTML comment opener`);
+    assert.doesNotThrow(() => new vm.Script(code, { filename: scripts[i] }), `${scripts[i]} must parse`);
+    assert.ok(code.includes(`//# sourceURL=${scripts[i]}`));
+  });
   let last = -1;
   for (const s of scripts) {
     const i = out.indexOf(`// ---- ${s} ----`);
@@ -5163,7 +6826,7 @@ test('build: Artifact page has no document wrapper and inlines every script in o
 });
 ```
 
-- [ ] **Step 4: Run the tests.** Run `node --test tests/`. Expected: everything PASS.
+- [ ] **Step 4: Run the tests.** Run `node --test`. Expected: everything PASS.
 - [ ] **Step 5: Commit (orchestrator).** `git add tests/smoke.test.js tests/build.test.js tools/build-artifact.mjs && git commit -m "feat: whole-game smoke tests and Artifact build"`
 
 ### Task 24: Browser QA, polish and publish (orchestrator)
@@ -5180,7 +6843,7 @@ test('build: Artifact page has no document wrapper and inlines every script in o
   - victory (`#stage=4&boss&god&patches=heavy,heavy,rapid,rapid,spread`);
   - the panic screen (`CB.debug.game.scene.draw = () => { throw new Error('test') }` via the JS tool).
 - [ ] **Step 3: Scaling.** Check 1280×720, 1920×1080, 800×600 and a narrow 400×800 viewport: no horizontal scroll, crisp pixels, and correct aim mapping (the crosshair sits under the mouse).
-- [ ] **Step 4: Fix and re-test.** Fix every defect with a regression test where it is logic. Re-run `node --test tests/`.
+- [ ] **Step 4: Fix and re-test.** Fix every defect with a regression test where it is logic. Re-run `node --test`.
 - [ ] **Step 5: Write `README.md`.** Cover: what it is, how to play (controls), `npm test`, `npm run serve`, the debug hash table, `npm run build`, and the fan-game note.
 - [ ] **Step 6: Build.** Run `node tools/build-artifact.mjs`.
 - [ ] **Step 7: Publish.** Publish `dist/clawd-vs-bugs.html` as an Artifact (icon `game`, description "Top-down pixel boss rush: play as Clawd and squash four software-bug bosses.").
