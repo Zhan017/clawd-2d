@@ -125,7 +125,7 @@
       r.alpha(show(1.1 + 0.1 * i), () => r.text(line, LOG_X, 115 + 9 * i, { color: C.grey }));
     });
     r.alpha(show(0.5), () => r.text(DISCLAIMER, W / 2, 152, { color: C.grey, align: 'center' }));
-    if (st > CLICK_AT && Math.floor(st * 2) % 2 === 0) r.text('Click to play again', W / 2, 163, { color: C.white, shadow: C.ink, align: 'center' });
+    if (st > CLICK_AT && Math.floor(st * 2) % 2 === 0) r.text('Click to play again', W / 2, 160, { color: C.white, shadow: C.ink, align: 'center' });
     if (st > 0.3) drawConfetti(r, st);
   }
 

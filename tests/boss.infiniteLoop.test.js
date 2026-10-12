@@ -119,7 +119,7 @@ test('infiniteLoop: exactly 75 HP is still phase 1; below 75 is phase 2', () => 
   assert.ok(w.events.some((e) => e.type === 'bossPhase'));
   H.stepN(w, 150, idle);
   assert.ok(Math.abs(boss.radius - 40) < 0.5, `radius ${boss.radius}`);
-  assert.ok(Math.abs(boss.angSpeed - 1.4) < 1e-9);
+  assert.ok(Math.abs(boss.angSpeed - 1.2) < 1e-9);
 });
 
 test('infiniteLoop: the radius eases linearly from 60 to 40 over 2 s', () => {
@@ -220,11 +220,11 @@ test('infiniteLoop: the head blinks white for 0.5 s before it reverses, then re-
   assert.ok(boss.reverseT >= 3.9 && boss.reverseT <= 6.01, `re-rolled ${boss.reverseT}`);
 });
 
-test('infiniteLoop: phase 2 sheds a segment into a syntaxError every 5 s, stopping at 4', () => {
+test('infiniteLoop: phase 2 sheds a segment into a syntaxError every 6 s, stopping at 4', () => {
   const { w, boss } = start();
   w.damageEnemy(boss.head, 80);
   H.stepN(w, 1, idle);
-  H.stepN(w, 5.3 * 60, idle);
+  H.stepN(w, 6.3 * 60, idle);
   assert.equal(alive(w, 'loopSegment').length, 7);
   assert.ok(alive(w, 'syntaxError').length >= 1);
   H.stepN(w, 40 * 60, idle);
@@ -237,7 +237,7 @@ test('infiniteLoop: the shed tail becomes a syntaxError at its own position, and
   H.stepN(w, 1, idle);
   let tail = null;
   let before = boss.segments.length;
-  for (let i = 0; i < 6 * 60 && boss.segments.length === before; i++) {
+  for (let i = 0; i < 7 * 60 && boss.segments.length === before; i++) {
     tail = boss.segments[boss.segments.length - 1];
     H.stepN(w, 1, idle);
   }
@@ -276,7 +276,7 @@ test('infiniteLoop: the first fan comes one full 3 s period after spawn, not bef
   assert.equal(w.events.filter((e) => e.type === 'enemyShoot').length, 1, 'one enemyShoot per volley');
 });
 
-test('infiniteLoop: the phase 1 fan is 3 bullets at 0 and +-15 degrees around the aim, speed 80, from the head', () => {
+test('infiniteLoop: the phase 1 fan is 3 bullets at 0 and +-15 degrees around the aim, speed 72, from the head', () => {
   const { CB, w, boss } = start();
   const c = countFires(w);
   H.stepN(w, 181, idle);
@@ -286,7 +286,7 @@ test('infiniteLoop: the phase 1 fan is 3 bullets at 0 and +-15 degrees around th
   const aim = CB.M.angleTo(o[0], o[1], w.player.x, w.player.y);
   const deg = c.shots.map((s) => Math.round(((CB.M.wrapAngle(s[2] - aim) * 180) / Math.PI) * 10) / 10).sort((a, b) => a - b);
   assert.deepEqual(deg, [-15, 0, 15]);
-  for (const s of c.shots) assert.equal(s[3], 80);
+  for (const s of c.shots) assert.equal(s[3], 72);
   const ev = w.events.find((e) => e.type === 'enemyShoot');
   assert.ok(Number.isFinite(ev.x) && Number.isFinite(ev.y));
 });
@@ -380,17 +380,17 @@ test('infiniteLoop: the recorded path is trimmed to what the body needs, so it n
   assert.ok(most < 140, `path peaked at ${most} points`);
 });
 
-test('infiniteLoop: the first shed is 5 s after the phase change and the next 5 s after that', () => {
+test('infiniteLoop: the first shed is 6 s after the phase change and the next 6 s after that', () => {
   const { w, boss } = start();
   w.damageEnemy(boss.head, 80);
   H.stepN(w, 1, idle);
-  H.stepN(w, 294, idle); // 4.9 s
+  H.stepN(w, 354, idle); // 5.9 s
   assert.equal(boss.segments.length, 8);
-  H.stepN(w, 12, idle); // 5.1 s
+  H.stepN(w, 12, idle); // 6.1 s
   assert.equal(boss.segments.length, 7);
-  H.stepN(w, 288, idle); // 9.9 s
+  H.stepN(w, 348, idle); // 11.9 s
   assert.equal(boss.segments.length, 7);
-  H.stepN(w, 18, idle); // 10.2 s
+  H.stepN(w, 18, idle); // 12.2 s
   assert.equal(boss.segments.length, 6);
 });
 
@@ -511,7 +511,7 @@ test('infiniteLoop: deathPoints still works after defeat, with the same points',
   // after a shed the list is shorter, and it is still head first
   const s = start();
   s.w.damageEnemy(s.boss.head, 80);
-  H.stepN(s.w, 5.3 * 60, idle);
+  H.stepN(s.w, 6.3 * 60, idle);
   assert.equal(B.deathPoints(s.boss).length, 8);
 });
 

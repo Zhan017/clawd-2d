@@ -3,8 +3,8 @@ const test = require('node:test');
 const assert = require('node:assert');
 const H = require('./harness');
 
-function setup() {
-  const CB = H.loadWith('src/game/stages.js', 'src/game/waves.js', 'src/game/stageRunner.js');
+function setup(extra) {
+  const CB = H.loadWith(...(extra || []), 'src/game/stages.js', 'src/game/waves.js', 'src/game/stageRunner.js');
   CB.Enemies.dummy = { create: (w, x, y) => CB.makeEnemy('dummy', x, y, { hp: 1, contact: false }), update() {}, draw() {} };
   CB.Bosses.dummyBoss = {
     id: 'dummyBoss', name: 'DUMMY', tagline: 'noop()', commitMsg: 'fix: dummy',
@@ -84,7 +84,7 @@ test('stageRunner: death → dying → dead → retry restores the stage', () =>
   until(run, (r) => r.stateT >= 0.6, 60);
   run.step(H.makeInput({ retry: true }));
   assert.equal(run.state, 'stageIntro');
-  assert.equal(run.world.player.hearts, 5);
+  assert.equal(run.world.player.hearts, 6);
   assert.deepEqual(H.plain(run.patches), { spread: 1 });
 });
 
@@ -96,7 +96,7 @@ test('stageRunner: player invulnerable during bossDead', () => {
   until(run, (r) => r.state === 'bossDead', 5);
   const p = run.world.player;
   assert.equal(CB.Player.hurt(p, run.world, null), false);
-  assert.equal(p.hearts, 5);
+  assert.equal(p.hearts, 6);
 });
 
 test('stageRunner: clearing the last stage leads to victory', () => {
@@ -187,7 +187,7 @@ test('stageRunner: state durations match the spec (waveBreak 1.5, bossWarn 2.5, 
 
 test('stageRunner: waveBreak heals 2 hearts, capped at max hearts', () => {
   const CB = setup();
-  for (const [patches, before, after] of [[{}, 1, 3], [{}, 4, 5], [{}, 5, 5], [{ heart: 1 }, 5, 6], [{ heart: 2 }, 3, 5]]) {
+  for (const [patches, before, after] of [[{}, 1, 3], [{}, 5, 6], [{}, 6, 6], [{ heart: 1 }, 6, 7], [{ heart: 2 }, 3, 5]]) {
     const run = CB.createRun({ seed: 1, patches });
     toState(run, 'wave');
     run.world.player.hearts = before;
@@ -203,11 +203,11 @@ test('stageRunner: bossWarn heals to full', () => {
   toState(run, 'wave');
   run.world.player.hearts = 1;
   toState(run, 'bossWarn');
-  assert.equal(run.world.player.hearts, 6);
+  assert.equal(run.world.player.hearts, 7);
   const skip = CB.createRun({ seed: 1, skipWaves: true });
   skip.world.player.hearts = 2;
   toState(skip, 'bossWarn');
-  assert.equal(skip.world.player.hearts, 5);
+  assert.equal(skip.world.player.hearts, 6);
 });
 
 test('stageRunner: the player gets 1 s of invulnerability when the boss spawns', () => {
@@ -239,7 +239,7 @@ test('stageRunner: dying in the boss fight retries at bossWarn with full hearts 
   assert.equal(run.state, 'bossWarn');
   assert.notEqual(run.world, oldWorld, 'a fresh world');
   assert.equal(run.world.boss, null);
-  assert.equal(run.world.player.hearts, 5);
+  assert.equal(run.world.player.hearts, 6);
   assert.equal(run.deaths, 1);
   assert.deepEqual(H.plain(run.patches), { spread: 1 });
   assert.equal(run.stageIndex, 0);
@@ -262,7 +262,7 @@ test('stageRunner: dying in the waves retries at stageIntro', () => {
   until(run, (r) => r.stateT >= 0.6, 60);
   run.step(H.makeInput({ retry: true }));
   assert.equal(run.state, 'stageIntro');
-  assert.equal(run.world.player.hearts, 5);
+  assert.equal(run.world.player.hearts, 6);
   assert.equal(run.deaths, 1);
 });
 
@@ -408,7 +408,7 @@ test('stageRunner: a wave-2 death retries at wave 2 with full hearts, stage-star
   assert.equal(run.waveIndex, 1);
   assert.equal(run.stageIndex, 0);
   assert.notEqual(run.world, oldWorld, 'a fresh world');
-  assert.equal(run.world.player.hearts, 5);
+  assert.equal(run.world.player.hearts, 6);
   assert.deepEqual(H.plain(run.patches), { spread: 1 });
   assert.deepEqual(H.plain(run.squashed), { dummy: 2 }, 'wave 1 is kept, the failed wave-2 kill is not');
   assert.equal(run.deaths, 1);
@@ -619,4 +619,92 @@ test('stageRunner: every event a run returns, run-level ones included, carries a
   const types = new Set(evs.map((e) => e.type));
   for (const t of ['bossWarn', 'bossEnter', 'bossDie', 'patchPick', 'victory', 'playerDie', 'playerHurt']) assert.ok(types.has(t), `saw ${t}`);
   for (const e of evs) assert.ok(Number.isFinite(e.x) && Number.isFinite(e.y), `${e.type} has no finite x, y`);
+});
+
+// ---- boss phase change: a hotfix heart lands halfway between the boss and the arena centre ------------------------------------------
+
+// A boss that changes phase when told to: fire() makes its next update emit bossPhase from where it stands.
+function phaseBossRun(extra) {
+  const CB = setup(extra);
+  CB.Bosses.phaseBoss = {
+    id: 'phaseBoss', name: 'PHASE', tagline: 'noop()', commitMsg: 'fix: phase',
+    create() {
+      const c = {
+        id: 'phaseBoss', x: 100, y: 40, hp: 10, maxHp: 10, phase: 1, defeated: false, pending: false,
+        update(w) {
+          if (c.pending) {
+            c.pending = false;
+            c.phase++;
+            w.emit('bossPhase', { x: c.x, y: c.y, phase: c.phase });
+          }
+        },
+        draw() {},
+      };
+      return c;
+    },
+  };
+  CB.STAGES[0].boss = 'phaseBoss';
+  const run = CB.createRun({ seed: 1, skipWaves: true });
+  toBoss(run);
+  return { CB, run, boss: run.world.boss };
+}
+
+test('stageRunner: a boss phase change drops exactly one hotfix 24 px from Clawd toward the arena centre (160, 96)', () => {
+  const { CB, run, boss } = phaseBossRun(['src/game/pickups.js']);
+  assert.ok(CB.Pickups && CB.Pickups.drop);
+  assert.equal(run.world.pickups.length, 0, 'nothing lying around before the phase change');
+  const p = run.world.player;
+  const near = (a, b) => Math.abs(a - b) < 1e-6;
+  const expectAt = (px, py) => {
+    const d = Math.hypot(160 - px, 96 - py);
+    return [px + ((160 - px) / d) * 24, py + ((96 - py) / d) * 24];
+  };
+  p.x = 100;
+  p.y = 40;
+  boss.pending = true;
+  const evs = run.step(idle());
+  assert.equal(evs.filter((e) => e.type === 'bossPhase').length, 1, 'the event still reaches the caller');
+  const list = run.world.pickups;
+  assert.equal(list.length, 1);
+  assert.equal(list[0].kind, 'hotfix');
+  const [ex, ey] = expectAt(100, 40);
+  assert.ok(near(list[0].x, ex) && near(list[0].y, ey), JSON.stringify([list[0].x, list[0].y, ex, ey]));
+  assert.ok(Math.hypot(list[0].x - p.x, list[0].y - p.y) > 9, 'not collected on the spot');
+  for (let i = 0; i < 30; i++) run.step(idle());
+  assert.equal(run.world.pickups.length, 1, 'one event, one drop: later steps do not drop again');
+  p.x = 220;
+  p.y = 150;
+  boss.pending = true;
+  run.step(idle());
+  assert.equal(run.world.pickups.length, 2, 'the next phase change drops the next hotfix');
+  const [fx, fy] = expectAt(220, 150);
+  assert.ok(near(run.world.pickups[1].x, fx) && near(run.world.pickups[1].y, fy));
+});
+
+test('stageRunner: the phase drop respects the pickup cap and ignores other events', () => {
+  const { CB, run, boss } = phaseBossRun(['src/game/pickups.js']);
+  const w = run.world;
+  for (let i = 0; i < CB.Pickups.CAP; i++) CB.Pickups.drop(w, 20 + i, 20);
+  assert.equal(w.pickups.length, CB.Pickups.CAP);
+  boss.pending = true;
+  assert.doesNotThrow(() => run.step(idle()));
+  assert.equal(w.pickups.length, CB.Pickups.CAP, 'refused at the cap, no error');
+  w.pickups.length = 0;
+  w.emit('hit', { x: 10, y: 10, kind: 'x', boss: true });
+  w.emit('bossDie', { x: 10, y: 10 });
+  run.step(idle());
+  assert.equal(w.pickups.length, 0, 'only bossPhase drops a hotfix');
+});
+
+test('stageRunner: a boss phase change with CB.Pickups not loaded breaks nothing', () => {
+  const { CB, run, boss } = phaseBossRun();
+  assert.equal(CB.Pickups, undefined);
+  boss.pending = true;
+  let evs;
+  assert.doesNotThrow(() => { evs = run.step(idle()); });
+  assert.equal(evs.filter((e) => e.type === 'bossPhase').length, 1);
+  assert.ok(!run.world.pickups || run.world.pickups.length === 0);
+  assert.equal(run.state, 'boss');
+  for (let i = 0; i < 30; i++) run.step(idle());
+  assert.equal(run.state, 'boss');
 });

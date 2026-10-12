@@ -13,14 +13,14 @@
   const PREFILL = 100; // px of path laid down behind the head at spawn
   const RADIUS = [60, 40]; // circle radius per phase (phase 2 eases)
   const EASE_T = 2; // seconds the radius takes to go from RADIUS[0] to RADIUS[1]
-  const ANG_SPEED = [0.9, 1.4]; // rad/s per phase
+  const ANG_SPEED = [0.9, 1.2]; // phase 2 was 1.4: playtests showed "so close" deaths at the tight ring // rad/s per phase
   const FAN_EVERY = [3.0, 2.5];
   const FAN_SIDE = [1, 2]; // bullets either side of the aim: 3-bullet fan, then 5
   const FAN_STEP = (15 * Math.PI) / 180;
-  const FAN_SPEED = 80;
+  const FAN_SPEED = 72;
   const FAN_TELE = 0.35; // the head flashes this long before a fan
   const REVERSE_TELE = 0.5;
-  const SHED_EVERY = 5;
+  const SHED_EVERY = 6;
   const INVULN = 0.5;
   const FRAME_T = 0.25; // jaws chomp at 2 Hz
   const BLINK_HZ = 20;

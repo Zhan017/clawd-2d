@@ -626,16 +626,16 @@ test('hud: hearts start at (4, 5), 9 px apart, full then empty; the pip follows 
   const { CB, w, hud } = hudSetup();
   w.player.hearts = 3;
   const s = hud();
-  assert.deepEqual(heartsOf(s), ['heart_full', 'heart_full', 'heart_full', 'heart_empty', 'heart_empty']);
+  assert.deepEqual(heartsOf(s), ['heart_full', 'heart_full', 'heart_full', 'heart_empty', 'heart_empty', 'heart_empty']);
   const xs = s.of('sprite').filter((c) => c.args[0].startsWith('heart_')).map((c) => c.args[1] - 3.5);
-  assert.deepEqual(xs, [4, 13, 22, 31, 40], '9 px apart');
+  assert.deepEqual(xs, [4, 13, 22, 31, 40, 49], '9 px apart');
   assert.ok(s.of('sprite').filter((c) => c.args[0].startsWith('heart_')).every((c) => c.args[2] === 8));
   const pip = s.of('sprite').find((c) => c.args[0] === 'dash_ready');
-  assert.deepEqual([pip.args[1] - 2.5, pip.args[2] - 2.5], [4 + 45 + 2, 5], 'right after the last heart slot');
-  w.player.stats.maxHearts = 7;
-  w.player.hearts = 7;
-  assert.equal(heartsOf(hud()).length, 7);
-  assert.equal(hud().of('sprite').find((c) => c.args[0] === 'dash_ready').args[1] - 2.5, 69);
+  assert.deepEqual([pip.args[1] - 2.5, pip.args[2] - 2.5], [4 + 54 + 2, 5], 'right after the last heart slot');
+  w.player.stats.maxHearts = 8;
+  w.player.hearts = 8;
+  assert.equal(heartsOf(hud()).length, 8);
+  assert.equal(hud().of('sprite').find((c) => c.args[0] === 'dash_ready').args[1] - 2.5, 78);
   assert.ok(CB.Art.hasSprite('heart_full'));
 });
 
@@ -646,16 +646,16 @@ test('hud: the heart just lost blinks while Clawd is hurt (through CB.Comfort.bl
   let on = true;
   const asked = [];
   CB.Comfort = { blink: (t, hz) => { asked.push(hz); return on; } };
-  assert.deepEqual(heartsOf(hud()), ['heart_full', 'heart_full', 'heart_full', 'heart_fullw', 'heart_empty']);
+  assert.deepEqual(heartsOf(hud()), ['heart_full', 'heart_full', 'heart_full', 'heart_fullw', 'heart_empty', 'heart_empty']);
   on = false;
-  assert.deepEqual(heartsOf(hud()), ['heart_full', 'heart_full', 'heart_full', 'heart_empty', 'heart_empty']);
+  assert.deepEqual(heartsOf(hud()), ['heart_full', 'heart_full', 'heart_full', 'heart_empty', 'heart_empty', 'heart_empty']);
   assert.ok(asked.includes(12));
   w.player.hurtT = 0;
   on = true;
-  assert.deepEqual(heartsOf(hud()), ['heart_full', 'heart_full', 'heart_full', 'heart_empty', 'heart_empty'], 'steady when not hurt');
-  w.player.hearts = 5;
+  assert.deepEqual(heartsOf(hud()), ['heart_full', 'heart_full', 'heart_full', 'heart_empty', 'heart_empty', 'heart_empty'], 'steady when not hurt');
+  w.player.hearts = 6;
   w.player.hurtT = 0.5;
-  assert.deepEqual(heartsOf(hud()), Array(5).fill('heart_full'), 'nothing was lost (god mode): no blink');
+  assert.deepEqual(heartsOf(hud()), Array(6).fill('heart_full'), 'nothing was lost (god mode): no blink');
 });
 
 test('hud: at 1 heart the last heart throbs to 2x on the beat and the screen edge gets three red frames at 0.10 + 0.20 x beatPulse', () => {
@@ -688,7 +688,7 @@ test('hud: at 1 heart the last heart throbs to 2x on the beat and the screen edg
 test('hud: the dash pip is lit when ready, dim while cooling and fills from the bottom by 1 - dashCd / cooldown', () => {
   const { CB, w, hud } = hudSetup();
   const C = CB.Pal.C;
-  const fillRows = (s) => s.of('rect').filter((c) => c.args[4] === C.cyan && c.args[3] === 1 && c.args[1] >= 5 && c.args[1] <= 9 && c.args[0] >= 51 && c.args[0] <= 55);
+  const fillRows = (s) => s.of('rect').filter((c) => c.args[4] === C.cyan && c.args[3] === 1 && c.args[1] >= 5 && c.args[1] <= 9 && c.args[0] >= 60 && c.args[0] <= 64);
   assert.equal(hud().of('sprite').filter((c) => c.args[0] === 'dash_ready').length, 1);
   w.player.dashCd = 0.8;
   let s = hud();
@@ -753,6 +753,21 @@ test('hud: YOLO tag, stage path in the accent colour, WAVE n/2 in grey, and the 
   run.stageIndex = 2;
   w.stage = CB.STAGES[2];
   assert.equal(text(hud(), '~/.git/').args[3].color, CB.Pal.STAGES.git.accent);
+});
+
+test('hud: the YOLO tag stays at x 78 up to 7 hearts and moves 3 px past the dash pip when 8 hearts push the pip to x 78', () => {
+  const { w, run, hud } = hudSetup();
+  run.yolo = true;
+  const tagX = () => hud().of('text').find((c) => c.args[0] === 'YOLO').args[1];
+  for (const max of [3, 5, 6, 7]) {
+    w.player.stats.maxHearts = max;
+    w.player.hearts = max;
+    assert.equal(tagX(), 78, `${max} hearts`);
+  }
+  w.player.stats.maxHearts = 8;
+  w.player.hearts = 8;
+  assert.equal(hud().of('sprite').find((c) => c.args[0] === 'dash_ready').args[1] - 2.5, 78, 'the pip');
+  assert.equal(tagX(), 78 + 5 + 3, '8 hearts: right of the pip (5 wide) with a 3 px gap');
 });
 
 test('hud: bossBarFill eases out cubically over the first 0.8 s of the fight, then tracks hp / maxHp', () => {
@@ -928,8 +943,8 @@ function layoutEnv(stageIndex, over) {
 function worst(env, state, stateT) {
   const { CB, run, w } = env;
   const id = CB.STAGES[run.stageIndex].boss;
-  w.player.stats.maxHearts = 7;
-  w.player.hearts = 7;
+  w.player.stats.maxHearts = 8;
+  w.player.hearts = 8;
   w.player.dashCd = 0.3;
   w.context = { value: 45, max: 45, announced: true };
   w.compactBannerT = 1;
@@ -943,7 +958,7 @@ function worst(env, state, stateT) {
   return env.rec;
 }
 
-test('hud layout: the worst-case HUD (7 hearts, full meter, banner, boss bar, YOLO) stays on screen with no overlapping text', { skip: !HAS_FONT }, () => {
+test('hud layout: the worst-case HUD (8 hearts, full meter, banner, boss bar, YOLO) stays on screen with no overlapping text', { skip: !HAS_FONT }, () => {
   for (let i = 0; i < 4; i++) {
     for (const [state, stateT] of [['boss', 5], ['boss', 0.2], ['bossDead', 2], ['wave', 3]]) {
       const env = layoutEnv(i);
@@ -978,7 +993,7 @@ test('hud layout: the 1-heart throb, a dead player and the wave state also stay 
   w.player.dead = true;
   CB.Screens.hud.draw(env.r, run, 0.3);
   assert.deepEqual(rec.outside(), []);
-  assert.equal(rec.sprites().filter((b) => b.name === 'heart_empty').length, 5);
+  assert.equal(rec.sprites().filter((b) => b.name === 'heart_empty').length, 6);
 });
 
 test('hud: draws with no world, no player, no stage and none of the optional modules', () => {

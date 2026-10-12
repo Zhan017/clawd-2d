@@ -191,7 +191,8 @@
 
       const max = clamp(Math.floor(num(p.stats && p.stats.maxHearts, 5)), 1, MAX_DRAWN_HEARTS);
       drawHearts(r, p, tt, max);
-      drawPip(r, p, HEART_X + max * HEART_STEP + 2);
+      const pipX = HEART_X + max * HEART_STEP + 2;
+      drawPip(r, p, pipX);
       drawMeter(r, w, tt);
       if (stage && stage.path) r.text(stage.path, CB.W - 4, 5, { align: 'right', color: stagePalette(stage).accent });
 
@@ -199,7 +200,7 @@
         const total = stage && stage.waves ? stage.waves.length : 2;
         r.text('WAVE ' + (run.waveIndex + 1) + '/' + total, CB.W / 2, 5, { align: 'center', color: C.grey });
       } else if ((run.state === 'boss' || run.state === 'bossDead') && w.boss) drawBossBar(r, run, tt, stage);
-      if (run.yolo || (w.mode && w.mode.yolo)) r.text('YOLO', 78, 5, { color: C.red, shadow: C.ink }); // after the bar: its last letters reach under the bar's left end
+      if (run.yolo || (w.mode && w.mode.yolo)) r.text('YOLO', Math.max(78, pipX + 8), 5, { color: C.red, shadow: C.ink }); // after the bar: its last letters reach under the bar's left end; x 78, or 3 px past the pip when 8 hearts push it there
 
       if (num(w.compactBannerT, 0) > 0) {
         r.text(BANNER_TEXT, CB.W / 2, 22, { align: 'center', color: C.gold, shadow: C.ink, alpha: Math.min(1, w.compactBannerT * 3) });

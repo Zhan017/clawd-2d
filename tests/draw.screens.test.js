@@ -889,7 +889,7 @@ test('victory: the Rev 3 layout table with a full tally and four fixes', () => {
     assert.ok(env.log.text.some((a) => a[0] === line && a[3].color === C.grey));
   });
   assert.equal(T(DISCLAIMER).y, 152);
-  assert.equal(T('Click to play again').y, 163);
+  assert.equal(T('Click to play again').y, 160);
   assert.ok(env.log.text.some((a) => a[0] === DISCLAIMER), 'r.text received the disclaimer');
   assertLayout(rec, 'victory');
 });

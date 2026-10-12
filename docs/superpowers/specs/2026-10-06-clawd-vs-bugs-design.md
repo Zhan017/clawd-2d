@@ -64,7 +64,7 @@ Status: approved by the user 2026-10-12. Rev 2 (2026-10-12) folds in plan refine
   - Invulnerable for 0.25 s from dash start.
   - Cooldown 0.8 s.
   - Leaves 3 fading afterimages.
-- **Health:** 5 hearts.
+- **Health:** 6 hearts (Extra Heart adds +1 per stack, so up to 8).
   - Any enemy contact or enemy bullet costs 1 heart.
   - Then 1.0 s of hurt-invulnerability, with the sprite blinking at 10 Hz.
   - At 0 hearts, Clawd dies.
@@ -140,11 +140,11 @@ Every boss has a **2.5 s warning card** before the fight: flashing `⚠ WARNING`
   - Head and segments deal contact damage.
 - **Phase 1 (100–50%):**
   - The head travels a circle centred on the arena centre: radius 60, angular speed 0.9 rad/s.
-  - Every 3 s it fires a 3-bullet fan (±15°) at the player. Every fan is telegraphed by a 0.35 s white flash on the head.
+  - Every 3 s it fires a 3-bullet fan (±15°) at the player, at 72 px/s (the gentlest boss bullets). Every fan is telegraphed by a 0.35 s white flash on the head.
 - **Phase 2 (<50%):**
   - The radius eases to 40 over 2 s and the angular speed rises to 1.4 rad/s.
   - Every 4–6 s it reverses direction, after a 0.5 s white flash telegraph on the head.
-  - Every 5 s the tail segment detaches and becomes a `syntaxError` (stops at 4 segments left).
+  - Every 6 s the tail segment detaches and becomes a `syntaxError` (stops at 4 segments left).
   - Every 2.5 s it fires a 5-bullet fan (±30°), with the same 0.35 s telegraph.
 
 **Boss 2 — Memory Leak** (`memoryLeakBoss`)
@@ -237,11 +237,12 @@ dead → retry: restart current stage at stageIntro (full hearts, patches as the
   - Refill to max at every `stageIntro`.
   - +2 (capped) at `waveBreak`.
   - Refill to max when `bossWarn` starts.
+  - **Boss phase change:** each `bossPhase` event drops one hotfix heart (the pickup of §2.11) 24 px from Clawd toward the arena centre (160, 96), a reachable reward. Subject to the 6-pickup field cap.
 - **Checkpoints:** a death during `boss` retries at `bossWarn`. A death in wave 2 or the wave break retries at wave 2. Any other death retries at `stageIntro`. Every retry has full hearts and the patches from stage start. Repeat visits use short intro cards (0.9 s / 1.3 s).
 - **Same-tick death:** if the player dies in the same tick as the boss, or while `dying`, the boss defeat wins. The player is revived with at least 1 heart.
 - **Modes (rev 2):**
   - **Boss Rush:** all four stages with `skipWaves`.
-  - **YOLO:** 3 base hearts, enemy bullets ×1.15 faster, 0.7 s hurt-invulnerability.
+  - **YOLO:** 3 base hearts (the base 6 minus 3; 4–5 with Extra Heart), enemy bullets ×1.15 faster, 0.7 s hurt-invulnerability.
   - Both are unlocked after a first victory and chosen on the title screen.
 - Player bullets, enemies, hazards and enemy bullets are cleared on every state change into `stageIntro`, `bossWarn` or `dead`. Boss-death explosions are created on the defeat tick.
 - Run time accumulates during every play state except pause and patchPick. Deaths are counted.

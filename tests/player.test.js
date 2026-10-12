@@ -132,7 +132,7 @@ test('player: bullets pass through while dashing', () => {
   H.stepN(w, 1, mv(1, 0, { dash: true }));
   w.fireEnemyBullet(p.x, p.y, 0, 0);
   H.stepN(w, 1, mv(1, 0));
-  assert.equal(p.hearts, 5);
+  assert.equal(p.hearts, 6);
 });
 
 test('player: firing respects cooldown and spread patch', () => {
@@ -155,7 +155,7 @@ test('player: hurt grants 1 s invulnerability; death at 0 hearts', () => {
   const { CB, w } = world();
   const p = w.player;
   assert.equal(CB.Player.hurt(p, w, null), true);
-  assert.equal(p.hearts, 4);
+  assert.equal(p.hearts, 5);
   assert.equal(CB.Player.hurt(p, w, null), false, 'invulnerable');
   p.invuln = 0;
   p.hearts = 1;
@@ -168,13 +168,13 @@ test('player: god mode counts would-be hits without losing hearts', () => {
   const CB = H.loadWith();
   const w = CB.createWorld({ seed: 1, god: true });
   CB.Player.hurt(w.player, w, null);
-  assert.equal(w.player.hearts, 5);
+  assert.equal(w.player.hearts, 6);
   assert.equal(w.stats.wouldHits, 1);
 });
 
 test('player: extra heart patch raises max hearts', () => {
   const { w } = world({ heart: 2 });
-  assert.equal(w.player.hearts, 7);
+  assert.equal(w.player.hearts, 8);
 });
 
 test('player: sprites are all defined at 16x12', () => {

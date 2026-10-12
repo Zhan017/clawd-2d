@@ -20,7 +20,7 @@ test('world: player starts below arena centre with full hearts', () => {
   const { w } = setup();
   assert.equal(w.player.x, 160);
   assert.equal(w.player.y, 126);
-  assert.equal(w.player.hearts, 5);
+  assert.equal(w.player.hearts, 6);
 });
 
 test('world: makeEnemy defaults and maxHp', () => {
@@ -104,7 +104,7 @@ test('world: an enemy bullet costs one heart and is consumed; a second one in th
   const b1 = w.fireEnemyBullet(p.x, p.y, 0, 0);
   const b2 = w.fireEnemyBullet(p.x, p.y, 0, 0);
   H.stepN(w, 1, idle);
-  assert.equal(p.hearts, 4);
+  assert.equal(p.hearts, 5);
   assert.equal(b1.dead, true);
   assert.equal(b2.dead, false);
 });
@@ -114,7 +114,7 @@ test('world: contact with an enemy hurts the player', () => {
   const e = w.spawnEnemy('dummy', w.player.x + 3, w.player.y);
   e.noContactT = 0;
   H.stepN(w, 1, idle);
-  assert.equal(w.player.hearts, 4);
+  assert.equal(w.player.hearts, 5);
 });
 
 test('world: a freshly spawned regular enemy cannot hurt for 0.3 s, then can', () => {
@@ -126,11 +126,11 @@ test('world: a freshly spawned regular enemy cannot hurt for 0.3 s, then can', (
   let hurtTick = 0;
   for (let i = 1; i <= 40 && !hurtTick; i++) {
     H.stepN(w, 1, idle);
-    if (p.hearts < 5) hurtTick = i;
-    if (i === 15) assert.equal(p.hearts, 5, 'still protected at 0.25 s');
+    if (p.hearts < 6) hurtTick = i;
+    if (i === 15) assert.equal(p.hearts, 6, 'still protected at 0.25 s');
   }
   assert.ok(hurtTick >= 18 && hurtTick <= 19, `first hurt on tick ${hurtTick}`);
-  assert.equal(p.hearts, 4);
+  assert.equal(p.hearts, 5);
 });
 
 test('world: a boss part and a pre-set grace are not given the regular spawn grace', () => {
@@ -202,7 +202,7 @@ test('world: a defeated boss controller is never updated again', () => {
 test('world: hurtPlayer routes through Player.hurt', () => {
   const { w } = setup();
   assert.equal(w.hurtPlayer(null), true);
-  assert.equal(w.player.hearts, 4);
+  assert.equal(w.player.hearts, 5);
   assert.equal(w.hurtPlayer(null), false, 'hurt invulnerability applies');
 });
 

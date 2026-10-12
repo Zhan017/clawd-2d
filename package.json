@@ -6,7 +6,9 @@
   "scripts": {
     "test": "node --test",
     "build": "node tools/build-artifact.mjs",
-    "serve": "python3 -m http.server 8137"
+    "serve": "node tools/serve.mjs"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

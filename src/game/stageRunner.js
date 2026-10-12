@@ -61,6 +61,12 @@
         const e = ev[i];
         if (e.type === 'enemyDie' && !e.boss && !e.silent && e.kind) run.squashed[e.kind] = (run.squashed[e.kind] || 0) + 1;
         else if (e.type === 'bossDie') run.bossesFixed++;
+        // A boss phase change drops a hotfix heart 24 px from Clawd toward the arena centre: a reachable reward (halfway-to-centre landed inside the Infinite Loop ring).
+        else if (e.type === 'bossPhase' && CB.Pickups && CB.Pickups.drop) {
+          const p = run.world.player;
+          const d = Math.hypot(160 - p.x, 96 - p.y) || 1;
+          CB.Pickups.drop(run.world, p.x + ((160 - p.x) / d) * 24, p.y + ((96 - p.y) / d) * 24);
+        }
       }
       tallied = ev.length;
     }

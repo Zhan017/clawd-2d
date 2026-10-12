@@ -140,7 +140,7 @@ test('perfect: a dash through a stationary bullet gives exactly +3 once, with th
   assert.equal(w.context.value, 3);
   assert.equal(b.grazed, true);
   assert.equal(w.stats.perfects, 1);
-  assert.equal(w.player.hearts, 5);
+  assert.equal(w.player.hearts, 6);
   const g = w.events.filter((e) => e.type === 'graze');
   assert.equal(g.length, 1);
   assert.equal(g[0].perfect, true);
@@ -187,7 +187,7 @@ test('perfect: boss safe-spawn invulnerability (no dash) and hurt invulnerabilit
   w.fireEnemyBullet(w.player.x, w.player.y, 0, 0);
   H.stepN(w, 3, idle);
   assert.equal(w.context.value, 0);
-  assert.equal(w.player.hearts, 4, 'only the first hit landed');
+  assert.equal(w.player.hearts, 5, 'only the first hit landed');
   assert.equal(w.stats.perfects, 0);
 });
 
@@ -208,7 +208,7 @@ test('perfect: an unprotected overlap still hurts and gives nothing', () => {
   const { w } = setup();
   w.fireEnemyBullet(w.player.x, w.player.y, 0, 0);
   H.stepN(w, 1, idle);
-  assert.equal(w.player.hearts, 4);
+  assert.equal(w.player.hearts, 5);
   assert.equal(w.context.value, 0);
 });
 

@@ -8689,3 +8689,60 @@ test('build: Artifact page has no document wrapper and inlines every script in o
 - [ ] **Step 7: Publish.** Publish `dist/clawd-vs-bugs.html` as an Artifact (icon `game`, description "Top-down pixel boss rush: play as Clawd and squash four software-bug bosses.").
 - [ ] **Step 8: Commit and push.** `git add -A && git commit -m "docs: README; chore: launch config" && git push`
 
+
+---
+
+## Balance log
+
+Task 22, Step 5 (rev 3 gate). Measured with `tests/bot.js` in god mode, counting `world.stats.wouldHits`, base kit (no patches).
+
+**Gate**
+- Zero-latency bot: at most 10 would-be hits per stage, no floor.
+- Delayed bot (`delayTicks: 9`, 0.15 s of reaction time): 3 to 20 would-be hits per stage.
+- Both gates are asserted in `tests/sim.test.js` (the zero-latency one over seeds 1, 2 and 3; the delayed one on seed 1), next to the plan's `wouldHits <= 40` guard.
+
+**Result: every stage is inside the band, so no tuning number was changed.**
+
+| Stage | Zero-latency, seeds 1-3 (would-be hits) | Zero-latency, seeds 1-20 (min / max / mean) | Clear time | Delayed bot, seed 1 | Delayed bot, seeds 1-12 (min / max) |
+|---|---|---|---|---|---|
+| 1 `~/src/` | 3, 3, 4 | 1 / 7 / 3.8 | 52-61 s | 11 | 4 / 11 |
+| 2 `~/node_modules/` | 2, 4, 4 | 2 / 10 / 6.5 | 88-97 s | 8 | 5 / 14 |
+| 3 `~/.git/` | 5, 7, 10 | 2 / 10 / 4.6 | 68-74 s | 10 | 4 / 12 |
+| 4 `~/prod/` | 5, 3, 4 | 1 / 7 / 4.0 | 94-105 s | 20 | 8 / 20 |
+
+Notes
+- Two cells sit exactly on a limit: stage 3 seed 3 (10 hits) and the delayed stage 4 (20 hits). Both are deterministic, and neither is over. Any later change to bullet speed, density or timing in stages 3 or 4 should be re-checked against `node --test tests/sim.test.js`.
+- All 20 zero-latency seeds and all 12 delayed seeds cleared every boss within the 240 s limit. The enemy count peaked at 9 and the enemy bullet count at 25 (Heisenbug phase 3), far below the caps of 60 and 400.
+- A bot with 20 ticks (0.33 s) of delay cannot beat the stage 1 boss in a full non-god run (it keeps dying and retrying). It is not a gate, only a sanity check that the game is not winnable by a very slow player.
+
+**Changes**
+
+| File | Old | New | Reason |
+|---|---|---|---|
+| (none) | | | All stages inside the band, no evidence to justify a change |
+
+**Changes: playtest pass with a human-like proxy bot (instant aim, 0.25 s movement/dash delay)**
+
+| File | Old | New | Reason |
+|---|---|---|---|
+| `src/game/patches.js` (`BASE.maxHearts`) | 5 (7 with 2 Extra Hearts) | 6 (8 with 2 Extra Hearts) | human-like proxy bot (instant aim, 0.25 s movement/dash delay) failed bosses 2 and 4 at the base kit; with 6 hearts plus phase hotfixes stage clears are 0–2 deaths typical |
+| `src/game/player.js` (YOLO hearts) | `maxHearts - 2` | `maxHearts - 3`: YOLO keeps 3 base hearts (4–5 with Extra Heart) | human-like proxy bot (instant aim, 0.25 s movement/dash delay) failed bosses 2 and 4 at the base kit; with 6 hearts plus phase hotfixes stage clears are 0–2 deaths typical |
+| `src/game/stageRunner.js` (`bossPhase` event) | no drop | each boss phase change drops one hotfix heart halfway between the boss and the arena centre (160, 96) | human-like proxy bot (instant aim, 0.25 s movement/dash delay) failed bosses 2 and 4 at the base kit; with 6 hearts plus phase hotfixes stage clears are 0–2 deaths typical |
+| `src/game/bosses/infiniteLoop.js` (`FAN_SPEED`, `SHED_EVERY`) | fan speed 80 px/s, shed every 5 s | fan speed 72 px/s, shed every 6 s | human-like proxy bot (instant aim, 0.25 s movement/dash delay) failed bosses 2 and 4 at the base kit; with 6 hearts plus phase hotfixes stage clears are 0–2 deaths typical |
+
+Side effect: with 8 hearts the dash pip moves to x 78, where the YOLO tag used to sit. The tag now starts at `max(78, pipX + 8)` in `src/scenes/hud.js`, so it is unchanged up to 7 hearts. A real YOLO run tops out at 5 hearts, so this only keeps the synthetic worst-case HUD layout test honest.
+
+Gate re-check after the change (`node --test tests/sim.test.js`, god mode, base kit): zero-latency would-be hits per stage, seeds 1-3, are 2, 5, 6 / 2, 4, 4 / 5, 7, 10 / 5, 3, 4 (limit 10); delayed bot, seed 1, is 11, 8, 10, 20 (band 3-20). All inside the band, no band was loosened. Stage 3 seed 3 (10) and delayed stage 4 (20) still sit exactly on a limit.
+
+**Balance follow-up (orchestrator, 2026-10-13):**
+- **Drop position:** the phase hotfix now lands 24 px from Clawd toward the arena centre, not halfway between the boss and the centre. The halfway point landed inside the Infinite Loop's ring.
+- **Infinite Loop phase 2:** `angSpeed` 1.4 → 1.2. The human-like proxy kept dying with the boss at 6–35 HP of 150.
+- **Proxy v2 curve:** instant aim, 0.25 s movement and dash delay, collects nearby hotfixes; 6 seeds per stage; realistic patch kits: none, rapid, rapid+spread, rapid+spread+heavy.
+
+| Stage | Deaths | Clear time |
+|---|---|---|
+| 1 | 0–2 | 58–129 s |
+| 2 | 0–3 | 80–223 s |
+| 3 | 0 | about 50 s |
+| 4 | 0 | 64–69 s |
+

@@ -40,8 +40,21 @@ test('modes: YOLO has 3 hearts, 15% faster bullets and 0.7 s hurt invuln; normal
   const b = y.world.fireEnemyBullet(50, 50, 0);
   assert.ok(Math.abs(b.vx - 92) < 1e-9);
   const n = CB.createRun({ seed: 1 });
-  assert.equal(n.world.player.hearts, 5);
+  assert.equal(n.world.player.hearts, 6);
   assert.ok(Math.abs(n.world.fireEnemyBullet(50, 50, 0).vx - 80) < 1e-9);
+});
+
+test('modes: YOLO subtracts 3 hearts from the base 6, so Extra Heart gives 4 and 5; normal runs get 6, 7 and 8', () => {
+  const CB = setup();
+  for (const [heart, yolo, normal] of [[0, 3, 6], [1, 4, 7], [2, 5, 8]]) {
+    const patches = heart ? { heart } : {};
+    const y = CB.createRun({ seed: 1, yolo: true, patches }).world.player;
+    assert.equal(y.hearts, yolo, `YOLO, heart ${heart}`);
+    assert.equal(y.stats.maxHearts, yolo);
+    const n = CB.createRun({ seed: 1, patches }).world.player;
+    assert.equal(n.hearts, normal, `normal, heart ${heart}`);
+    assert.equal(n.stats.maxHearts, normal);
+  }
 });
 
 test('tally: counts non-boss non-silent kills by kind; a wave-1 death retries the stage with the stage-start tally', () => {

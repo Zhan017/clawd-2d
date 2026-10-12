@@ -1,0 +1,176 @@
+[      52ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/pickups.js:0
+[      52ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/quips.js:0
+[      53ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/unlocks.js:0
+[      53ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/comfort.js:0
+[      53ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/syntaxError.js:0
+[      53ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/nullPointer.js:0
+[      53ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/raceCondition.js:0
+[      53ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/memoryLeak.js:0
+[      53ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/offByOne.js:0
+[      54ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/infiniteLoop.js:0
+[      54ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/memoryLeakBoss.js:0
+[      54ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/mergeConflict.js:0
+[      54ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/heisenbug.js:0
+[      54ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/stages.js:0
+[      54ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/waves.js:0
+[      55ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/stageRunner.js:0
+[      55ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/art/arena.js:0
+[      55ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/art/worldDraw.js:0
+[      55ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/hud.js:0
+[      55ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/screens.js:0
+[      56ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/patchPick.js:0
+[      56ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/gameOver.js:0
+[      56ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/victory.js:0
+[      56ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/panic.js:0
+[      56ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/title.js:0
+[      57ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/play.js:0
+[      57ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/transition.js:0
+[      57ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/main.js:0
+[      73ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8138/favicon.ico:0
+[   22327ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8138/favicon.ico:0
+[   43139ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8138/favicon.ico:0
+[   49465ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8138/favicon.ico:0
+[   55830ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8138/favicon.ico:0
+[   62167ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8138/favicon.ico:0
+[  165012ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/core/audio.js:0
+[  165012ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/core/music.js:0
+[  165012ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/core/loop.js:0
+[  165012ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/world.js:0
+[  165012ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/projectiles.js:0
+[  165012ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/patches.js:0
+[  165012ms] [ERROR] Failed to load resource: net::ERR_SOCKET_NOT_CONNECTED @ http://127.0.0.1:8138/src/game/player.js:0
+[  165012ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/fx.js:0
+[  165012ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/compact.js:0
+[  165012ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/pickups.js:0
+[  165022ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/raceCondition.js:0
+[  165022ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/memoryLeak.js:0
+[  165022ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/offByOne.js:0
+[  165027ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/heisenbug.js:0
+[  165027ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/stages.js:0
+[  165027ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/waves.js:0
+[  165048ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/play.js:0
+[  165048ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/transition.js:0
+[  165048ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/victory.js:0
+[  165048ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/main.js:0
+[  165048ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/gameOver.js:0
+[  165048ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/panic.js:0
+[  165092ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/pickups.js:0
+[  165097ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/comfort.js:0
+[  165098ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/syntaxError.js:0
+[  165099ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/nullPointer.js:0
+[  165099ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/raceCondition.js:0
+[  165099ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/memoryLeak.js:0
+[  165099ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/offByOne.js:0
+[  165099ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/infiniteLoop.js:0
+[  165099ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/memoryLeakBoss.js:0
+[  165099ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/mergeConflict.js:0
+[  165099ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/heisenbug.js:0
+[  165100ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/stages.js:0
+[  165100ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/waves.js:0
+[  165100ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/stageRunner.js:0
+[  165100ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/art/arena.js:0
+[  165100ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/art/worldDraw.js:0
+[  165100ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/hud.js:0
+[  165100ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/screens.js:0
+[  165100ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/patchPick.js:0
+[  165100ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/gameOver.js:0
+[  165102ms] [ERROR] Failed to load resource: net::ERR_SOCKET_NOT_CONNECTED @ http://127.0.0.1:8138/src/scenes/victory.js:0
+[  165103ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/panic.js:0
+[  165103ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/title.js:0
+[  165103ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/play.js:0
+[  165103ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/transition.js:0
+[  165103ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/main.js:0
+[  165144ms] TypeError: Cannot read properties of undefined (reading 'run')
+    at eval (eval at predicate (eval at evaluate (:368:30)), <anonymous>:1:16)
+    at predicate (eval at evaluate (:368:30), <anonymous>:7:27)
+    at next (eval at evaluate (:368:30), <anonymous>:29:33)
+    at eval (eval at evaluate (:368:30), <anonymous>:42:13)
+    at UtilityScript.evaluate (<anonymous>:370:16)
+    at UtilityScript.<anonymous> (<anonymous>:1:44)
+[  172654ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/core/loop.js:0
+[  172654ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/world.js:0
+[  172654ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/projectiles.js:0
+[  172654ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/patches.js:0
+[  172654ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/player.js:0
+[  172654ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/fx.js:0
+[  172655ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/compact.js:0
+[  172655ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/pickups.js:0
+[  172655ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/quips.js:0
+[  172655ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/unlocks.js:0
+[  172663ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/offByOne.js:0
+[  172664ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/infiniteLoop.js:0
+[  172664ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/memoryLeakBoss.js:0
+[  172664ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/mergeConflict.js:0
+[  172664ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/heisenbug.js:0
+[  172664ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/stages.js:0
+[  172664ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/waves.js:0
+[  172664ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/stageRunner.js:0
+[  172664ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/art/arena.js:0
+[  172664ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/art/worldDraw.js:0
+[  172664ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/hud.js:0
+[  172677ms] [ERROR] TypeError: CB.createRun is not a function
+    at Object.enter (http://127.0.0.1:8138/src/scenes/play.js:44:21)
+    at Object.go (http://127.0.0.1:8138/src/main.js:204:20)
+    at boot (http://127.0.0.1:8138/src/main.js:232:28)
+    at HTMLDocument.<anonymous> (http://127.0.0.1:8138/src/main.js:261:96) @ http://127.0.0.1:8138/src/main.js:124
+[  172678ms] TypeError: CB.createRun is not a function
+    at Object.enter (http://127.0.0.1:8138/src/scenes/play.js:44:21)
+    at Object.go (http://127.0.0.1:8138/src/main.js:204:20)
+    at boot (http://127.0.0.1:8138/src/main.js:232:28)
+    at HTMLDocument.<anonymous> (http://127.0.0.1:8138/src/main.js:261:96)
+[  172716ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/fx.js:0
+[  172716ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/compact.js:0
+[  172716ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/pickups.js:0
+[  172716ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/quips.js:0
+[  172716ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/unlocks.js:0
+[  172716ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/comfort.js:0
+[  172716ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/syntaxError.js:0
+[  172716ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/nullPointer.js:0
+[  172716ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/raceCondition.js:0
+[  172717ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/memoryLeak.js:0
+[  172717ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/enemies/offByOne.js:0
+[  172717ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/infiniteLoop.js:0
+[  172717ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/memoryLeakBoss.js:0
+[  172717ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/mergeConflict.js:0
+[  172718ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/heisenbug.js:0
+[  172718ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/stages.js:0
+[  172718ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/waves.js:0
+[  172718ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/stageRunner.js:0
+[  172718ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/art/arena.js:0
+[  172718ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/art/worldDraw.js:0
+[  172718ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/hud.js:0
+[  172718ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/screens.js:0
+[  172719ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/patchPick.js:0
+[  172719ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/gameOver.js:0
+[  172719ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/victory.js:0
+[  172719ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/panic.js:0
+[  172719ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/title.js:0
+[  172719ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/play.js:0
+[  172719ms] [ERROR] Failed to load resource: net::ERR_SOCKET_NOT_CONNECTED @ http://127.0.0.1:8138/src/scenes/transition.js:0
+[  172719ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/main.js:0
+[  187489ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/patches.js:0
+[  187489ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/player.js:0
+[  187489ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/fx.js:0
+[  187489ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/compact.js:0
+[  187489ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/pickups.js:0
+[  187490ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/quips.js:0
+[  187490ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/unlocks.js:0
+[  187490ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/comfort.js:0
+[  187495ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/infiniteLoop.js:0
+[  187496ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/memoryLeakBoss.js:0
+[  187496ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/mergeConflict.js:0
+[  187497ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/bosses/heisenbug.js:0
+[  187497ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/stages.js:0
+[  187498ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/waves.js:0
+[  187498ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/game/stageRunner.js:0
+[  187498ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/art/arena.js:0
+[  187498ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/art/worldDraw.js:0
+[  187499ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/hud.js:0
+[  187499ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/screens.js:0
+[  187499ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/patchPick.js:0
+[  187500ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/gameOver.js:0
+[  187501ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/victory.js:0
+[  187501ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/panic.js:0
+[  187502ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/play.js:0
+[  187502ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/main.js:0
+[  187502ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8138/src/scenes/transition.js:0

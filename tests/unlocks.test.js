@@ -235,7 +235,7 @@ test('play: with a stubbed Unlocks (or none) the scene still runs; modes has its
   assert.doesNotThrow(() => play.update(CB.DT, H.makeInput()));
 });
 
-test('play.draw: the toast is gold text on a dark band at y 168, fading out; absent when there is no toast', () => {
+test('play.draw: the toast is gold text on a dark band at y 171, fading out; absent when there is no toast', () => {
   const { CB, play } = playSetup();
   CB.WorldDraw = { draw() {} };
   CB.Screens.hud = { draw() {}, cursor() {} };
@@ -252,9 +252,9 @@ test('play.draw: the toast is gold text on a dark band at y 168, fading out; abs
   play.toasts.push({ text: 'NEW HAT: Crown', t: 2 });
   play.draw(r, 0);
   const text = log.find((l) => l[0] === 'text');
-  assert.deepEqual(H.plain(text), ['text', 'NEW HAT: Crown', CB.W / 2, 168, CB.Pal.C.gold, 'center']);
+  assert.deepEqual(H.plain(text), ['text', 'NEW HAT: Crown', CB.W / 2, 171, CB.Pal.C.gold, 'center']);
   const band = log.find((l) => l[0] === 'rect');
-  assert.equal(band[2] <= 168 && band[2] + band[4] >= 168 + 7, true, 'the band covers the 7 px glyph row');
+  assert.equal(band[2] <= 171 && band[2] + band[4] >= 171 + 7, true, 'the band covers the 7 px glyph row');
   assert.equal(band[3], CB.W);
   assert.equal(log.filter((l) => l[0] === 'alpha').every((l) => l[1] === 1 || l[1] === 0.85), true, 'fully opaque while fresh');
   log.length = 0;

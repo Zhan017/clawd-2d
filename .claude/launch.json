@@ -3,8 +3,11 @@
   "configurations": [
     {
       "name": "game",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8137", "--bind", "127.0.0.1"],
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tools/serve.mjs",
+        "8137"
+      ],
       "port": 8137
     }
   ]

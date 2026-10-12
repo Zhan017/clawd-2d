@@ -11,7 +11,7 @@
     ricochet: { name: 'Ricochet', max: 1, desc: 'Sparks bounce off walls once' },
   };
   const ORDER = ['spread', 'rapid', 'pierce', 'heavy', 'heart', 'dash', 'ricochet'];
-  const BASE = Object.freeze({ fireCooldown: 0.2, boltSpeed: 200, boltR: 2, dmg: 1, spread: 0, pierce: 0, bounces: 0, dashCooldown: 0.8, maxHearts: 5 });
+  const BASE = Object.freeze({ fireCooldown: 0.2, boltSpeed: 200, boltR: 2, dmg: 1, spread: 0, pierce: 0, bounces: 0, dashCooldown: 0.8, maxHearts: 6 });
 
   function count(counts, id) {
     return Math.min((counts && counts[id]) | 0, DEFS[id].max);

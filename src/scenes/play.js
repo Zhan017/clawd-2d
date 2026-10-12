@@ -9,7 +9,8 @@
   const TOAST_FADE = 0.4; // a toast fades out over its last seconds
   const MODES_TEXT = 'UNLOCKED: boss rush + --yolo on the title';
   const RETRY_LABEL = '$ git reset --hard HEAD'; // typed by the transition after a retry
-  const TOAST_Y = 168; // top of the toast text (the dark band sits around it)
+  const TOAST_Y = 171; // top of the toast text; its band (y 169-180) clears the victory prompt at y 160-166
+  const BUBBLE_STATES = { wave: true, waveBreak: true, boss: true }; // states without a centred card, where Clawd may 'think'
   const OVERLAY = {
     stageIntro: 'stageIntro', wave: 'waveBanner', waveBreak: 'waveBanner', bossWarn: 'bossWarn',
     bossDead: 'bossDead', patchPick: 'patchPick', dead: 'gameOver', victory: 'victory',
@@ -149,7 +150,7 @@
     drawToast(r) {
       const tt = this.toasts[0];
       const a = Math.min(1, tt.t / TOAST_FADE);
-      r.alpha(a * 0.85, () => r.rect(0, TOAST_Y - 3, CB.W, 13, CB.Pal.C.ink));
+      r.alpha(a * 0.85, () => r.rect(0, TOAST_Y - 2, CB.W, 11, CB.Pal.C.ink));
       r.alpha(a, () => r.text(tt.text, CB.W / 2, TOAST_Y, { color: CB.Pal.C.gold, align: 'center' }));
     },
 
@@ -175,7 +176,8 @@
       const sy = shake > 0 ? Math.round(Math.cos(t * 77) * shake) : 0;
       const hitboxes = !!(this.game.debug && this.game.debug.hitboxes);
       r.clear('#000000'); // the shaken world leaves an uncovered strip at the edge
-      r.shaken(sx, sy, () => CB.WorldDraw.draw(r, w, t, { hitboxes }));
+      const noBubble = this.paused || !BUBBLE_STATES[run.state]; // the idle bubble would collide with card text
+      r.shaken(sx, sy, () => CB.WorldDraw.draw(r, w, t, { hitboxes, noBubble }));
       if (live && w.flash > 0) this.drawFlash(r, w);
       CB.Screens.hud.draw(r, run, t);
       const ov = OVERLAY[run.state];

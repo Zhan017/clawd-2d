@@ -126,10 +126,10 @@ test('mergeConflict: the conflict-line beam hurts a player standing on it, only 
   w.player.y = 96;
   boss.startAttack('line');
   H.stepN(w, 40, idle);
-  assert.equal(w.player.hearts, 5, 'no damage during the 0.8 s telegraph');
+  assert.equal(w.player.hearts, 6, 'no damage during the 0.8 s telegraph');
   assert.ok(w.events.some((e) => e.type === 'beamCharge'));
   H.stepN(w, 17, idle);
-  assert.equal(w.player.hearts, 4);
+  assert.equal(w.player.hearts, 5);
   assert.ok(w.events.some((e) => e.type === 'beam'));
 });
 
@@ -309,7 +309,7 @@ test('mergeConflict: the line needs both twins and falls back to crossfire; a de
   w.damageEnemy(boss.head, 130);
   H.stepN(w, 60, idle);
   assert.equal(boss.attack === null || boss.attack.kind !== 'line', true, 'the line ended with its twin');
-  assert.equal(w.player.hearts, 5, 'no beam without both twins');
+  assert.equal(w.player.hearts, 6, 'no beam without both twins');
   assert.ok(!w.events.some((e) => e.type === 'beam'));
 });
 
@@ -346,7 +346,7 @@ test('mergeConflict: the beam misses a player who is off the line', () => {
   w.player.y = 150;
   boss.startAttack('line');
   H.stepN(w, 90, idle);
-  assert.equal(w.player.hearts, 5);
+  assert.equal(w.player.hearts, 6);
 });
 
 test('mergeConflict: charge shakes for 0.4 s, then both twins dash at the player at 160 px/s for 0.5 s', () => {

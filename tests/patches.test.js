@@ -8,7 +8,7 @@ const FILES = ['src/core/ns.js', 'src/core/math.js', 'src/core/rng.js', 'src/gam
 test('patches: base stats', () => {
   const CB = H.load(FILES);
   const s = CB.Patches.computeStats({});
-  assert.deepEqual(H.plain(s), { fireCooldown: 0.2, boltSpeed: 200, boltR: 2, dmg: 1, spread: 0, pierce: 0, bounces: 0, dashCooldown: 0.8, maxHearts: 5 });
+  assert.deepEqual(H.plain(s), { fireCooldown: 0.2, boltSpeed: 200, boltR: 2, dmg: 1, spread: 0, pierce: 0, bounces: 0, dashCooldown: 0.8, maxHearts: 6 });
 });
 
 test('patches: each patch effect matches the spec table', () => {
@@ -25,7 +25,7 @@ test('patches: each patch effect matches the spec table', () => {
   assert.ok(Math.abs(S({ heavy: 2 }).dmg - 1.7) < 1e-9);
   assert.equal(S({ heavy: 1 }).boltR, 3);
   assert.equal(S({ heavy: 2 }).boltR, 4);
-  assert.equal(S({ heart: 2 }).maxHearts, 7);
+  assert.equal(S({ heart: 2 }).maxHearts, 8);
   assert.equal(S({ dash: 1 }).dashCooldown, 0.45);
   assert.equal(S({ ricochet: 1 }).bounces, 1);
   assert.equal(S({ spread: 9 }).spread, 2, 'counts above max are clamped');

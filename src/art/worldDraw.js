@@ -42,7 +42,7 @@
         else mod.draw(e, r, t);
         if (e.elite) drawElite(r, e, t);
       }
-      CB.Player.draw(w.player, r, t);
+      CB.Player.draw(w.player, r, t, opts && opts.noBubble ? { noBubble: true } : undefined);
       if (CB.Compact && CB.Compact.drawPrompt) CB.Compact.drawPrompt(w, r, t);
       CB.Projectiles.draw(w, r, t, 'player');
       if (w.boss && !w.boss.defeated && w.boss.draw) w.boss.draw(r, t);

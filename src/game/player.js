@@ -169,7 +169,7 @@
     create(w, patches) {
       const stats = CB.Patches.computeStats(patches || {});
       const yolo = !!(w.mode && w.mode.yolo);
-      if (yolo) stats.maxHearts = Math.max(1, stats.maxHearts - 2); // YOLO: two fewer hearts, hearts start at the reduced max
+      if (yolo) stats.maxHearts = Math.max(1, stats.maxHearts - 3); // YOLO: three fewer hearts (3 base), hearts start at the reduced max
       const a = w.arena;
       return {
         x: a.x + a.w / 2, y: a.y + a.h / 2 + 30, r: 5, vx: 0, vy: 0,
@@ -344,7 +344,7 @@
       const sq = pose(p);
       if ((sq.sx !== 1 || sq.sy !== 1) && typeof r.squash === 'function') r.squash(Math.round(p.x), Math.round(p.y + 4), sq.sx, sq.sy, body);
       else body();
-      if ((p.idleT || 0) >= IDLE_T) drawThinking(p, r, tt);
+      if ((p.idleT || 0) >= IDLE_T && !(opts && opts.noBubble)) drawThinking(p, r, tt); // no bubble under the stage/boss cards
     },
   };
 })(window.CB);
