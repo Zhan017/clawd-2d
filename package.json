@@ -1,0 +1,12 @@
+{
+  "name": "clawd-vs-bugs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Top-down pixel boss rush: Clawd vs software bugs.",
+  "scripts": {
+    "test": "node --test",
+    "build": "node tools/build-artifact.mjs",
+    "serve": "python3 -m http.server 8137"
+  },
+  "engines": { "node": ">=20" }
+}

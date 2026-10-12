@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Clawd vs Bugs</title>
+<style>
+  :root { color-scheme: dark; --bg: #0B0B10; --fg: #E8E6F0; --muted: #8C8AA0; --accent: #D97757; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); overflow: hidden; }
+  body { font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  #game { display: block; width: 100%; height: 100%; cursor: none; touch-action: none; image-rendering: pixelated; }
+  #game:focus { outline: none; }
+  noscript { position: absolute; inset: 0; display: grid; place-items: center; padding-inline: 16px; color: var(--fg); }
+</style>
+</head>
+<body>
+<canvas id="game" tabindex="0" aria-label="Clawd vs Bugs game screen"></canvas>
+<noscript>Clawd vs Bugs needs JavaScript to run.</noscript>
+<script src="src/core/ns.js"></script>
+<script src="src/core/math.js"></script>
+<script src="src/core/rng.js"></script>
+<script src="src/art/palette.js"></script>
+<script src="src/art/font.js"></script>
+<script src="src/art/sprites.js"></script>
+<script src="src/art/render.js"></script>
+<script src="src/core/input.js"></script>
+<script src="src/core/audio.js"></script>
+<script src="src/core/music.js"></script>
+<script src="src/core/loop.js"></script>
+<script src="src/game/world.js"></script>
+<script src="src/game/projectiles.js"></script>
+<script src="src/game/patches.js"></script>
+<script src="src/game/player.js"></script>
+<script src="src/game/fx.js"></script>
+<script src="src/game/compact.js"></script>
+<script src="src/game/pickups.js"></script>
+<script src="src/game/quips.js"></script>
+<script src="src/game/unlocks.js"></script>
+<script src="src/game/enemies/syntaxError.js"></script>
+<script src="src/game/enemies/nullPointer.js"></script>
+<script src="src/game/enemies/raceCondition.js"></script>
+<script src="src/game/enemies/memoryLeak.js"></script>
+<script src="src/game/enemies/offByOne.js"></script>
+<script src="src/game/bosses/infiniteLoop.js"></script>
+<script src="src/game/bosses/memoryLeakBoss.js"></script>
+<script src="src/game/bosses/mergeConflict.js"></script>
+<script src="src/game/bosses/heisenbug.js"></script>
+<script src="src/game/stages.js"></script>
+<script src="src/game/waves.js"></script>
+<script src="src/game/stageRunner.js"></script>
+<script src="src/art/arena.js"></script>
+<script src="src/art/worldDraw.js"></script>
+<script src="src/scenes/hud.js"></script>
+<script src="src/scenes/screens.js"></script>
+<script src="src/scenes/patchPick.js"></script>
+<script src="src/scenes/gameOver.js"></script>
+<script src="src/scenes/victory.js"></script>
+<script src="src/scenes/panic.js"></script>
+<script src="src/scenes/title.js"></script>
+<script src="src/scenes/play.js"></script>
+<script src="src/main.js"></script>
+</body>
+</html>

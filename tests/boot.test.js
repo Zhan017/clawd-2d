@@ -1,0 +1,330 @@
+'use strict';
+// Runs the real src/main.js inside the vm sandbox (CB_NO_BOOT off) against stub DOM, audio and scenes,
+// so crash handling, debug-hash gating, the hot snapshot and the loop wiring are tested end to end.
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const H = require('./harness');
+
+const LIBS = [
+  'src/core/ns.js', 'src/core/math.js', 'src/core/rng.js', 'src/art/palette.js', 'src/art/sprites.js', 'src/art/render.js',
+  'src/core/input.js', 'src/core/loop.js',
+  'src/game/world.js', 'src/game/projectiles.js', 'src/game/patches.js', 'src/game/player.js', 'src/game/fx.js',
+  'src/game/stages.js', 'src/game/waves.js', 'src/game/stageRunner.js', 'src/scenes/play.js',
+];
+const MAIN = fs.readFileSync(path.join(H.ROOT, 'src/main.js'), 'utf8');
+
+function bootEnv(o) {
+  const opt = o || {};
+  const { CB, sandbox } = H.load(LIBS, { returnSandbox: true });
+  delete sandbox.CB_NO_BOOT;
+  const SErr = vm.runInContext('Error', sandbox); // errors must come from the sandbox realm to pass `instanceof Error`
+
+  const order = [];
+  const warns = [];
+  const errs = [];
+  const appended = [];
+  const winOn = {};
+  const canvasOn = {};
+  const calls = [];
+  const env = { CB, sandbox, SErr, order, warns, errs, appended, winOn, canvasOn, calls, reloads: 0, focused: 0, nowMs: 0, rafCb: null };
+
+  sandbox.addEventListener = (type, fn) => {
+    (winOn[type] = winOn[type] || []).push(fn);
+    order.push('win:' + type);
+  };
+  sandbox.console = { log() {}, info() {}, warn: (...a) => warns.push(a), error: (...a) => errs.push(a) };
+  sandbox.performance = { now: () => env.nowMs };
+  sandbox.requestAnimationFrame = (f) => {
+    env.rafCb = f;
+    return 1;
+  };
+  sandbox.location = Object.assign({ protocol: 'http:', hostname: 'localhost', hash: '', reload() { env.reloads++; } }, opt.loc || {});
+  if (opt.claude) sandbox.claude = opt.claude;
+
+  const ctx = new Proxy({ canvas: null, imageSmoothingEnabled: false, globalAlpha: 1 }, {
+    get: (t, p) => (p in t ? t[p] : (...a) => { calls.push([String(p), ...a]); }),
+    set: (t, p, v) => { t[p] = v; return true; },
+  });
+  const canvas = {
+    width: 300,
+    height: 150,
+    style: {},
+    focus() { env.focused++; },
+    addEventListener: (type, fn) => { (canvasOn[type] = canvasOn[type] || []).push(fn); },
+    removeEventListener() {},
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: canvas.width, height: canvas.height }),
+    getContext: () => ctx,
+  };
+  env.canvas = canvas;
+  const doc = sandbox.document;
+  doc.getElementById = () => canvas;
+  doc.addEventListener = () => {};
+  doc.body = { appendChild: (el) => appended.push(el), classList: { add() {}, remove() {} } };
+
+  const probe = { toggles: 0, inputs: [], draws: 0, panic: [], panicThrows: false, updateThrows: null, musicToggles: 0 };
+  env.probe = probe;
+  CB.Audio = { init() {}, toggleMute() { probe.toggles++; }, play() {}, handleEvents() {} };
+  CB.Music = { toggle() { probe.musicToggles++; } };
+  CB.Scenes.title = {
+    enter() { order.push('title.enter'); },
+    update(dt, inp) {
+      probe.inputs.push(inp);
+      if (probe.updateThrows) throw probe.updateThrows;
+    },
+    draw() { order.push('draw'); probe.draws++; },
+  };
+  CB.Screens.panic = {
+    draw(r, e) {
+      if (probe.panicThrows) throw new SErr('panic screen failed too');
+      probe.panic.push(e);
+    },
+  };
+  const realCreate = CB.createRenderer;
+  CB.createRenderer = (c, w) => {
+    order.push('createRenderer');
+    if (opt.rendererThrows) throw new SErr('no 2d context');
+    const r = realCreate(c, w);
+    const realResize = r.resize;
+    r.resize = () => {
+      order.push('resize');
+      return realResize();
+    };
+    env.r = r;
+    return r;
+  };
+
+  env.fire = (type, ev) => (winOn[type] || []).slice().forEach((fn) => fn(ev));
+  env.fireCanvas = (type, ev) => (canvasOn[type] || []).slice().forEach((fn) => fn(ev));
+  env.runMain = () => vm.runInContext(MAIN, sandbox, { filename: 'src/main.js' });
+  env.frame = (ms) => {
+    env.nowMs += ms;
+    env.rafCb();
+  };
+  env.err = (msg) => new SErr(msg);
+  return env;
+}
+
+test('boot: the crash handlers go in before the renderer is touched; a boot failure shows an escaped <pre>', () => {
+  const env = bootEnv({ rendererThrows: true });
+  let thrown = null;
+  try {
+    env.runMain();
+  } catch (e) {
+    thrown = e;
+  }
+  assert.ok(thrown, 'createRenderer failed, so boot threw');
+  assert.ok(env.order.indexOf('win:error') >= 0 && env.order.indexOf('win:unhandledrejection') >= 0);
+  assert.ok(env.order.indexOf('win:error') < env.order.indexOf('createRenderer'), 'error handler is first');
+  assert.ok(env.order.indexOf('win:unhandledrejection') < env.order.indexOf('createRenderer'));
+  assert.equal(env.order[0], 'win:error', 'nothing runs before the handlers are installed');
+  // The browser would now raise a window 'error' event for the uncaught exception.
+  env.fire('error', { error: env.err('bad <b>html</b> & "quotes"'), message: 'x' });
+  assert.equal(env.appended.length, 1, 'no renderer, so the message goes into the page');
+  const pre = env.appended[0];
+  assert.ok(pre.innerHTML.includes('KERNEL PANIC'));
+  assert.ok(pre.innerHTML.includes('bad &lt;b&gt;html&lt;/b&gt; &amp; &quot;quotes&quot;'), pre.innerHTML);
+  assert.ok(!pre.innerHTML.includes('<b>'), 'message is HTML-escaped');
+  assert.ok(pre.innerHTML.includes('Press R to reload'));
+  assert.match(pre.style.cssText, /position:fixed/);
+  env.fire('keydown', { code: 'KeyX' });
+  assert.equal(env.reloads, 0);
+  env.fire('keydown', { code: 'KeyR' });
+  assert.equal(env.reloads, 1);
+  assert.equal(env.probe.panic.length, 0, 'no renderer, no panic screen');
+});
+
+test('boot: an error event without an Error object and unhandled rejections only warn', () => {
+  const env = bootEnv();
+  env.runMain();
+  env.fire('error', { message: 'ResizeObserver loop completed with undelivered notifications.', error: null });
+  env.fire('error', { message: 'Script error.', error: 'just a string' });
+  env.fire('unhandledrejection', { reason: env.err('a promise went wrong') });
+  env.fire('unhandledrejection', { reason: 'plain reason' });
+  assert.equal(env.warns.length, 4);
+  assert.equal(env.probe.panic.length, 0);
+  assert.equal(env.canvas.style.cursor, undefined);
+  env.frame(20);
+  assert.equal(env.probe.draws, 1, 'the loop keeps running');
+  assert.equal(env.errs.length, 0);
+});
+
+test('boot: a fatal error paints the panic screen once, frees the cursor, stops the loop, repaints on resize, reloads on R or click', () => {
+  const env = bootEnv();
+  env.runMain();
+  env.frame(20);
+  assert.equal(env.probe.draws, 1);
+  const presents = () => env.calls.filter((c) => c[0] === 'drawImage').length;
+  const p0 = presents();
+  const boom = env.err('boom');
+  env.fire('error', { error: boom, message: 'boom' });
+  assert.equal(env.probe.panic.length, 1);
+  assert.equal(env.probe.panic[0], boom);
+  assert.equal(env.canvas.style.cursor, 'auto');
+  assert.ok(presents() > p0, 'the panic frame was presented');
+  assert.equal(env.errs.length, 1, 'logged once');
+  env.frame(20);
+  assert.equal(env.probe.draws, 1, 'the game loop is stopped');
+  env.fire('error', { error: env.err('second'), message: 'second' });
+  assert.equal(env.probe.panic.length, 1, 'only the first crash is shown');
+  env.fire('resize', {});
+  assert.equal(env.probe.panic.length, 2, 'repainted on resize');
+  assert.equal(env.probe.panic[1], boom);
+  env.fire('keydown', { code: 'KeyW' });
+  assert.equal(env.reloads, 0);
+  env.fire('keydown', { code: 'KeyR' });
+  assert.equal(env.reloads, 1);
+  env.fireCanvas('mousedown', { button: 0, clientX: 5, clientY: 5 });
+  assert.equal(env.reloads, 2, 'clicking the canvas reloads too');
+});
+
+test('boot: an exception inside the game loop becomes the panic screen', () => {
+  const env = bootEnv();
+  env.runMain();
+  env.probe.updateThrows = env.err('update blew up');
+  env.frame(20);
+  assert.equal(env.probe.panic.length, 1);
+  assert.equal(env.probe.panic[0].message, 'update blew up');
+  assert.equal(env.canvas.style.cursor, 'auto');
+});
+
+test('boot: if the panic screen itself fails, the plain fillText fallback is painted', () => {
+  const env = bootEnv();
+  env.runMain();
+  env.probe.panicThrows = true;
+  env.fire('error', { error: env.err('original failure'), message: 'x' });
+  const texts = env.calls.filter((c) => c[0] === 'fillText').map((c) => c[1]);
+  assert.ok(texts.includes('KERNEL PANIC'), JSON.stringify(texts));
+  assert.ok(texts.some((t) => t.includes('original failure')));
+  assert.ok(texts.includes('Press R to reload'));
+  assert.equal(env.appended.length, 0, 'the canvas fallback worked, so no <pre>');
+  env.fire('keydown', { code: 'KeyR' });
+  assert.equal(env.reloads, 1);
+});
+
+test('boot: debug hashes work on local hosts only', () => {
+  const hash = '#stage=3&god';
+  for (const loc of [
+    { protocol: 'http:', hostname: 'localhost' },
+    { protocol: 'http:', hostname: '127.0.0.1' },
+    { protocol: 'http:', hostname: '[::1]' },
+    { protocol: 'file:', hostname: '' },
+  ]) {
+    const env = bootEnv({ loc: Object.assign({ hash }, loc) });
+    env.runMain();
+    assert.equal(env.CB.game.sceneName, 'play', JSON.stringify(loc));
+    assert.equal(env.CB.game.scene.run.stageIndex, 2);
+    assert.equal(env.CB.game.scene.run.god, true);
+  }
+  for (const loc of [
+    { protocol: 'https:', hostname: 'claude.ai' },
+    { protocol: 'https:', hostname: 'localhost.evil.example' },
+    { protocol: 'https:', hostname: '127.0.0.1.evil.example' },
+    { protocol: 'https:', hostname: 'evil-localhost' },
+  ]) {
+    const env = bootEnv({ loc: Object.assign({ hash }, loc) });
+    env.runMain();
+    assert.equal(env.CB.game.sceneName, 'title', JSON.stringify(loc));
+    assert.equal(env.CB.game.debug.active, false);
+  }
+});
+
+test('boot: every render starts with r.resize(); the loop update keeps M for mute and leaves N to the play scene', () => {
+  const env = bootEnv();
+  env.runMain();
+  const n0 = env.order.length;
+  env.frame(20);
+  const tail = env.order.slice(n0);
+  assert.deepEqual(tail.filter((x) => x === 'resize' || x === 'draw'), ['resize', 'draw'], 'resize comes right before draw');
+  env.fire('keydown', { code: 'KeyM' });
+  env.fire('keydown', { code: 'KeyN' });
+  env.fire('keydown', { code: 'KeyE' });
+  env.frame(20);
+  assert.equal(env.probe.toggles, 1, 'M toggles mute');
+  assert.equal(env.probe.musicToggles, 0, 'main.js does not toggle music; play.js does');
+  const last = env.probe.inputs[env.probe.inputs.length - 1];
+  assert.equal(last.music, true);
+  assert.equal(last.compact, true);
+  assert.deepEqual(H.plain(last.keys), ['KeyM', 'KeyN', 'KeyE']);
+});
+
+test('boot: CB.debug exposes game, run and scene', () => {
+  const env = bootEnv();
+  env.runMain();
+  const { CB } = env;
+  assert.equal(CB.debug.game, CB.game);
+  assert.equal(CB.debug.scene, CB.Scenes.title);
+  assert.ok(!CB.debug.run);
+  CB.game.go('play', { runOpts: { seed: 1 } });
+  assert.equal(CB.debug.scene, CB.Scenes.play);
+  assert.equal(CB.debug.run, CB.Scenes.play.run);
+});
+
+test('hot snapshot: registered at load; returns {} unless the run is in a combat state or dying', () => {
+  let snap = null;
+  const env = bootEnv({ claude: { hot: { snapshot: (fn) => { snap = fn; }, data: {} } } });
+  assert.equal(snap, null, 'nothing registered until main.js runs');
+  env.runMain();
+  assert.equal(typeof snap, 'function');
+  const { CB } = env;
+  assert.deepEqual(H.plain(snap()), {}, 'title screen');
+  CB.game.go('play', { runOpts: { startStage: 2, patches: { spread: 1 } } });
+  const run = CB.Scenes.play.run;
+  run.deaths = 2;
+  run.time = 33;
+  run.history.push('spread');
+  for (const state of ['stageIntro', 'wave', 'waveBreak', 'bossWarn', 'boss', 'dying']) {
+    run.state = state;
+    const s = H.plain(snap());
+    assert.equal(s.stageIndex, 2, state);
+    assert.deepEqual(s.patches, { spread: 1 });
+    assert.equal(s.deaths, 2);
+    assert.equal(s.time, 33);
+    assert.deepEqual(s.history, ['spread']);
+  }
+  for (const state of ['bossDead', 'patchPick', 'dead', 'victory']) {
+    run.state = state;
+    assert.deepEqual(H.plain(snap()), {}, state);
+  }
+  run.state = 'wave';
+  const copy = snap();
+  copy.patches.rapid = 9;
+  copy.history.push('x');
+  assert.deepEqual(H.plain(run.patches), { spread: 1 }, 'the snapshot is a copy');
+  assert.deepEqual(H.plain(run.history), ['spread']);
+  run.history = null; // a broken run must not throw out of the snapshot callback
+  assert.doesNotThrow(() => snap());
+  assert.deepEqual(H.plain(snap()), {});
+});
+
+test('hot snapshot: a host whose snapshot() throws does not stop the game from booting', () => {
+  const env = bootEnv({ claude: { hot: { snapshot() { throw new Error('host says no'); }, data: {} } } });
+  assert.doesNotThrow(() => env.runMain());
+  assert.equal(env.CB.game.sceneName, 'title');
+  assert.equal(env.warns.length, 1);
+});
+
+test('hot data: resumes at the saved stage; hot.ready(start) defers the boot', () => {
+  const data = { stageIndex: 2, patches: { rapid: 1 }, deaths: 3, time: 99, history: ['rapid'] };
+  const env = bootEnv({ claude: { hot: { data } } });
+  env.runMain();
+  assert.equal(env.CB.game.sceneName, 'play');
+  const run = env.CB.Scenes.play.run;
+  assert.equal(run.stageIndex, 2);
+  assert.equal(run.deaths, 3);
+  assert.equal(run.time, 99);
+  assert.deepEqual(H.plain(run.patches), { rapid: 1 });
+
+  let startFn = null;
+  const env2 = bootEnv({ claude: { hot: { ready: (fn) => { startFn = fn; } } } });
+  env2.runMain();
+  assert.equal(env2.CB.game, undefined, 'waiting for the host');
+  startFn({ stageIndex: 1 });
+  assert.equal(env2.CB.game.sceneName, 'play');
+  assert.equal(env2.CB.Scenes.play.run.stageIndex, 1);
+  const env3 = bootEnv({ claude: { hot: { data: {} } } });
+  env3.runMain();
+  assert.equal(env3.CB.game.sceneName, 'title', 'an empty snapshot means a normal start');
+});
