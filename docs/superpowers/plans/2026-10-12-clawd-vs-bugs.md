@@ -11,7 +11,7 @@
 
 **Tech Stack:** vanilla JavaScript (ES2020, no modules), Canvas 2D, Web Audio, Node ≥ 20 `node:test` + `node:vm`. Zero npm dependencies.
 
-**Spec:** `docs/superpowers/specs/2026-10-06-clawd-vs-bugs-design.md`. Read it before any task. Numbers in this plan are copied from it, and if the two ever disagree, the spec wins unless this plan says "(plan override)".
+**Spec:** `docs/superpowers/specs/2026-10-06-clawd-vs-bugs-design.md`. Read it before any task. **Rev 3:** Phases A and A2 are merged (commit `1488514`). Read the "Rev 3 delta" section before Phase B; it overrides earlier text. Numbers in this plan are copied from it, and if the two ever disagree, the spec wins unless this plan says "(plan override)".
 
 ## Global Constraints
 
@@ -5683,6 +5683,364 @@ test('secrets: konami and ultrathink fire once on completion, even mid-stream', 
 ```
 
 - [ ] Write the test, see it fail, implement, see it pass, then run the full `node --test`.
+
+---
+
+## Rev 3 delta (authoritative; read before any Phase A3/B/C task)
+
+Status:
+- Phase A (Tasks 1–7) and Phase A2 (Tasks 7A–7E) are **implemented and merged** (commit `1488514`, 178 tests green). The code in the repo is the source of truth for those files. The Phase A/A2 code blocks above are history.
+- Refinement round 2 produced the changes below. **Where this section differs from the spec or from earlier plan text, this section wins (plan override).**
+- Phase B task blocks still apply, except where an item below names that task.
+
+### R3 rules for all remaining tasks
+- **Test hygiene during parallel work.**
+  - Each Phase B agent runs only its own test file(s) plus the merged baseline: `node --test tests/core.test.js tests/art.test.js tests/patches.test.js tests/world.test.js tests/player.test.js tests/waves.test.js tests/stageRunner.test.js tests/render.test.js tests/platform.test.js tests/scenes.test.js tests/boot.test.js tests/extra.test.js tests/impact.test.js tests/compact.test.js tests/elites.test.js tests/modes.test.js tests/unlocks.test.js`, plus any Phase A3 test files.
+  - The unscoped `node --test` is the orchestrator's gate only.
+  - Tasks 21A (`player.js`) and 21B (`fx.js`) edit shared files. They work in a scratch copy and write the final file in one step only when their tests and the baseline pass.
+- **No load-time font or sprite rendering.** No module may call `CB.Font.*`, `r.text`, `r.measure` or `CB.Art.sprite()` at load time; only inside draw/update. `CB.Art.defineSprite`/`defineTint` at load time is fine. Tasks 19, 21A and 21B may use only `Font.measure`, `Font.draw` and `Font.CELL_H`, because the test stubs have no `wrap`/`has`.
+- **Guard optional modules by method,** never by object only: `if (CB.Music && CB.Music.update) …`, `typeof CB.Audio.isMuted === 'function'`. Tests often stub partial objects.
+- **Fan-game disclaimer.** `Fan game. Not affiliated with Anthropic.` appears on the title, pause and victory screens.
+
+### Phase A3: core changes (sequential, before Phase B; each task edits merged files and must keep all tests green)
+
+#### Task A3-1: Simplify the /compact meter, buffered E, boss-start charge, keycap prompt, pierce damage, world fields
+
+**Files:**
+- Modify: `src/game/compact.js`, `src/game/world.js`, `src/game/player.js`, `src/game/stageRunner.js`, `src/game/patches.js`, `src/game/fx.js` (only the `Fx.impact` flash-colour rule).
+- Tests: update `tests/compact.test.js` and `tests/impact.test.js`.
+
+**Spec:**
+- **Meter model** (replaces the 7B graze and chain):
+
+  ```js
+  CB.Compact = { MAX: 45, HIT: 1, INCOME_CAP: 7, PERFECT: 3, WAVE_SPEED: 520, WAVE_RMAX: 360, DMG_REGULAR: 3, DMG_BOSS: 5, BANNER_T: 1.0,
+                 charge, onBoltHit, perfect, fill, cast, update, draw, drawPrompt };
+  ```
+
+  - World state is `context: { value: 0, max: 45, announced: false }`, `incomeTokens: 7`, `compactWave: null`, `compactBannerT: 0`, `compactBuffered: false`, `seenCompact` (read from `CB.Save` if present, else false).
+  - **Remove** `chain`, `grazeTokens`, `stats.maxChain`, `stats.grazes`, `run.maxChain`, the near-miss band graze, and every `x<n>`/ULTRATHINK-by-chain idea. The typed `ultrathink` secret and rainbow bolts stay.
+  - `onBoltHit(w, applied)`: if `applied ≤ 0`, return. Otherwise `const take = Math.min(CB.Compact.HIT, w.incomeTokens); w.incomeTokens -= take; charge(w, take)`. Every applied bolt hit is worth 1 regardless of damage, capped at 7 meter/s by the token bucket.
+  - `update`: `incomeTokens = min(7, incomeTokens + 7*dt)`. Banner and wave logic are unchanged.
+  - `perfect(w, b)`: called from world `collide` only when an enemy bullet overlaps Clawd and `Player.hurt` refused, and only when `p.dashInvulnT > 1e-9`. That is a new player timer, set to `DASH_INVULN` in the dash branch and decremented with the other timers. When it fires, set `b.grazed = true`, `charge(w, 3)` (bypassing the bucket), emit `graze { x, y, perfect: true }` and gold text `perfect`, and increment `stats.perfects`.
+  - Boss safe-spawn, hurt and /compact invulnerability never give perfects.
+  - `fill(w)`: `value = max`, `announced = true`, emit `compactReady {x, y}`. **`startBoss()` calls `if (CB.Compact) CB.Compact.fill(w)`**, so every boss fight (including checkpoint retries and Boss Rush) starts with one cast.
+  - **Buffered E.** In the world hitstop branch, `if (input && input.compact) w.compactBuffered = true;`. In `Player.update`: `const wantCompact = input.compact || w.compactBuffered; w.compactBuffered = false; if (wantCompact && CB.Compact) CB.Compact.cast(w);`.
+  - **`drawPrompt(w, r, t)`.** WorldDraw calls it right after `Player.draw`.
+    - When `value ≥ max`, the player is alive, `!w.compactWave` and `!(w.boss && w.boss.defeated)`, draw sprite `keycap_e` (9×9: ink outline, offwhite fill, dark `E`; defined in `compact.js`) at `(p.x, p.y − 17 + round(sin(t*4)))`.
+    - Until the first cast ever (`!w.seenCompact`), also draw `/compact` in gold to its right.
+    - `cast()` sets `w.seenCompact = true` and `CB.Save && CB.Save.set('seenCompact', true)`.
+- **World fields** in `createWorld`: `flashColor: null, glitchT: 0, fxQueue: [], quipT: 0, compactBuffered: false` (21B and 19 read them).
+- **`Fx.impact`** sets colour only when it isn't weaker: `if (k.flash && k.flash >= w.flash) { w.flash = k.flash; w.flashColor = k.color; }`.
+- **`patches.js`:** pierce adds +0.15 damage per stack: `dmg = BASE.dmg + 0.35*c('heavy') + 0.15*c('pierce')`. The desc becomes `Sparks pass through +1 bug, +15% damage`.
+- **Tests** (rewrite `tests/compact.test.js` for the new model and keep the cast/wave tests). Each of these must hold:
+  - every applied hit charges exactly 1, regardless of damage;
+  - 100 hits in one tick charge at most 7;
+  - the bucket refills at 7/s;
+  - the meter caps at 45 and `compactReady` fires once;
+  - the wave and damage with no source never charge;
+  - a perfect dash through a stationary bullet gives exactly +3 once;
+  - overlaps during boss safe-spawn invuln (`p.invuln = 1`, `dashInvulnT = 0`) and during hurt invuln give 0;
+  - an E press on a frozen hitstop tick casts on the first live tick, exactly once;
+  - `fill` sets the meter full and `startBoss` fills it (a run with a stub boss and `skipWaves`: meter full in state `boss`);
+  - `drawPrompt` runs headless in each condition;
+  - patches: pierce 1 → dmg 1.15 and pierce 2 → 1.3.
+  - Tighten `impact.test.js`:
+    - the stacked test asserts `hitstop ≈ 0.14`, `shake > 5` and `flash > 0.2`;
+    - the god test asserts `shake > 0` and `flash > 0.05`;
+    - add: bossDie followed by compact in the same step keeps a white flash.
+
+#### Task A3-2: Run flow, checkpoints, retry intros, entrance, toasts, hot snapshot, input, harness, lint
+
+**Files:**
+- Modify: `src/game/stageRunner.js`, `src/scenes/play.js`, `src/main.js`, `src/core/input.js`, `tests/harness.js`.
+- Tests: `tests/stageRunner.test.js`, `tests/scenes.test.js`, `tests/boot.test.js`, `tests/platform.test.js`, `tests/world.test.js`, `tests/waves.test.js`. New: `tests/lint.test.js`.
+
+**Spec:**
+- **Wave-2 checkpoint.** `checkpoint` ∈ `'boss' | 'wave2' | 'stage'`. In `enterDying(prev)`, it is:
+  - `'boss'` if `prev === 'boss'`;
+  - `'wave2'` if `prev === 'waveBreak'`, or if `prev === 'wave'` and `run.waveIndex === 1`;
+  - otherwise `'stage'`.
+
+  `enterWaveBreak` snapshots `run.wave2Squashed = {...run.squashed}`.
+
+  `retryStage` saves `const cp = checkpoint`, restores patches, then:
+  - always: `attempt++` and `beginStage()`;
+  - `cp === 'boss'`: `enterBossWarn()`;
+  - `cp === 'wave2'` and `!run.skipWaves`: `run.squashed = {...run.wave2Squashed}` and `startWave(1)`;
+  - otherwise: stage intro (the tally is restored to stage start, as now).
+
+  `run.diedInBoss` stays (it is `checkpoint === 'boss'`).
+- **Short intros on retry.**
+  - `T.stageIntroRetry = 0.9` and `T.bossWarnRetry = 1.3`.
+  - `run.seenIntro` and `run.seenWarn` are sets of stage indices, marked when the card completes.
+  - On entering `stageIntro`/`bossWarn`, set `run.introT`/`run.warnT` to the full length the first time and the retry length after that. The state timers use them, and Task 20 reads them.
+  - Boss Rush uses full lengths on first visits.
+- **Boss entrance.** `startBoss()` pushes `{ type: 'bossEnter', x: boss.x, y: boss.y }` to `run.pending`. Fx (Task 21B) draws a ring and sparks, and audio maps it to `teleport`.
+- **Toasts** (`play.js`):
+  - Replace `toast` with a queue `this.toasts = []` (each `{ text, t }`). Only the first one shows and counts down; the next shows after it.
+  - Hats push `NEW HAT: <name>` (2.5 s).
+  - The id `modes` pushes `UNLOCKED: boss rush + --yolo on the title` (4.0 s).
+  - Unchanged: one `unlock` audio event per step.
+- **Hot snapshot.** `snapshotState` adds `bossRush`, `yolo` and `squashed: {...run.stageSquashed}`. Resume passes `bossRush`/`yolo` in `runOpts`, and `play.enter` restore sets `run.squashed = run.stageSquashed = {...restore.squashed}`.
+- **Input:** `canvas.addEventListener('mouseleave', releaseAll)` (and remove it in `dispose`).
+- **Harness:**
+  - `load(files, { localStorage })` installs a given storage object in the sandbox.
+  - `makeSandbox` gets `setInterval`/`clearInterval` stubs that record the callback (`sandbox.__intervals`).
+  - Export `H.fakeAudioContext()`: a minimal Web Audio fake that records oscillator/bufferSource `start(t)` calls and gain param values, with `currentTime` writable, `destination`, `createGain/createOscillator/createBufferSource/createBiquadFilter/createBuffer` and `resume() → Promise.resolve()`.
+  - Export `H.recorder(r)`: wraps a renderer's `text` and `sprite` to record `{ kind, str|name, x, y, w, h }` boxes using `CB.Font.measure` and the sprite defs, for layout tests.
+- **`tests/lint.test.js`.** It strips comments, then over `H.scriptList()` checks:
+  - no `Math.random` in `src/core` or `src/game`;
+  - no `Date.now` in `src/game`;
+  - every file starts with a comment line and the IIFE shape `(function (CB) {` … `})(window.CB);` (except `ns.js`);
+  - only `ns.js` assigns `window.CB`;
+  - no `getContext(` in `src/game/` outside `draw` functions (heuristic: the substring must not appear in `src/game` at all);
+  - every listed script exists.
+- **Extra tests:**
+  - **projectiles:** a bolt expires after 1.5 s in open space (alive at tick 89, dead by 92); a plain bolt dies at the wall; a ricochet bolt survives exactly one bounce.
+  - **stages:** a full table assertion for all four stages against spec §2.5; elite counts are satisfiable for every real wave.
+  - **parseDebugHash:** `#rush` → `bossRush`, `#yolo` → `yolo`.
+  - **stageRunner:**
+    - wave-2 death → `wave` with `waveIndex` 1, full hearts, stage-start patches and the wave-1 tally;
+    - retry intros are 0.9 s and 1.3 s on the second visit;
+    - `bossEnter` is emitted once per boss start;
+    - a full-meter boss start.
+  - **boot:** the snapshot carries the modes and the tally.
+
+#### Task A3-3: Calm mode, transitions, patch-pick celebration hook, bullet readability
+
+**Files:**
+- Create: `src/game/comfort.js` (index.html: after `unlocks.js`), `src/scenes/transition.js` (index.html: before `main.js`).
+- Modify: `src/scenes/play.js`, `src/main.js`, `src/game/projectiles.js`, `index.html`.
+- Tests: `tests/comfort.test.js`, `tests/transition.test.js`, and additions to `scenes`/`world` tests.
+
+**Spec:**
+- **`CB.Comfort`** = `{ calm() → bool, set(b), toggle() → bool, blink(t, hz) → bool, shake(w) → number, flash(w) → { alpha, frame } }`.
+  - `calm()` reads `CB.Save.get('calm', null)`. When null it falls back to `matchMedia('(prefers-reduced-motion: reduce)').matches` (guarded), else false.
+  - `blink(t, hz) = Math.floor(t * (calm() ? Math.min(hz, 4) : hz)) % 2 === 0`.
+  - `shake(w) = calm() ? 0 : w.shake`.
+  - `flash(w)` is `{ alpha: min(0.35, w.flash*2), frame: 0 }` normally, and `{ alpha: 0, frame: min(0.5, w.flash*3) }` when calm. Play draws 2 nested 1 px `frame` rects in `w.flashColor` instead of the full-screen rect.
+  - Hit-stop is unchanged.
+  - **V toggles calm** in play (via `input.keys.includes('KeyV')`) with a toast `calm mode: on/off`. The pause screen shows it.
+  - Every draw module should use `CB.Comfort ? CB.Comfort.blink(t, hz) : Math.floor(t*hz) % 2 === 0` for blinks faster than 4 Hz (Tasks 15–21 apply this to their own blinks).
+- **`CB.Transition`** = `{ start(label), update(dt), active(), progress() → 0..1, draw(r, t), cells(p) }`.
+  - A 0.6 s reveal-only wipe: solid ink from 0 to 0.1 s, then an 8×8-block dither reveal from 0.1 to 0.4 s.
+  - A cell is revealed when `hash(bx, by) % 1000 < p * 1000`, with `hash = ((bx*73856093) ^ (by*19349663)) >>> 0`.
+  - A 14 px terminal bar (ink at alpha 0.85, y 160–174) shows the label, typed at 0.03 s per character, fading by 0.6 s.
+  - Labels: title → play `$ ./clawd --fight`, play → title `$ exit`, and retry `$ git reset --hard HEAD` (play.js calls it when `retryStage()` succeeds).
+  - `main.js`: `game.go` starts it when a previous scene existed and the start isn't a debug start. The loop calls `update`, and `render` draws it last.
+  - In calm mode, it uses a 0.25 s plain fade instead of the dither.
+- **Patch-pick celebration hook:** when a step returns `patchPick {id}`, play calls `CB.Fx.celebrate && CB.Fx.celebrate(run.world, id)` (implemented by Task 21B).
+- **Bullet readability:**
+  - `Projectiles.draw(w, r, t, layer)`, where `layer` is `'player' | 'enemy' | undefined` (both).
+  - Player bolts draw at alpha 1 while there are ≤ 14 bolts, else `max(0.55, 1 − (n − 14) × 0.03)`.
+  - Enemy bullet cores pulse every 0.1 s with a per-index phase, gated by `Comfort.blink` (static when calm or when Comfort is absent).
+  - WorldDraw (Task 19) draws enemy bullets last.
+
+### Phase B changes (rev 3)
+
+- **Task 9 (audio):**
+  - **Noise:** the buffer is filled from `CB.createRng(0xC1A0D)`, so there is no `Math.random` anywhere (remove the Global Constraints exception). The audio test FILES include `math.js` and `rng.js`.
+  - **Throttles:** timestamps start at `-Infinity`.
+  - **Variation:** per-sound counters pick detune multipliers, applied after the throttle:
+
+    | Sound | Multipliers |
+    |---|---|
+    | `shoot` | [1, 1.06, 0.97, 1.09] |
+    | `hit` | [1, 0.92, 1.10] |
+    | `enemyDie` | [1, 0.85, 1.15, 0.93] |
+
+  - **Ducking:** `handleEvents` calls `CB.Music.duck(amount, hold, release)` (guarded):
+
+    | Event | amount | hold | release |
+    |---|---|---|---|
+    | `playerHurt` | 0.4 | 0.12 | 0.35 |
+    | `bossPhase` | 0.5 | 0.3 | 0.6 |
+    | `compact` | 0.5 | 0.2 | 0.5 |
+    | `heartbeat` | 0.7 | 0.05 | 0.2 |
+
+  - **New mapping:** `bossEnter` → `teleport`.
+  - **Removed:** the `graze` sound. `graze` events with `perfect: true` play `perfect`; other `graze` events can't occur.
+  - **Tests** use `H.fakeAudioContext()`:
+    - one oscillator for two `shoot` events in one call;
+    - ≥ 3 distinct start frequencies over four spaced shots;
+    - nothing for a silent `enemyDie`;
+    - `setMuted(true)` → gain 0;
+    - persistence via `H.load(FILES, { localStorage: mem })` (reads `cb.muted` at load, writes on `setMuted`), and a throwing storage is harmless.
+- **Task 9B (music):**
+  - **Lifecycle:** `update(run, paused)` owns it. When enabled, a context exists and nothing is running, it creates the music gain (0.10, connected to `CB.Audio.output()`) and starts the 30 ms scheduler (behind `typeof setInterval`). It sets the stage from `run.world.stage.id` (falling back to `CB.STAGES[run.stageIndex].id`) and the intensity from `intensityFor(run)`.
+  - **Stop and toggle:** `stop()` clears the interval and ramps to 0, and the next `update` restarts. `toggle(false)` stops.
+  - **Hidden tab:** the scheduler tick returns early when `document.hidden`.
+  - **Levels:** per-note peaks are bass 0.70, lead 0.35, hat 0.20 into the 0.10 music node (effective 0.07/0.035/0.02). The node ramps in over 0.4 s and out over 0.25 s.
+  - **Boss loop:** bosses use `pattern(stageId + '#boss', bar)`.
+  - **Octaves:** `pattern()` returns base octaves only: bass roots 55–130 Hz and lead 220–1760 Hz. The intensity-2 octave and tempo changes, and the detune, are applied by the scheduler.
+  - **`duck(amount, hold, release)`:** ramps the node to `base × (1 − amount)` in 20 ms, holds, then ramps back. It is a no-op without a context.
+  - **Tests** use `H.fakeAudioContext()` and `sandbox.__intervals`:
+    - scheduled starts are always ≥ `currentTime`;
+    - intensity -1 schedules nothing;
+    - `document.hidden` schedules nothing;
+    - effective peaks are within the bands above;
+    - `pattern('src#boss', 0)` ≠ `pattern('src', 0)`.
+- **Task 13 (`memoryLeak`):** splits are spawned with opts that never contain `elite`, and never copy the parent's flag. Test: kill an elite big blob; both splits have falsy `elite` and hp 2.
+- **Tasks 15–18 (bosses):**
+  - **`id`:** every controller has `id` (the module id). Add `assert.equal(boss.id, '<id>')` to each finale-data test. Task 15 also exposes `radius` and Task 16 exposes `size` (Arena reads them).
+  - **`deathPoints`:** it must still work after defeat. Read positions from the entities, which keep x/y when dead, and don't empty arrays on defeat. Add to each finale test: after a killing blow and one step, `deathPoints(boss).length` equals the pre-defeat count and every point is finite.
+  - **Rule 11:** every event carries finite x, y. `beamCharge`/`beam` use the midpoint as x, y as well as x1..y2. `lob` uses the body position.
+  - **Diff lines:** each `diff` line measures ≤ 228 px with `CB.Font.measure`. The test loads `font.js`.
+  - **Task 18:** the first summon at 2 s into phase 3 is a documented exception to Rule 6.
+  - **Calm-aware blinks:** use `CB.Comfort ? CB.Comfort.blink(...) : …` for the head telegraph, the beam telegraph and decoy flicker.
+- **Task 19 (arena, world draw, HUD):**
+  - **WorldDraw:** delete the first, superseded WorldDraw code block. Use only the rev-2 block, with these changes:
+    - it calls `CB.Compact.drawPrompt` after `Player.draw` (guarded);
+    - it draws `CB.Projectiles.draw(w, r, t, 'player')` before the boss overlay and Fx;
+    - it draws `CB.Projectiles.draw(w, r, t, 'enemy')` **last**, after Fx;
+    - it uses `CB.Comfort.blink` for the spawn telegraph.
+  - **HUD:**
+    - remove the `[E] /compact` text and the chain/ULTRATHINK label (the keycap prompt replaces them);
+    - the meter is 48×3 at (4, 13) and flashes gold at full;
+    - the YOLO tag stays at (78, 5);
+    - add a pure `CB.Screens.hud.bossBarFill(run)` = `easeOutCubic(min(1, stateT / 0.8)) × hp / maxHp` during `boss`, else `hp / maxHp`;
+    - the boss name types in.
+  - **Layout test** (`H.recorder`): for the worst-case HUD (7 hearts, full meter, compact banner, boss bar, YOLO on), every text and sprite box is inside 320×180 and no two text boxes overlap.
+- **Task 20 (screens):**
+  - **Timings:** use `run.introT`/`run.warnT` (rev 3 retry lengths). In the short form, skip the quip lines, type at double speed, place the portrait at its final position, and show the tagline instantly.
+  - **`waveBanner`:** during `waveBreak`, the second line is `CB.Quips.waveBreak[run.stageIndex % n]` (guarded; fallback `incoming...`).
+  - **`bossWarn` portrait:** `scale = Math.max(2, Math.min(4, Math.floor(56 / Math.max(def.w, def.h))))`, centred at y 138. Every portrait box stays inside y 100–168.
+  - **`bossDead`:** export `CB.Screens.bossDead.TIMELINE = { start: 1.5, commitCps: 100, diffStart: 1.95, diffStep: 0.2, passDelay: 0.1 }`. At stateT 2.9 everything (commit line, header, all diff lines, `✓ 1 test passing`) is drawn in full and inside 320×180 (recorder test, for every real boss's diff).
+  - **`pause`** layout (y = top of the 7 px cell):
+
+    | y | Content |
+    |---|---|
+    | 14 | `PAUSED` (scale 2) |
+    | 34 | `Esc: resume · Q: quit to title`, or gold `Press Q again to quit` when `ui && ui.quitArmT > 0` |
+    | 48 | `WASD move · Mouse aim · Click shoot` |
+    | 57 | `Space dash · E /compact (meter full)` |
+    | 66 | `M sound: on · N music: on · V calm: off` (all three guarded with typeof) |
+    | 82 | `patches` header |
+    | 91… | one patch per line, step 9 |
+    | 160 | footer disclaimer |
+
+  - **`victory`** layout (no chain line):
+
+    | y | Content |
+    |---|---|
+    | 6 | `ALL TESTS PASSING ✓` (scale 2) |
+    | 23 | grey quip `CB.Quips.victory[(run.deaths + run.stageIndex) % n]` |
+    | 32–56 | Clawd happy at scale 2, centred (160, 44), hop ≤ 4 px, wearing the hat |
+    | 62 | `time mm:ss · deaths N` |
+    | 71 | patches line |
+    | 82–102 | tally row (sprite ≤ 12 px plus `xN` under it, 56 px apart) |
+    | 106 | `git log --oneline` header |
+    | 115, 124, 133, 142 | log lines at x 40 |
+    | 152 | footer disclaimer |
+    | 163 | `Click to play again` (after 1.5 s) |
+
+    `formatTime` pads minutes (`00:00`, `01:01`, `10:00`).
+  - **`gameOver`:** the retry hint reads `retry boss` / `retry wave 2` / `retry stage` from `run.checkpoint`.
+  - **Guards:** `Array.isArray(B.diff) ? B.diff : []`, `B.file || ''`, `B.portrait && CB.Art.hasSprite(B.portrait)`, and `ui && ui.quitArmT`.
+  - **Tests:**
+    - recorder layout tests for pause, victory (5 tally kinds, 4 fixes) and bossDead;
+    - `r.text` receives the disclaimer on pause and victory;
+    - the retry hints match each checkpoint.
+- **Task 21 (title)** layout (y = top of cell):
+
+  | y | Content |
+  |---|---|
+  | 4–24 | `CLAWD` (scale 3) |
+  | 27 | `vs` |
+  | 36–56 | `BUGS` (scale 3) |
+  | 70–94 | Clawd at scale 2, centred (160, 82), with the hat above |
+  | 96 | small-screen note (gold), when it applies |
+  | 105 | `hat: <name> (Q/E)` (when hats exist) |
+  | 114 | `Click to start` |
+  | 124 | modes row: `[ boss rush ]` centred at x 110 and `[ ] --yolo` centred at x 220 (when unlocked) |
+  | 138 | `WASD move · Mouse aim · Click shoot · Space dash` |
+  | 147 | `E /compact · N music · M mute · V calm · Esc pause` |
+  | 160 | footer disclaimer |
+  | 170 | status `M sound: on · N music: on` (typeof-guarded; omit parts whose module is missing) |
+
+  - **Hats:** cycle with Q (previous) and E (next), via the `input.quit` and `input.compact` edges. Arrows and A/D do nothing on the title, so typing secrets never changes the hat.
+  - **N** toggles music on the title (guarded) and plays `uiSelect`.
+  - **V** toggles calm.
+  - **Hit-testing** uses `input.aimX`/`aimY`.
+  - **Tests:**
+    - recorder layout: all boxes inside 320×180 and text boxes pairwise disjoint, worst case (hats, modes and small-screen note all on);
+    - typing konami/ultrathink with moveX edges doesn't change the hat;
+    - N calls `Music.toggle` once.
+- **Task 21A (Clawd's look):** add `p.cheerT` (set by `Fx.celebrate`, decays in `update`). While `cheerT > 0`, `expression` returns `happy` (priority just below `hurt`) and the draw hops `−abs(sin((0.9 − cheerT)/0.9 × π × 2)) × 5` px. The hurt blink uses `CB.Comfort` when present.
+- **Task 21B (FX juice):**
+  - **Finale guard:**
+
+    ```js
+    const mod = w.boss && CB.Bosses[w.boss.id];
+    let pts = null;
+    try { pts = mod && typeof mod.deathPoints === 'function' ? mod.deathPoints(w.boss) : null; } catch (e) { pts = null; }
+    pts = Array.isArray(pts) ? pts.filter((q) => q && Number.isFinite(q.x) && Number.isFinite(q.y)) : [];
+    // if (!pts.length) fall back to the event's x/y plus fxRng jitter within 20 px
+    ```
+
+  - **Quips:** quip hooks use `.text` from `CB.Quips.pick`, and guard `w.boss`, `CB.Quips.bossPhase[w.boss.id]` and `[phase]` (an array). Add a test with stub `CB.Quips` asserting the kill, hurt and phase pops use the stub strings.
+  - **`Fx.celebrate(w, id)`:**
+    - a gold ring 2 → 26 px over 0.4 s at Clawd;
+    - 12 sparks in the patch colour (spread cyan, rapid yellow, pierce purple, heavy ember, heart red, dash cyan, ricochet green; speed 60, life 0.5);
+    - text `+ <Patch name>` in gold (life 1.2);
+    - sets `w.player.cheerT = 0.9`.
+  - **`bossEnter` consume:** a white ring 4 → 32 px over 0.4 s and 16 cyan/white sparks.
+  - **Fields:** world fields `glitchT`, `fxQueue` and `quipT` exist (A3-1), so no lazy init is needed.
+  - **Calm:** in calm mode, cap the confetti at 20 and the finale blasts' rings at 6.
+- **Task 21C (quips):**
+  - **Stage lines:** second lines start with `✻ Thinking...`: stage 1 `✻ Thinking...`, stage 2 `✻ Thinking... (compacting conversation)`, stage 3 `✻ Thinking... (reading MERGE_HEAD)`, stage 4 `✻ Thinking... ⚠ this is prod`.
+  - **Drop** `(esc to interrupt)` and the `lowHp` pool.
+  - **Lint** also rejects `/esc to interrupt/i`.
+  - **Tests:** every stage's second line starts with `✻ Thinking...` and each pair is ≤ 60 characters.
+  - **Usage:** `waveBreak` and `victory` are read by Task 20.
+
+### Phase C changes (rev 3)
+- **Task 22:**
+  - **New file** `tests/boss.rules.test.js`. For each boss:
+    - every part has `noContactT ≥ 0.45`, `boss` and `!regular`;
+    - a phase change emits `bossPhase` with finite x, y, sets `shake ≥ 4`, and makes a `damageEnemy` on the main part within 0.5 s return 0;
+    - the first attack comes no earlier than one period after spawn;
+    - moving parts publish |v| > 0;
+    - every emitted event over 10 s of fighting has finite x, y.
+  - **Sim:**
+    - Keep the `wouldHits ≤ 40` base-kit guard (plan override of spec §5's "not asserted").
+    - The full run counts events and asserts `bossDie === 4`, `blast === 48`, `bossPhase ≥ 5`, `compact ≥ 4` (every boss starts full) and `bossEnter === 4`.
+    - Boss Rush asserts `bossDie === 4` and no `wave` state.
+    - The bot casts /compact when full and (a boss exists or ≥ 6 enemy bullets are on screen), as written.
+  - **Step 5 balance gate:** the zero-latency bot takes ≤ 10 would-be hits per stage at the base kit, with no floor. The delayed bot (delayTicks 9) takes 3–20. Tune by ≤ 15% bullet speed or density only.
+- **Task 23 build test:** add the Artifact checks:
+  - the style has `:root { … color-scheme: dark`, a `body` background and `overflow: hidden`;
+  - no `prefers-color-scheme`;
+  - no external `src`/`href` (`https?:`);
+  - exactly one `<title>`, of 2–4 words;
+  - every chunk parses with `vm.Script`.
+- **Task 24:**
+  1. QA runs against both `index.html` and the built `dist/clawd-vs-bugs.html`, served locally.
+  2. The checklist covers:
+     - **/compact:** the keycap prompt, the cast, bullet clear and the boss-start fill;
+     - **perfect dash:** the gold pop;
+     - **elites and hotfix:** the P0 tag, the drop, heal or +15;
+     - **hats and title cycling:** Q/E;
+     - **secrets:** konami and ultrathink;
+     - **Boss Rush and YOLO:** after a forced unlock, via `CB.Unlocks.unlock('modes')`;
+     - **music:** listen to each stage and the boss intensity, and check N and M (a **human listening gate**: report whether it sounds good, and set `CB.Music` to a no-op if not);
+     - **the boss finale and diff card;**
+     - **quips;**
+     - **low health:** the heartbeat;
+     - **pause, controls and calm mode (V);**
+     - **transitions;**
+     - **retry checkpoints:** wave 2 and boss;
+     - **hot reload in the Artifact.**
+  3. README sections:
+     - what it is, plus the disclaimer;
+     - a controls table (WASD, mouse, click, Space/Shift/right-click dash, E /compact, Esc/P pause, M mute, N music, V calm, R/Q on game over, 1/2/3 or click for patches);
+     - how to play (the meter, perfect dash, elites, checkpoints);
+     - modes;
+     - "there are secrets" (no spoilers);
+     - development (`npm test`, `npm run serve`, the debug hash table including `rush`/`yolo`, `npm run build`).
+  4. The Artifact description is `Top-down pixel boss rush: play as Clawd and squash four software-bug bosses. Unofficial fan game.`
+  5. The push target is the existing `origin` (`git@github.com:Zhan017/clawd-2d.git`). Stop and report instead of force-pushing.
 
 ---
 

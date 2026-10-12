@@ -1,7 +1,7 @@
 # Clawd vs Bugs — Design Spec
 
 Date: 2026-10-06
-Status: approved by the user 2026-10-12. Rev 2 (2026-10-12) folds in plan refinement round 1: bug fixes, balance retune and feature additions (§2.11). Wherever rev 2 changed a number, the new number is the one written here.
+Status: approved by the user 2026-10-12. Rev 2 (2026-10-12) folds in plan refinement round 1: bug fixes, balance retune and feature additions (§2.11). Wherever rev 2 changed a number, the new number is the one written here. **Rev 3 (2026-10-13):** refinement round 2 simplified the meter (no near-miss graze, no chain), added a wave-2 checkpoint, short retry intros, calm mode, transitions and audio polish. The plan's "Rev 3 delta" section is authoritative for those details.
 
 ## 1. Intent
 
@@ -50,7 +50,7 @@ Status: approved by the user 2026-10-12. Rev 2 (2026-10-12) folds in plan refine
 - The fixed simulation step is **1/60 s**.
 
 ### 2.2 Clawd (player)
-- **Sprite:** 16×16 terracotta (`#D97757` family) boxy body, two tall dark eyes, small arm nubs on each side, four stubby legs. It has a 2-frame idle bob and a 4-frame walk cycle, and faces left or right toward the aim point (horizontal flip).
+- **Sprite:** 16×12 terracotta (`#D97757` family) boxy body, two tall dark eyes, small arm nubs on each side, four stubby legs. It has a 2-frame idle bob and a 4-frame walk cycle, and faces left or right toward the aim point (horizontal flip).
 - **Hitbox:** circle, r = 5.
 - **Move:** WASD at 80 px/s with no inertia. Diagonal input is normalised.
 - **Aim:** the mouse position, mapped to internal coordinates. A crosshair is drawn in-canvas and the system cursor is hidden over the canvas.
@@ -216,7 +216,7 @@ After bosses 1–3 the player is offered **3 distinct patches** not yet at max s
 |---|---|---|---|
 | `spread` | Spread Shot | 2 | +2 extra bolts at ±12° × stack (stack 2: ±12° and ±24°) |
 | `rapid` | Rapid Fire | 2 | fire cooldown × 0.8 |
-| `pierce` | Pierce | 2 | bolts pass through +1 enemy/solid |
+| `pierce` | Pierce | 2 | bolts pass through +1 enemy/solid, +0.15 damage |
 | `heavy` | Heavy Bolts | 2 | damage +0.35, bolt r +1 |
 | `heart` | Extra Heart | 2 | +1 max heart and heal to full |
 | `dash` | Quick Dash | 1 | dash cooldown 0.8 → 0.45 s |
@@ -237,7 +237,7 @@ dead → retry: restart current stage at stageIntro (full hearts, patches as the
   - Refill to max at every `stageIntro`.
   - +2 (capped) at `waveBreak`.
   - Refill to max when `bossWarn` starts.
-- **Boss checkpoint:** a death during `boss` (or while dying from a boss fight) retries at `bossWarn`, skipping the waves, with full hearts and the patches from stage start. A death during the waves retries at `stageIntro`.
+- **Checkpoints:** a death during `boss` retries at `bossWarn`. A death in wave 2 or the wave break retries at wave 2. Any other death retries at `stageIntro`. Every retry has full hearts and the patches from stage start. Repeat visits use short intro cards (0.9 s / 1.3 s).
 - **Same-tick death:** if the player dies in the same tick as the boss, or while `dying`, the boss defeat wins. The player is revived with at least 1 heart.
 - **Modes (rev 2):**
   - **Boss Rush:** all four stages with `skipWaves`.
@@ -249,7 +249,7 @@ dead → retry: restart current stage at stageIntro (full hearts, patches as the
 ### 2.9 Screens
 - **Title:**
   - Pixel logo "CLAWD vs BUGS" with Clawd idling and a few bugs wandering across.
-  - Controls list: `WASD move · Mouse aim · Click shoot · Space dash · Esc pause · M mute`.
+  - Controls (two lines): `WASD move · Mouse aim · Click shoot · Space dash` and `E /compact · N music · M mute · V calm · Esc pause`.
   - "Click to start".
   - Footer: "Fan game. Not affiliated with Anthropic."
 - **Stage intro:** "STAGE n" plus the path label, typed out terminal-style.
@@ -262,7 +262,7 @@ dead → retry: restart current stage at stageIntro (full hearts, patches as the
 - **Patch pick:** title `PR #n — choose a patch` and 3 cards.
 - **Game over:** `Segmentation fault (core dumped)`, then "R / click: retry stage" and "Q: quit to title".
 - **Victory:** `ALL TESTS PASSING ✓`, then clear time (mm:ss), deaths, patches taken, and "Click to play again".
-- **Pause overlay:** "PAUSED", then "Esc: resume · M: mute", then the current patches.
+- **Pause overlay:** "PAUSED", the resume/quit line, the controls, the sound/music/calm state, the current patches and the fan-game disclaimer.
 - **Kernel panic** (crash): "KERNEL PANIC", the error message (wrapped), and "Press R to reload".
 
 ### 2.10 Audio
@@ -276,7 +276,7 @@ dead → retry: restart current stage at stageIntro (full hearts, patches as the
 ### 2.11 Feature additions (rev 2)
 
 **Context meter and /compact** (key E):
-- **Charging:** player-bolt damage charges a `context` meter (max 60), scaled by the chain multiplier.
+- **Charging (rev 3):** every applied player-bolt hit charges 1, capped at 7/s, into a `context` meter of max 45. Every boss fight starts with a full meter. When full, a keycap `E` prompt floats above Clawd.
 - **Cast:** at full, E casts /compact:
   - the meter empties and Clawd gets 0.5 s of invulnerability;
   - a shockwave expands at 520 px/s to radius 360;
@@ -285,10 +285,7 @@ dead → retry: restart current stage at stageIntro (full hearts, patches as the
   - a banner reads "Compacting conversation...".
 - **Never:** /compact can't be cast while dead or after a boss defeat, and its own damage never recharges the meter.
 
-**Graze and chain:**
-- **Graze:** an enemy bullet passing within 6 px of Clawd's hitbox without hitting him grazes, once per bullet, for +0.75 meter. Grazing is capped at 4.5 meter/s.
-- **Perfect dash:** dashing through a bullet is a "perfect" graze for +3 meter.
-- **Chain:** each applied bolt hit within 1.5 s of the last increments the chain. The multiplier is ×(1 + min(n, 20)/20) on hit charge. A real heart loss resets it. At 20+ the HUD shows a rainbow "ULTRATHINK" tag (cosmetic).
+**Perfect dash (rev 3):** dashing through an enemy bullet during the dash's own invulnerability is a "perfect" for +3 meter, with a gold pop. The near-miss graze and the chain multiplier were cut in rev 3.
 
 **Elite "P0" bugs:**
 - **Count:** each wave flags some queued syntaxError / memoryLeak (big) / offByOne spawns as elite. Per stage, [wave 1, wave 2] counts are [0, 1], [0, 1], [1, 1] and [1, 2].
@@ -501,8 +498,8 @@ controller = { id, hp, maxHp, phase, defeated, update(world, dt), draw(r, t) /*o
   - phase transitions at the exact thresholds;
   - Infinite Loop: segments absorb bolts and the head takes damage;
   - Memory Leak: regenerates and grows when idle, shrinks on hit;
-  - Merge Conflict: revive after 4.0 s, defeat if both die within the window;
-  - Heisenbug: teleports after 1.0 s of observation, decoys pop in one hit.
+  - Merge Conflict: revive after 6.0 s, defeat if both die within the window;
+  - Heisenbug: teleports after 2.0 s of continuous observation, decoys pop in one hit.
 - `stageRunner`: the full state sequence; retry restores stage-start patches and full hearts; victory after stage 4; deaths and time accounting.
 
 **Headless playthrough** (`sim.test.js`)
