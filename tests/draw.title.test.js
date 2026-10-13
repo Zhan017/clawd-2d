@@ -284,10 +284,10 @@ test('title: a missing drawHat or HATS table is fine', () => {
 
 // ---- modes ----------------------------------------------------------------------------------------------------------------------
 
-test('title: BUTTONS exposes rush and yolo hit boxes that hold the drawn labels', () => {
+test('title: BUTTONS exposes rush, yolo and daily hit boxes; rush and yolo hold their drawn labels', () => {
   const env = setup();
   const B = env.title.BUTTONS;
-  assert.deepEqual(B.map((b) => b.id), ['rush', 'yolo']);
+  assert.deepEqual(B.map((b) => b.id), ['rush', 'yolo', 'daily']);
   for (const b of B) for (const k of ['x', 'y', 'w', 'h']) assert.ok(Number.isFinite(b[k]), b.id + '.' + k);
   stubUnlocks(env, { modes: true });
   unlocked(env);
@@ -297,11 +297,11 @@ test('title: BUTTONS exposes rush and yolo hit boxes that hold the drawn labels'
   assert.ok(rush && yolo);
   assert.ok(inBox(rush, B[0]), 'rush label inside its box');
   assert.ok(inBox(yolo, B[1]), 'yolo label inside its box');
-  assert.ok(Math.abs(rush.x + rush.w / 2 - 110) <= 1);
-  assert.ok(Math.abs(yolo.x + yolo.w / 2 - 220) <= 1);
+  assert.ok(Math.abs(rush.x + rush.w / 2 - 70) <= 1);
+  assert.ok(Math.abs(yolo.x + yolo.w / 2 - 250) <= 1);
   assert.equal(rush.y, 124);
   assert.equal(yolo.y, 124);
-  assert.ok(B[0].x + B[0].w < B[1].x, 'boxes do not touch');
+  assert.ok(B[0].x + B[0].w < B[2].x && B[2].x + B[2].w < B[1].x, 'boxes do not touch, the daily one sits between');
 });
 
 test('title: confirm inside rush starts boss rush; inside yolo toggles; elsewhere starts a normal run', () => {

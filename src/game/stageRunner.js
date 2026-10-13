@@ -15,6 +15,7 @@
       god: !!o.god,
       bossRush: !!o.bossRush, // Boss Rush: every stage goes straight to its boss
       yolo: !!o.yolo, // YOLO: 3 base hearts, enemy bullets x1.15, 0.7 s hurt invuln (applied by the world and the player)
+      daily: typeof o.daily === 'string' && o.daily ? o.daily : null, // Daily build: its 'YYYY-MM-DD'; the patch offers then come from their own stream (offerRng)
       skipWaves: !!o.skipWaves || !!o.bossRush,
       stageIndex: Math.max(0, Math.min(CB.STAGES.length - 1, o.startStage | 0)),
       patches: Object.assign({}, o.patches || {}),
@@ -85,6 +86,13 @@
       run.spawner = null;
       run.offer = null;
       setState('stageIntro');
+    }
+
+    // A daily run draws its offers from a stream keyed by the seed and the stage alone, so they are the same for everyone that day, whatever
+    // happened in the fight and however many retries it took. Every other run keeps drawing from the world's rng.
+    function offerRng() {
+      if (!run.daily) return run.world.rng;
+      return CB.createRng(Math.imul(run.seed ^ Math.imul(run.stageIndex + 1, 0x9e3779b1), 0x85ebca6b) >>> 0);
     }
 
     function advanceStage() {
@@ -219,7 +227,7 @@
               setState('victory');
               run.pending.push({ type: 'victory', x: CB.W / 2, y: CB.H / 2 }); // returned by the next step (run -> unlocks/audio)
             } else {
-              run.offer = CB.Patches.offer(w.rng, run.patches, 3);
+              run.offer = CB.Patches.offer(offerRng(), run.patches, 3);
               if (run.offer.length) setState('patchPick');
               else advanceStage();
             }

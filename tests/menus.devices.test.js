@@ -465,13 +465,17 @@ test('title (pad): LB wears the previous hat and RB (which arrives as compact) t
   assert.deepEqual(env.unlocks.cycles, [-1, 1]);
   assert.deepEqual(env.sounds, ['uiSelect', 'uiSelect']);
   tick(env, 1, padInput('back'));
-  tick(env, 1, padInput('b'));
-  assert.deepEqual(env.unlocks.cycles, [-1, 1], 'Back (quit) and B (compact) cycle nothing');
+  assert.deepEqual(env.unlocks.cycles, [-1, 1], 'Back (quit) cycles nothing');
   // The keyboard still cycles while a pad is connected (its edges are all false).
   tick(env, 1, H.makeInput({ quit: true, pad: Object.assign({}, PAD0) }));
   tick(env, 1, H.makeInput({ compact: true, pad: Object.assign({}, PAD0) }));
   assert.deepEqual(env.unlocks.cycles, [-1, 1, -1, 1]);
   assert.equal(env.visits.length, 0);
+  // B (compact) cycles nothing: it starts the daily build now.
+  tick(env, 1, padInput('b'));
+  assert.deepEqual(env.unlocks.cycles, [-1, 1, -1, 1]);
+  assert.equal(env.visits.length, 1);
+  assert.ok(env.visits[0][1].runOpts.daily);
 });
 
 test('title (pad): with no hat unlocked LB and RB do nothing', () => {
@@ -484,7 +488,7 @@ test('title (pad): with no hat unlocked LB and RB do nothing', () => {
 });
 
 test('title (pad): every pad edge waits out the 0.3 s input lock', () => {
-  for (const edge of ['a', 'y', 'x', 'lb', 'rb']) {
+  for (const edge of ['a', 'b', 'y', 'x', 'lb', 'rb']) {
     const env = setup('pad');
     enterTitle(env, { modes: true, hats: ['loopcap', 'halo'], worn: 'loopcap', locked: true });
     tick(env, 5, padInput(edge));
@@ -501,7 +505,7 @@ test('title (pad): every pad edge waits out the 0.3 s input lock', () => {
 test('title (pad): the other pad buttons do nothing here', () => {
   const env = setup('pad');
   enterTitle(env, { modes: true, hats: ['loopcap'], worn: null });
-  for (const edge of ['b', 'start', 'back']) tick(env, 1, padInput(edge));
+  for (const edge of ['start', 'back']) tick(env, 1, padInput(edge));
   assert.equal(env.visits.length, 0);
   assert.deepEqual(env.unlocks.cycles, []);
   assert.equal(env.title.yolo, false);

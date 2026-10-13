@@ -1,4 +1,4 @@
-// Title scene: dimmed arena, wavy logo, Clawd zapping wandering bugs, start and mode buttons, hat, sound / music / calm chips, typed secrets.
+// Title scene: dimmed arena, wavy logo, Clawd zapping wandering bugs, start, daily build and mode buttons, hat, sound / music / calm chips, typed secrets.
 // Prompts follow the device in use (keyboard + mouse, touch or pad); a click or tap and the pad's buttons all work here.
 (function (CB) {
   'use strict';
@@ -21,12 +21,15 @@
   const CLAWD = { x: 160, y: 82, scale: 2 };
   const HAT_DY_FALLBACK = -7; // per scale: where an ordinary hat is centred above Clawd's centre (Player.HAT_DY says the same)
   const LOGO_GAP = 1; // extra logo letter spacing, in logo pixels (3 screen px each), on top of the font's own gap
-  const MODE_X = { rush: 110, yolo: 220 };
-  // Hit boxes of the two mode labels (6 px of slack around the text). Fixed numbers: nothing may measure text at load time.
+  // One row: the daily build is always there, centred; boss rush and --yolo flank it once the modes are unlocked.
+  const MODE_X = { rush: 70, daily: 160, yolo: 250 };
+  // Hit boxes of the three labels (6 px of slack around the widest text each shows, pad prompts and the daily's tick included). Fixed numbers: nothing may measure text at load time.
   const BUTTONS = Object.freeze([
-    Object.freeze({ id: 'rush', x: 76, y: 121, w: 68, h: 13 }),
-    Object.freeze({ id: 'yolo', x: 190, y: 121, w: 60, h: 13 }),
+    Object.freeze({ id: 'rush', x: 36, y: 121, w: 68, h: 13 }),
+    Object.freeze({ id: 'yolo', x: 220, y: 121, w: 60, h: 13 }),
+    Object.freeze({ id: 'daily', x: 120, y: 121, w: 80, h: 13 }),
   ]);
+  const [RUSH_BOX, YOLO_BOX, DAILY_BOX] = BUTTONS;
   const HAT_BOX = Object.freeze({ x: 90, y: 102, w: 140, h: 11 }); // a tap on the hat row (only there when a hat is unlocked) wears the next hat
   const SECRETS = {
     konami: { id: 'halo', text: 'cheat codes are just undocumented features' },
@@ -72,6 +75,15 @@
   function modesOn() {
     const u = CB.Unlocks;
     return !!(u && typeof u.has === 'function' && u.has('modes'));
+  }
+  // The daily build needs CB.Daily; a module that is missing or only partly there leaves the title as it was.
+  function dailyOn() {
+    const d = CB.Daily;
+    return !!(d && typeof d.today === 'function' && typeof d.seedFor === 'function' && typeof d.patchFor === 'function');
+  }
+  function dailyDone() {
+    const d = CB.Daily;
+    return !!(dailyOn() && typeof d.result === 'function' && d.result(d.today()));
   }
   function hatIds() {
     const u = CB.Unlocks;
@@ -206,14 +218,26 @@
       this.game.go('play', { runOpts });
     },
 
+    // Today's daily build: UTC date, its seed and its starting patch; --yolo may ride along. Every other start leaves these out.
+    startDaily() {
+      const d = CB.Daily;
+      const key = d.today();
+      const patch = d.patchFor(key);
+      this.start({ daily: key, seed: d.seedFor(key), patches: patch ? { [patch]: 1 } : {}, yolo: this.yolo });
+    },
+
     // Enter, or a click or tap that missed the chips and the hat row, past the input lock. Returns true when it started a run.
     confirm(x, y) {
+      if (dailyOn() && inside(DAILY_BOX, x, y)) {
+        this.startDaily();
+        return true;
+      }
       if (modesOn()) {
-        if (inside(BUTTONS[0], x, y)) {
+        if (inside(RUSH_BOX, x, y)) {
           this.start({ bossRush: true, yolo: this.yolo });
           return true;
         }
-        if (inside(BUTTONS[1], x, y)) {
+        if (inside(YOLO_BOX, x, y)) {
           this.yolo = !this.yolo;
           sfx('uiSelect');
           return false;
@@ -281,10 +305,14 @@
         this.animate(dt);
         return;
       }
-      // Pad: A starts (its confirm edge is not also read as a click at the old pointer spot), Y boss rush, X --yolo.
+      // Pad: A starts (its confirm edge is not also read as a click at the old pointer spot), B the daily build, Y boss rush, X --yolo.
       if (pad) {
         if (pad.a) {
           this.start({ yolo: this.yolo });
+          return;
+        }
+        if (pad.b && dailyOn()) {
+          this.startDaily();
           return;
         }
         if (modesOn()) {
@@ -474,11 +502,16 @@
       // 0.6 s on, 0.3 s off
       if (t % 0.9 < 0.6) r.text(this.say('start', 'Click to start'), mid, Y.start, { color: C.white, shadow: C.ink, align: 'center' });
 
+      const hover = (b) => mouse && inside(b, aim.x, aim.y);
+      const pad = dev === 'pad'; // the pad has no pointer: its buttons are named on the labels
+      if (dailyOn()) {
+        const tick = dailyDone() ? ' ✓' : ''; // today's build has been cleared
+        const label = pad ? 'B: daily build' + tick : '[ daily build' + tick + ' ]';
+        r.text(label, MODE_X.daily, Y.modes, { color: hover(DAILY_BOX) ? C.white : C.pale, align: 'center' });
+      }
       if (modesOn()) {
-        const hover = (b) => mouse && inside(b, aim.x, aim.y);
-        const pad = dev === 'pad'; // the pad has no pointer: its buttons are named on the labels
-        r.text(pad ? 'Y: boss rush' : '[ boss rush ]', MODE_X.rush, Y.modes, { color: hover(BUTTONS[0]) ? C.white : C.pale, align: 'center' });
-        r.text((pad ? 'X: ' : '') + (this.yolo ? '[x] --yolo' : '[ ] --yolo'), MODE_X.yolo, Y.modes, { color: this.yolo ? C.red : hover(BUTTONS[1]) ? C.white : C.pale, align: 'center' });
+        r.text(pad ? 'Y: boss rush' : '[ boss rush ]', MODE_X.rush, Y.modes, { color: hover(RUSH_BOX) ? C.white : C.pale, align: 'center' });
+        r.text((pad ? 'X: ' : '') + (this.yolo ? '[x] --yolo' : '[ ] --yolo'), MODE_X.yolo, Y.modes, { color: this.yolo ? C.red : hover(YOLO_BOX) ? C.white : C.pale, align: 'center' });
       }
 
       r.text(this.say('legend1', 'WASD move · Mouse aim · Click shoot · Space dash'), mid, Y.keys1, { color: C.pale, align: 'center' });
