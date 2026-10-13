@@ -71,6 +71,13 @@ function setup(over) {
     env.frames.push({ x, y, w, h, color });
     return drawFrame.apply(this, arguments);
   };
+  // A locked button is framed with dashes, which are 1 px rects: recorded too, so dashBoxes() can compare them with the hit boxes.
+  env.rects = [];
+  const drawRect = env.r.rect;
+  env.r.rect = function (x, y, w, h, color) {
+    env.rects.push({ x, y, w, h, color });
+    return drawRect.apply(this, arguments);
+  };
   env.game = { go: (n, d) => env.visits.push([n, H.plain(d)]), input: { peekAim: () => env.aim }, debug: {} };
   env.title = CB.Scenes.title;
   if (o.prep) o.prep(env);
@@ -93,6 +100,7 @@ function unlocked(env) {
 function frame(env, t) {
   env.rec.clear();
   env.frames.length = 0;
+  env.rects.length = 0;
   env.title.draw(env.r, t == null ? 0.3 : t);
   return env.rec;
 }
@@ -102,6 +110,22 @@ const textOf = (rec, s) => rec.texts().find((b) => b.str === s);
 const frameAt = (env, b) => env.frames.find((f) => f.x === b.x && f.y === b.y && f.w === b.w && f.h === b.h);
 const hasText = (rec, s) => !!textOf(rec, s);
 const inBox = (b, btn) => b.x >= btn.x && b.x + b.w <= btn.x + btn.w && b.y >= btn.y && b.y + b.h <= btn.y + btn.h;
+// The dashed frames just drawn: per mode button, the bounding box of the 1 px greyDark rects that lie inside its hit box ({ id, x, y, w, h, n }).
+function dashBoxes(env) {
+  const grey = env.CB.Pal.C.greyDark;
+  const dashes = env.rects.filter((q) => q.color === grey && (q.w === 1 || q.h === 1));
+  const out = [];
+  for (const b of env.title.BUTTONS) {
+    const mine = dashes.filter((q) => inBox(q, b));
+    if (!mine.length) continue;
+    const x0 = Math.min(...mine.map((q) => q.x));
+    const y0 = Math.min(...mine.map((q) => q.y));
+    const x1 = Math.max(...mine.map((q) => q.x + q.w));
+    const y1 = Math.max(...mine.map((q) => q.y + q.h));
+    out.push({ id: b.id, x: x0, y: y0, w: x1 - x0, h: y1 - y0, n: mine.length });
+  }
+  return out;
+}
 
 // A stub CB.Unlocks that records calls. `hats` is the unlocked list, `worn` the current hat id.
 function stubUnlocks(env, o) {
@@ -308,22 +332,27 @@ test('title: the hat picker names the worn hat (or no hat) between two chevrons,
   assert.deepEqual(bare.overlaps(), []);
 });
 
-test('title: the hat row is the card\'s first row: the card is 10 px taller with a hat unlocked, and START stays put', () => {
+// Changed with the locked teasers: the hat row is always the card's first row (the picker, or its locked stand-in line), so the card no longer
+// shrinks to 106 without a hat. It used to pin "the card is 10 px taller with a hat unlocked".
+test('title: the hat row is always the card\'s first row: the card is the same size with and without a hat, and START stays put', () => {
   const env = setup();
   const s = stubUnlocks(env, { hats: [] });
   unlocked(env);
   const cardOf = () => env.frames.find((f) => f.x === env.title.CARD.x && f.w === env.title.CARD.w);
   frame(env);
   const bare = cardOf();
-  assert.equal(bare.y, 106);
+  assert.equal(bare.y, 96);
   assert.equal(bare.y + bare.h, 172, 'the card ends where the disclaimer row begins');
-  assert.ok(!env.rec.sprites().some((b) => b.name === 'title_chev'), 'no hats, no hat row');
+  assert.ok(!env.rec.sprites().some((b) => b.name === 'title_chev'), 'no hats, no picker (just the locked line)');
+  const startBare = env.frames.find((f) => f.x === env.title.START_BOX.x && f.y === env.title.START_BOX.y);
   s.hats = ['loopcap'];
   frame(env);
   const withHat = cardOf();
+  assert.deepEqual(H.plain(withHat), H.plain(bare), 'the same card');
   assert.equal(withHat.y, 96);
   assert.equal(withHat.y + withHat.h, 172);
   assert.equal(env.frames.find((f) => f.x === env.title.START_BOX.x && f.y === env.title.START_BOX.y).w, 104, 'the START frame did not move');
+  assert.deepEqual(H.plain(startBare), { x: 108, y: 109, w: 104, h: 13, color: startBare.color });
 });
 
 test('title: the chevrons stay put as the hat name changes, and every hat name fits between them; a phone shows no key hints', () => {
@@ -489,16 +518,24 @@ test('title: hit-testing uses input.aimX/aimY, not the cursor the game reports',
   assert.equal(env.visits[0][1].runOpts.bossRush, true);
 });
 
-test('title: with modes locked the mode row is hidden and the button areas just start a normal run', () => {
+// Changed with the locked teasers: the mode row is no longer hidden while the modes are locked; boss rush and --yolo are drawn locked (dashed, not framed).
+// What stays: Enter over their boxes (a keyboard player with a stale pointer spot) is "anywhere else" and starts a normal run.
+test('title: with modes locked boss rush and --yolo are drawn locked (no frames), and Enter over their boxes just starts a normal run', () => {
   const env = setup();
   stubUnlocks(env, { modes: false });
   unlocked(env);
   const rec = frame(env);
-  assert.ok(!rec.texts().some((b) => b.str.includes('boss rush') || b.str.includes('--yolo')));
-  assert.ok(!env.frames.some((f) => env.title.BUTTONS.some((b) => b.id !== 'daily' && f.x === b.x && f.y === b.y)), 'and no frames for them');
-  const rush = env.title.BUTTONS[0];
+  assert.ok(hasText(rec, 'boss rush') && hasText(rec, '--yolo'), 'both are on the title, locked');
+  assert.ok(!env.frames.some((f) => env.title.BUTTONS.some((b) => b.id !== 'daily' && f.x === b.x && f.y === b.y)), 'but no solid frames for them');
+  assert.deepEqual(dashBoxes(env).map((d) => d.id), ['rush', 'yolo'], 'dashes instead');
+  const [rush, yolo] = env.title.BUTTONS;
   run(env, 1, H.makeInput({ confirm: true, aimX: rush.x + 4, aimY: rush.y + 4 }));
   assert.deepEqual(env.visits, [['play', { runOpts: { yolo: false } }]]);
+  env.title.enter(env.game, {});
+  unlocked(env);
+  run(env, 1, H.makeInput({ confirm: true, aimX: yolo.x + 4, aimY: yolo.y + 4 }));
+  assert.deepEqual(env.visits.pop(), ['play', { runOpts: { yolo: false } }], 'Enter over --yolo starts too, and toggles nothing');
+  assert.equal(env.title.yolo, false);
 });
 
 test('title: mode buttons ignore a click in the first 0.3 s', () => {
@@ -581,7 +618,7 @@ function assertCardLayout(env, rec, what) {
   const card = env.frames.find((f) => f.x === CARD.x && f.w === CARD.w);
   assert.ok(card, what + ': the card is drawn');
   assert.equal(card.y + card.h, CARD.bottom, what + ': the card ends on its row');
-  assert.ok(card.y === CARD.topBare || card.y === CARD.topWithHat, what + ': card top ' + card.y);
+  assert.equal(card.y, CARD.top, what + ': the card always starts on the hat row (the picker, or its locked line)');
   assert.deepEqual(rec.outside(), [], what + ': text and sprites on screen');
   for (const f of env.frames) assert.ok(f.x >= 0 && f.y >= 0 && f.x + f.w <= 320 && f.y + f.h <= 180, what + ': frame on screen ' + JSON.stringify(f));
   for (const b of rec.boxes) {
@@ -589,7 +626,7 @@ function assertCardLayout(env, rec, what) {
     if (b.kind === 'sprite' && !b.name.startsWith('title_chev')) continue;
     assert.ok(b.x > card.x && b.x + b.w < card.x + card.w && b.y > card.y && b.y + b.h < card.y + card.h, what + ': ' + (b.str || b.name) + ' is inside the card');
   }
-  const buttons = env.frames.filter((f) => f !== card);
+  const buttons = env.frames.filter((f) => f !== card).concat(dashBoxes(env)); // a locked button's dashes count as its frame
   for (let i = 0; i < buttons.length; i++) {
     for (let j = i + 1; j < buttons.length; j++) {
       const a = buttons[i];
@@ -618,9 +655,9 @@ test('title: base layout: logo, then the card with START, the legend, the chips,
     return b;
   };
   assert.equal(row('vs').y, 27);
-  // The card: x 34-286, bottom row at 171; 106 at the top while there is no hat row.
+  // The card: x 34-286, bottom row at 171; 96 at the top, with or without a hat (a locked line stands in for the picker).
   const card = env.frames.find((f) => f.x === 34 && f.w === 252);
-  assert.deepEqual(H.plain(card), { x: 34, y: 106, w: 252, h: 66, color: env.CB.Pal.C.greyDark });
+  assert.deepEqual(H.plain(card), { x: 34, y: 96, w: 252, h: 76, color: env.CB.Pal.C.greyDark });
   // START: a 104 x 13 framed box in clawd orange, centred, its label centred in it.
   const start = env.title.START_BOX;
   assert.deepEqual(H.plain(start), { x: 108, y: 109, w: 104, h: 13 });
@@ -671,9 +708,9 @@ test('title: base layout: logo, then the card with START, the legend, the chips,
   assert.equal(clawdBox.h, 24);
   assert.equal(clawdBox.x, 144);
   assert.equal(clawdBox.y, 70);
-  assert.ok(!rec.sprites().some((b) => b.name === 'title_chev'), 'no hats, no hat row');
+  assert.ok(!rec.sprites().some((b) => b.name === 'title_chev'), 'no hats, no picker');
   assert.ok(!rec.texts().some((b) => b.str.startsWith('Best on desktop')), 'no small-screen note');
-  assert.ok(!rec.texts().some((b) => b.y >= 94 && b.y < 109), 'nothing between Clawd and START when there is no hat row');
+  assert.deepEqual(rec.texts().filter((b) => b.y >= 94 && b.y < 109).map((b) => b.str), ['hats: beat a boss to earn one'], 'between Clawd and START there is only the locked hat line');
   assertCardLayout(env, rec, 'base');
 });
 
@@ -791,7 +828,7 @@ test('title: the small-screen note is gone: a coarse pointer or a narrow window 
     unlocked(env);
     const rec = frame(env);
     assert.ok(!hasText(rec, 'Best on desktop with keyboard + mouse'), how);
-    assert.ok(!rec.texts().some((b) => b.y >= 94 && b.y < 109), how + ': nothing between Clawd and START');
+    assert.deepEqual(rec.texts().filter((b) => b.y >= 94 && b.y < 109).map((b) => b.str), ['hats: beat a boss to earn one'], how + ': only the locked hat line between Clawd and START');
   }
 });
 
@@ -901,6 +938,9 @@ const DESCRIPTIONS = {
   yolo: '3 hearts, faster bullets: bragging rights',
 };
 const LEGEND = ['WASD move · Mouse aim · Click shoot', 'Space dash · E /compact · Esc pause'];
+const LOCKED_DESC = 'win a full run to unlock';
+const HATS_LOCKED = 'hats: beat a boss to earn one';
+const DISCLAIMER_TEXT = 'Fan game. Not affiliated with Anthropic.';
 
 test('title: hovering a mode button shows what it does under the row, in place of the controls; moving off brings the controls back', () => {
   const env = setup({ files: DAILY_FILES });
@@ -952,13 +992,19 @@ test('title: the controls legend is dimmer than the buttons and the description;
   assert.equal(colour(DESCRIPTIONS.rush), C.pale, 'a description is a notch brighter than the legend it replaces');
 });
 
-test('title: a description needs its button: the daily one needs Daily, the others the modes unlock', () => {
+// Changed with the locked teasers: a locked boss rush or --yolo is on the title, so hovering it describes what unlocks it (it used to show nothing).
+test('title: a description needs its button: the daily one needs Daily; a locked rush or --yolo says what unlocks it instead of what it does', () => {
   const env = setup({ files: DAILY_FILES });
   stubUnlocks(env, { modes: false });
   unlocked(env);
   const mid = (b) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
-  env.aim = mid(env.title.BUTTONS[0]); // where boss rush would be
-  assert.ok(!hasText(frame(env), DESCRIPTIONS.rush), 'locked: no button, no description');
+  env.aim = mid(env.title.BUTTONS[0]); // boss rush, locked
+  let rec = frame(env);
+  assert.ok(!hasText(rec, DESCRIPTIONS.rush), 'locked: not what it does');
+  assert.ok(hasText(rec, LOCKED_DESC), 'but what unlocks it');
+  env.aim = mid(env.title.BUTTONS[1]); // --yolo, locked
+  rec = frame(env);
+  assert.ok(!hasText(rec, DESCRIPTIONS.yolo) && hasText(rec, LOCKED_DESC));
   env.aim = mid(env.title.BUTTONS[2]);
   assert.ok(hasText(frame(env), DESCRIPTIONS.daily), 'the daily build is always there');
   env.CB.Daily = undefined;
@@ -1068,7 +1114,8 @@ test('title: pad labels name their button in front: Y boss rush, B daily build, 
   assert.ok(hasText(frame(env), 'X --yolo: ON'));
 });
 
-test('title: with the modes locked only the daily build shows, centred in the middle column; without Daily the row is empty', () => {
+// Changed with the locked teasers: the locked row holds all three buttons (it used to be the daily build alone, and nothing without Daily).
+test('title: with the modes locked the row still holds all three buttons: the daily build centred, the locked two flanking it; without Daily the middle is empty', () => {
   const env = setup({ files: DAILY_FILES });
   stubUnlocks(env, { modes: false });
   unlocked(env);
@@ -1076,10 +1123,16 @@ test('title: with the modes locked only the daily build shows, centred in the mi
   const d = textOf(rec, 'daily build');
   assert.ok(d);
   assert.ok(Math.abs(d.x + d.w / 2 - 160) <= 1, 'centred');
-  assert.equal(env.frames.filter((f) => f.y === 125).length, 1, 'one button frame in the row');
+  assert.equal(env.frames.filter((f) => f.y === 125).length, 1, 'one framed button in the row: the daily build');
+  assert.deepEqual(dashBoxes(env).map((b) => b.id), ['rush', 'yolo'], 'and two dashed ones');
+  const [rush, yolo] = [textOf(rec, 'boss rush'), textOf(rec, '--yolo')];
+  assert.ok(rush && yolo, 'the same row as the unlocked layout');
+  assert.ok(rush.x + rush.w < d.x && d.x + d.w < yolo.x, 'rush | daily | yolo');
+  assert.deepEqual([rush.y, d.y, yolo.y], [127, 127, 127]);
   env.CB.Daily = undefined;
   const bare = frame(env);
-  assert.ok(!bare.texts().some((b) => b.y >= 123 && b.y < 137));
+  assert.ok(!hasText(bare, 'daily build'));
+  assert.deepEqual(bare.texts().filter((b) => b.y >= 123 && b.y < 137).map((b) => b.str).sort(), ['--yolo', 'boss rush'], 'only the two locked ones are left');
   assert.equal(env.frames.filter((f) => f.y === 125).length, 0);
 });
 
@@ -1159,6 +1212,364 @@ test('title: a toast takes the disclaimer row with its ink band under the card a
   for (const f of env.frames) assert.ok(f.y + f.h <= band.y, 'no frame reaches the band: ' + JSON.stringify(f));
   for (const c of env.CB.Screens.toggles.boxes(160)) assert.ok(c.y + c.h <= band.y, 'the chips sit above the band');
   assertCardLayout(env, rec, 'toast');
+});
+
+// ---- locked teasers ---------------------------------------------------------------------------------------------------------------
+// What is still locked shows on the title as a teaser: a dim "beat a boss" line where the hat picker will be, and dashed boss rush and --yolo
+// buttons that only say what unlocks them. Nothing here may change the title once everything is unlocked.
+
+const LOCKED_LABEL = { kbm: { rush: 'boss rush', yolo: '--yolo' }, touch: { rush: 'boss rush', yolo: '--yolo' }, pad: { rush: 'Y boss rush', yolo: 'X --yolo' } };
+const LOCKED_TOAST = { rush: 'win a full run to unlock boss rush', yolo: 'win a full run to unlock --yolo' };
+const tapAt = (x, y, over) => H.makeInput(Object.assign({ confirm: true, tap: true, aimX: x, aimY: y }, over || {}));
+const midOf = (b) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
+
+// A title with nothing unlocked, past its input lock, on `dev`.
+function lockedTitle(dev, files) {
+  const env = setup({ files: files || DAILY_FILES });
+  env.unl = stubUnlocks(env, {});
+  env.CB.Prompts.setDevice(dev || 'kbm');
+  unlocked(env);
+  return env;
+}
+
+// One frame with the colour every string was drawn in: { rec, colour(str) }.
+function drawn(env, t) {
+  const seen = [];
+  const text = env.r.text;
+  env.r.text = function (str, x, y, o) {
+    seen.push([String(str), (o && o.color) || null]);
+    return text.apply(this, arguments);
+  };
+  const rec = frame(env, t);
+  env.r.text = text;
+  return { rec, colour: (s) => { const c = seen.find((q) => q[0] === s); return c ? c[1] : undefined; } };
+}
+
+// The 1 px greyDark rects of one locked button, as a Set of "x,y" pixels.
+function dashPixels(env, b) {
+  const px = new Set();
+  for (const q of env.rects) {
+    if (q.color !== env.CB.Pal.C.greyDark || !(q.w === 1 || q.h === 1) || !inBox(q, b)) continue;
+    for (let x = q.x; x < q.x + q.w; x++) for (let y = q.y; y < q.y + q.h; y++) px.add(x + ',' + y);
+  }
+  return px;
+}
+
+test('title (locked hats): with no hat unlocked the picker is one dim, non-interactive line in its row, and the card is the same', () => {
+  const env = lockedTitle('kbm');
+  const { rec, colour } = drawn(env);
+  const line = textOf(rec, HATS_LOCKED);
+  assert.ok(line, 'the teaser line');
+  assert.equal(line.y, 99, 'in the hat row');
+  assert.ok(Math.abs(line.x + line.w / 2 - 160) <= 1, 'centred');
+  assert.ok(line.w <= 240, 'fits the card: ' + line.w + ' px');
+  assert.equal(colour(HATS_LOCKED), env.CB.Pal.C.grey);
+  assert.ok(!rec.sprites().some((b) => b.name === 'title_chev'), 'no arrows');
+  for (const k of ['Q', 'E', 'LB', 'RB', 'no hat']) assert.ok(!hasText(rec, k), 'no ' + k);
+  assert.equal(rec.texts().filter((b) => b.y >= 94 && b.y < 109).length, 1, 'and nothing else in the row');
+  assert.deepEqual(rec.overlaps(), []);
+  assertCardLayout(env, rec, 'locked hats');
+  // The same line on every device: it names no key.
+  for (const dev of ['touch', 'pad']) {
+    env.CB.Prompts.setDevice(dev);
+    const r2 = frame(env);
+    assert.ok(hasText(r2, HATS_LOCKED) && !r2.sprites().some((b) => b.name === 'title_chev'), dev);
+    assertCardLayout(env, r2, 'locked hats ' + dev);
+  }
+});
+
+test('title (locked hats): the line takes no taps and no keys: a tap on it starts the game like any empty spot, Q and E wear nothing', () => {
+  const env = lockedTitle('kbm');
+  const { HAT_BOX, HAT_LEFT, HAT_RIGHT } = env.title;
+  for (const b of [HAT_LEFT, HAT_RIGHT]) {
+    env.title.enter(env.game, {});
+    unlocked(env);
+    run(env, 1, tapAt(b.x + 5, b.y + 5));
+    assert.deepEqual(env.visits.pop(), ['play', { runOpts: { yolo: false } }], 'a tap on the line starts');
+  }
+  run(env, 1, H.makeInput({ quit: true }));
+  run(env, 1, H.makeInput({ compact: true }));
+  assert.deepEqual(env.unl.cycles, [], 'nothing was worn or cycled');
+  assert.equal(env.visits.length, 0, 'Q and E start nothing either');
+  // Hovering it does not light anything.
+  env.aim = midOf(HAT_BOX);
+  const { rec } = drawn(env);
+  assert.ok(!rec.sprites().some((b) => b.name === 'title_chev'));
+});
+
+test('title (locked hats): the picker takes the line\'s place as soon as a hat is earned, and the line is gone', () => {
+  const env = lockedTitle('kbm');
+  assert.ok(hasText(frame(env), HATS_LOCKED));
+  env.unl.hats = ['loopcap'];
+  env.unl.worn = 'loopcap';
+  const rec = frame(env);
+  assert.ok(!hasText(rec, HATS_LOCKED), 'the teaser is gone');
+  assert.ok(hasText(rec, 'Loop cap'));
+  assert.equal(rec.sprites().filter((b) => b.name === 'title_chev').length, 2);
+  assertCardLayout(env, rec, 'earned a hat');
+});
+
+for (const dev of ['kbm', 'touch', 'pad']) {
+  test('title (locked modes, ' + dev + '): boss rush and --yolo are dashed greyDark buttons in the unlocked layout; the hit boxes are exactly the dashed frames', () => {
+    const env = lockedTitle(dev);
+    const { rec, colour } = drawn(env);
+    const C = env.CB.Pal.C;
+    const [rush, yolo, daily] = env.title.BUTTONS;
+    const dashes = dashBoxes(env);
+    assert.deepEqual(dashes.map((d) => d.id), ['rush', 'yolo']);
+    for (const [b, id] of [[rush, 'rush'], [yolo, 'yolo']]) {
+      const d = dashes.find((x) => x.id === id);
+      assert.deepEqual({ x: d.x, y: d.y, w: d.w, h: d.h }, { x: b.x, y: b.y, w: b.w, h: b.h }, id + ': the dashes span exactly the hit box');
+      assert.ok(!frameAt(env, b), id + ': no solid frame, the shape says locked');
+      assert.ok(!env.frames.some((f) => f.x === b.x - 1 && f.y === b.y - 1 && f.w === b.w + 2), id + ': no doubled frame');
+      // Dashes: 1 px thick, broken, the four corners lit, and the pattern mirrors left to right and top to bottom.
+      const px = dashPixels(env, b);
+      const perimeter = 2 * (b.w + b.h) - 4;
+      assert.ok(px.size >= perimeter * 0.35 && px.size <= perimeter * 0.65, id + ': about half of the border is lit: ' + px.size + ' of ' + perimeter);
+      for (const [cx, cy] of [[b.x, b.y], [b.x + b.w - 1, b.y], [b.x, b.y + b.h - 1], [b.x + b.w - 1, b.y + b.h - 1]]) assert.ok(px.has(cx + ',' + cy), id + ': corner ' + cx + ',' + cy);
+      for (const p of px) {
+        const [x, y] = p.split(',').map(Number);
+        assert.ok(px.has((2 * b.x + b.w - 1 - x) + ',' + y) && px.has(x + ',' + (2 * b.y + b.h - 1 - y)), id + ': mirrored ' + p);
+      }
+      let gaps = 0;
+      for (let x = b.x; x < b.x + b.w; x++) if (!px.has(x + ',' + b.y)) gaps++;
+      assert.ok(gaps >= 10, id + ': the top edge has real gaps: ' + gaps);
+      // The label: greyDark, centred in the box, on the same row as the unlocked labels.
+      const label = textOf(rec, LOCKED_LABEL[dev][id]);
+      assert.ok(label, dev + ': ' + LOCKED_LABEL[dev][id]);
+      assert.ok(inBox(label, b) && Math.abs(label.x + label.w / 2 - (b.x + b.w / 2)) <= 1, id + ': label centred inside');
+      assert.equal(label.y, b.y + 2);
+      assert.equal(colour(LOCKED_LABEL[dev][id]), C.greyDark, id + ': greyDark text');
+    }
+    // The daily build next to them is the ordinary framed button.
+    assert.ok(frameAt(env, daily), 'daily: framed');
+    assert.equal(colour(dev === 'pad' ? 'B daily build' : 'daily build'), C.pale);
+    assert.ok(rush.x + rush.w < daily.x && daily.x + daily.w < yolo.x);
+    assert.ok(!rec.texts().some((b) => /unlock|ON|off/.test(b.str) && b.y === 127), 'no state text on the locked buttons');
+    assertCardLayout(env, rec, 'locked modes ' + dev);
+  });
+}
+
+test('title (locked modes): hovering a locked button (mouse) shows "win a full run to unlock" in place of the controls and never lights it', () => {
+  const env = lockedTitle('kbm');
+  const C = env.CB.Pal.C;
+  let { rec } = drawn(env);
+  for (const l of LEGEND) assert.ok(hasText(rec, l), 'the legend by default');
+  for (const id of ['rush', 'yolo']) {
+    const b = env.title.BUTTONS.find((x) => x.id === id);
+    env.aim = midOf(b);
+    const d = drawn(env);
+    rec = d.rec;
+    const desc = textOf(rec, LOCKED_DESC);
+    assert.ok(desc, id + ': description');
+    assert.ok(Math.abs(desc.x + desc.w / 2 - 160) <= 1 && desc.w <= 240, 'centred, fits the card');
+    assert.equal(desc.y, 143, 'in the legend\'s place');
+    assert.ok(desc.y > b.y + b.h && desc.y + desc.h < 158, 'under the row and above the chips');
+    assert.equal(d.colour(LOCKED_DESC), C.pale);
+    for (const l of LEGEND) assert.ok(!hasText(rec, l), id + ' hides the legend');
+    assert.ok(!Object.values(DESCRIPTIONS).some((t) => hasText(rec, t)), 'and says nothing about what the mode does');
+    assert.equal(d.colour(LOCKED_LABEL.kbm[id]), C.greyDark, 'still greyDark under the pointer');
+    assert.ok(env.rects.filter((q) => inBox(q, b) && (q.w === 1 || q.h === 1)).every((q) => q.color === C.greyDark), 'and the dashes stay dark');
+    assert.ok(!env.frames.some((f) => f.color === C.gold && inBox(f, b)), 'no gold frame');
+    assertCardLayout(env, rec, 'hover locked ' + id);
+    // The box edge is exclusive on the right and at the bottom.
+    env.aim = { x: b.x + b.w, y: b.y + 3 };
+    assert.ok(!hasText(frame(env), LOCKED_DESC), id + ': one past the right edge');
+    env.aim = { x: b.x + 3, y: b.y + b.h };
+    assert.ok(!hasText(frame(env), LOCKED_DESC), id + ': one past the bottom edge');
+    env.aim = { x: b.x, y: b.y };
+    assert.ok(hasText(frame(env), LOCKED_DESC), id + ': the corner pixel is inside');
+  }
+  env.aim = midOf(env.title.BUTTONS[2]);
+  rec = frame(env);
+  assert.ok(hasText(rec, DESCRIPTIONS.daily) && !hasText(rec, LOCKED_DESC), 'the daily build still describes itself');
+  env.aim = { x: 160, y: 40 };
+  rec = frame(env);
+  for (const l of LEGEND) assert.ok(hasText(rec, l), 'moving off brings the controls back');
+  assert.ok(!hasText(rec, LOCKED_DESC));
+  // A finger and a pad have no hover.
+  for (const dev of ['touch', 'pad']) {
+    env.CB.Prompts.setDevice(dev);
+    env.aim = midOf(env.title.BUTTONS[0]);
+    assert.ok(!hasText(frame(env), LOCKED_DESC), dev + ': no hover');
+  }
+});
+
+test('title (locked modes): a pad focus on a locked button shows the same description', () => {
+  const env = lockedTitle('pad');
+  for (const id of ['rush', 'yolo']) {
+    env.title.focus = id;
+    const rec = frame(env);
+    assert.ok(hasText(rec, LOCKED_DESC), id);
+    assert.ok(!Object.values(DESCRIPTIONS).some((t) => hasText(rec, t)));
+  }
+});
+
+for (const dev of ['kbm', 'touch']) {
+  test('title (locked modes, ' + dev + '): a click or tap on a locked button toasts what unlocks it, plays uiSelect, and neither starts nor toggles', () => {
+    for (const id of ['rush', 'yolo']) {
+      const env = lockedTitle(dev);
+      const b = env.title.BUTTONS.find((x) => x.id === id);
+      env.aim = { x: 5, y: 5 }; // the mouse is not over it when it is drawn: only the poke may put the description up
+      run(env, 1, tapAt(b.x + 3, b.y + 3));
+      assert.equal(env.visits.length, 0, id + ': does not start');
+      assert.equal(env.title.yolo, false, id + ': does not toggle');
+      assert.deepEqual(env.sounds, ['uiSelect']);
+      assert.deepEqual(env.unl.calls, [], 'and unlocks nothing');
+      const d = drawn(env);
+      const toast = textOf(d.rec, LOCKED_TOAST[id]);
+      assert.ok(toast, id + ': the toast');
+      assert.equal(toast.y, 173, 'on the footer row');
+      assert.equal(d.colour(LOCKED_TOAST[id]), env.CB.Pal.C.gold);
+      assert.ok(!hasText(d.rec, DISCLAIMER_TEXT), 'it takes the disclaimer\'s row');
+      assert.ok(hasText(d.rec, LOCKED_DESC), 'the description stays up for a finger');
+      assert.ok(!hasText(d.rec, '--yolo: ON') && !hasText(d.rec, '--yolo: off'));
+      assertCardLayout(env, d.rec, dev + ' toast ' + id);
+      // The toast goes after 1.6 s, the description after 2 s; the controls and the disclaimer come back.
+      run(env, 90);
+      assert.ok(hasText(frame(env), LOCKED_TOAST[id]), 'still up at 1.5 s');
+      run(env, 10);
+      let rec = frame(env);
+      assert.ok(!hasText(rec, LOCKED_TOAST[id]) && hasText(rec, DISCLAIMER_TEXT), 'gone by 1.7 s');
+      assert.ok(hasText(rec, LOCKED_DESC), 'the description is still up');
+      run(env, 30);
+      rec = frame(env);
+      assert.ok(!hasText(rec, LOCKED_DESC), 'gone after 2 s');
+      assert.ok(hasText(rec, env.title.say('legend1', LEGEND[0])) && hasText(rec, env.title.say('legend2', LEGEND[1])), 'the controls are back');
+    }
+  });
+
+  test('title (locked modes, ' + dev + '): every pixel of a locked button\'s box is a poke; one pixel beyond it is an ordinary tap that starts', () => {
+    const env = lockedTitle(dev);
+    for (const id of ['rush', 'yolo']) {
+      const b = env.title.BUTTONS.find((x) => x.id === id);
+      for (const [x, y] of [[b.x, b.y], [b.x + b.w - 0.6, b.y], [b.x, b.y + b.h - 0.6], [b.x + b.w - 0.6, b.y + b.h - 0.6], [b.x + b.w / 2, b.y + b.h / 2]]) {
+        run(env, 1, tapAt(x, y));
+        assert.equal(env.visits.length, 0, id + ' at ' + x + ',' + y);
+      }
+      for (const [x, y] of [[b.x - 0.6, b.y + 5], [b.x + b.w, b.y + 5], [b.x + 10, b.y - 0.6], [b.x + 10, b.y + b.h]]) {
+        env.title.enter(env.game, {});
+        unlocked(env);
+        run(env, 1, tapAt(x, y));
+        assert.deepEqual(env.visits.pop(), ['play', { runOpts: { yolo: false } }], id + ' just outside at ' + x + ',' + y);
+      }
+      env.title.enter(env.game, {});
+      unlocked(env);
+    }
+  });
+}
+
+test('title (locked modes): the 0.3 s input lock holds for a tap on a locked button too, and a second poke swaps the toast', () => {
+  const env = setup({ files: DAILY_FILES });
+  stubUnlocks(env, {});
+  const [rush, yolo] = env.title.BUTTONS;
+  run(env, 5, tapAt(rush.x + 3, rush.y + 3));
+  assert.equal(env.visits.length, 0);
+  assert.deepEqual(env.sounds, []);
+  assert.ok(!hasText(frame(env), LOCKED_TOAST.rush), 'no toast inside the lock');
+  unlocked(env);
+  run(env, 1, tapAt(rush.x + 3, rush.y + 3));
+  run(env, 1, tapAt(yolo.x + 3, yolo.y + 3));
+  const rec = frame(env);
+  assert.ok(hasText(rec, LOCKED_TOAST.yolo) && !hasText(rec, LOCKED_TOAST.rush), 'one toast at a time');
+  assert.deepEqual(env.sounds, ['uiSelect', 'uiSelect']);
+});
+
+test('title (locked modes, pad): Y and X toast what unlocks them with uiSelect and start or toggle nothing; A and B still start', () => {
+  const env = lockedTitle('pad');
+  run(env, 1, H.makeInput({ pad: { y: true } }));
+  assert.equal(env.visits.length, 0);
+  assert.deepEqual(env.sounds, ['uiSelect']);
+  let rec = frame(env);
+  assert.ok(hasText(rec, LOCKED_TOAST.rush) && hasText(rec, LOCKED_DESC), 'Y: toast and description');
+  run(env, 1, H.makeInput({ pad: { x: true } }));
+  assert.equal(env.title.yolo, false);
+  assert.deepEqual(env.sounds, ['uiSelect', 'uiSelect']);
+  rec = frame(env);
+  assert.ok(hasText(rec, LOCKED_TOAST.yolo) && !hasText(rec, LOCKED_TOAST.rush), 'X: its own toast');
+  assert.ok(!hasText(rec, 'X --yolo: ON'));
+  assertCardLayout(env, rec, 'pad toast');
+  run(env, 130);
+  rec = frame(env);
+  assert.ok(!hasText(rec, LOCKED_DESC) && !hasText(rec, LOCKED_TOAST.yolo), 'both fade');
+  run(env, 1, H.makeInput({ pad: { a: true }, confirm: true }));
+  assert.deepEqual(env.visits.pop(), ['play', { runOpts: { yolo: false } }], 'A starts a normal run');
+  env.title.enter(env.game, {});
+  unlocked(env);
+  run(env, 1, H.makeInput({ pad: { b: true }, compact: true }));
+  assert.ok(env.visits.pop()[1].runOpts.daily, 'B starts the daily build');
+  // They wait out the input lock like every other pad edge.
+  const early = setup({ files: DAILY_FILES });
+  stubUnlocks(early, {});
+  early.CB.Prompts.setDevice('pad');
+  run(early, 5, H.makeInput({ pad: { y: true } }));
+  assert.deepEqual(early.sounds, []);
+  assert.ok(!hasText(frame(early), LOCKED_TOAST.rush));
+});
+
+test('title (unlocked): with the modes and a hat unlocked there are no teasers at all, and every control does what it always did', () => {
+  const env = setup({ files: DAILY_FILES });
+  const s = stubUnlocks(env, { modes: true, hats: ['loopcap', 'halo'], worn: 'loopcap' });
+  unlocked(env);
+  const [rush, yolo] = env.title.BUTTONS;
+  for (const aim of [{ x: 5, y: 5 }, midOf(rush), midOf(yolo)]) {
+    env.aim = aim;
+    const rec = frame(env);
+    assert.deepEqual(dashBoxes(env), [], 'no dashes');
+    assert.ok(!hasText(rec, HATS_LOCKED) && !hasText(rec, LOCKED_DESC), 'no teaser text');
+    assert.ok(frameAt(env, rush) && frameAt(env, yolo), 'framed buttons');
+    assert.ok(hasText(rec, 'boss rush') && hasText(rec, '--yolo: off'), 'their ordinary labels');
+    assert.equal(rec.sprites().filter((b) => b.name === 'title_chev').length, 2, 'the picker');
+    assertCardLayout(env, rec, 'unlocked');
+  }
+  // A tap on --yolo toggles it with no toast; on boss rush it starts; on the hat row it wears a hat.
+  run(env, 1, tapAt(yolo.x + 3, yolo.y + 3));
+  assert.equal(env.title.yolo, true);
+  assert.ok(!frame(env).texts().some((b) => /unlock/.test(b.str)), 'no toast');
+  run(env, 1, tapAt(rush.x + 3, rush.y + 3));
+  assert.deepEqual(env.visits.pop(), ['play', { runOpts: { bossRush: true, yolo: true } }]);
+  env.title.enter(env.game, {});
+  unlocked(env);
+  run(env, 1, tapAt(160, 100));
+  assert.deepEqual(s.cycles, [1]);
+  assert.equal(env.visits.length, 0);
+  env.CB.Prompts.setDevice('pad');
+  run(env, 1, H.makeInput({ pad: { y: true } }));
+  assert.deepEqual(env.visits.pop(), ['play', { runOpts: { bossRush: true, yolo: false } }]);
+  assert.ok(env.sounds.every((n) => n === 'uiSelect'));
+});
+
+test('title (locked): the teasers follow the unlocks live, with the real Unlocks: a hat and the modes replace them without leaving the scene', () => {
+  const mem = {};
+  const store = { getItem: (k) => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v); } };
+  const env = setup({ files: [...DAILY_FILES, 'src/game/unlocks.js'], localStorage: store });
+  unlocked(env);
+  let rec = frame(env);
+  assert.ok(hasText(rec, HATS_LOCKED) && hasText(rec, 'boss rush') && hasText(rec, '--yolo'));
+  assert.equal(dashBoxes(env).length, 2);
+  assert.ok(env.CB.Unlocks.unlock('loopcap'));
+  rec = frame(env);
+  assert.ok(!hasText(rec, HATS_LOCKED), 'the hat line is gone');
+  assert.equal(rec.sprites().filter((b) => b.name === 'title_chev').length, 2, 'the picker is there');
+  assert.equal(dashBoxes(env).length, 2, 'the modes are still locked');
+  assert.ok(env.CB.Unlocks.unlock('modes'));
+  rec = frame(env);
+  assert.equal(dashBoxes(env).length, 0);
+  assert.ok(hasText(rec, 'boss rush') && hasText(rec, '--yolo: off'));
+  assert.ok(frameAt(env, env.title.BUTTONS[0]) && frameAt(env, env.title.BUTTONS[1]));
+  run(env, 1, tapAt(env.title.BUTTONS[0].x + 3, env.title.BUTTONS[0].y + 3));
+  assert.deepEqual(env.visits.pop(), ['play', { runOpts: { bossRush: true, yolo: false } }]);
+});
+
+test('title (locked): with no Unlocks module at all the teasers show and nothing breaks', () => {
+  const env = setup({ files: DAILY_FILES });
+  env.CB.Unlocks = undefined;
+  unlocked(env);
+  const rec = frame(env);
+  assert.ok(hasText(rec, HATS_LOCKED) && hasText(rec, 'boss rush'));
+  assert.doesNotThrow(() => run(env, 1, tapAt(env.title.BUTTONS[0].x + 3, env.title.BUTTONS[0].y + 3)));
+  assert.ok(hasText(frame(env), LOCKED_TOAST.rush));
+  assert.equal(env.visits.length, 0);
 });
 
 // ---- background, cursor, wanderers ----------------------------------------------------------------------------------------------

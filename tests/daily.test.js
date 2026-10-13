@@ -556,7 +556,14 @@ for (const dev of DEVICES) {
     assert.ok(B && inBox(label, B), 'the label sits inside its hit box');
     assert.ok(env.frames.some((f) => f.x === B.x && f.y === B.y && f.w === B.w && f.h === B.h), 'and the drawn frame is exactly the hit box');
     assert.ok(Math.abs(centreX(B) - 160) <= 1, 'the hit box is centred too');
-    assert.ok(!rec.texts().some((b) => /boss rush|yolo/.test(b.str)), 'rush and yolo are still locked');
+    // Changed with the locked teasers: rush and yolo are on the row, locked (their labels, no ON/off), flanking the daily build; they used to be absent.
+    const rush = boxOf(rec, RUSH[dev]);
+    const yolo = boxOf(rec, dev === 'pad' ? 'X --yolo' : '--yolo');
+    assert.ok(rush && yolo, 'rush and yolo are still locked, but shown');
+    assert.ok(!rec.texts().some((b) => /--yolo: (ON|off)/.test(b.str)), 'a locked --yolo has no state');
+    assert.ok(rush.x + rush.w < label.x && label.x + label.w < yolo.x, 'rush | daily | yolo');
+    assert.equal(rush.y, label.y);
+    assert.equal(yolo.y, label.y);
     assert.deepEqual(rec.outside().map((b) => b.str || b.name), []);
     assert.deepEqual(rec.overlaps().map((p) => p[0].str + ' / ' + p[1].str), []);
   });

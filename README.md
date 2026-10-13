@@ -203,9 +203,9 @@ Picking a patch makes Clawd celebrate.
 
 ### Unlocks and modes
 
-- **Hats:** beating a boss earns its hat (Loop cap, Slime hat, Branch beanie, Shades). A full clear earns the Crown. Pick your hat on the title screen with Q/E (or LB/RB), or click or tap the arrows either side of its name.
-- **Boss Rush:** after your first victory, play all four bosses back to back.
-- **`--yolo`:** a flag run with 3 base hearts, faster bullets and shorter mercy frames. Winning it earns a special hat.
+- **Hats:** beating a boss earns its hat (Loop cap, Slime hat, Branch beanie, Shades). A full clear earns the Crown. Pick your hat on the title screen with Q/E (or LB/RB), or click or tap the arrows either side of its name. Until you have one, the title shows a dim `hats: beat a boss to earn one` line in the picker's place.
+- **Boss Rush:** after your first victory, play all four bosses back to back. Until then it sits on the title as a locked, dashed button: hover it (or click, tap, or press Y) and it says `win a full run to unlock`.
+- **`--yolo`:** a flag run with 3 base hearts, faster bullets and shorter mercy frames. Winning it earns a special hat. It is a locked, dashed button on the title until the same win unlocks it.
 - **Secrets:** there are a couple for people who type the right things on the title screen.
 
 ### Daily build and sharing

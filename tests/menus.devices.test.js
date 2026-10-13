@@ -356,6 +356,61 @@ for (const dev of DEVICES) {
   });
 }
 
+// Nothing unlocked: the teasers read the same on every device (the pad's keys name the locked buttons), and the layout holds with the whole game loaded.
+for (const dev of DEVICES) {
+  test('title (' + dev + '): with nothing unlocked the locked hat line and the locked rush and --yolo read for the device, and the layout holds', () => {
+    const env = setup(dev);
+    enterTitle(env, { modes: false, hats: [] });
+    const want = TITLE_TEXT[dev];
+    const rush = dev === 'pad' ? 'Y boss rush' : 'boss rush';
+    const yolo = dev === 'pad' ? 'X --yolo' : '--yolo';
+    const rec = titleFrame(env, 0.3);
+    const hats = box(rec, 'hats: beat a boss to earn one');
+    assert.ok(hats, dev + ': the locked hat line');
+    assert.equal(hats.y, 99);
+    assert.ok(Math.abs(centreX(hats) - 160) <= 1);
+    assert.ok(hats.x > env.title.CARD.x && hats.x + hats.w < env.title.CARD.x + env.title.CARD.w, 'inside the card');
+    for (const k of ['Q', 'E', 'LB', 'RB', 'no hat']) assert.ok(!box(rec, k), dev + ' shows no ' + k);
+    assert.equal(rec.sprites().filter((b) => b.name === 'title_chev').length, 0, 'no arrows');
+    const [rushB, yoloB, dailyB] = env.title.BUTTONS;
+    for (const [label, b] of [[rush, rushB], [yolo, yoloB]]) {
+      const t = box(rec, label);
+      assert.ok(t && inBox(t, b), dev + ': ' + label + ' inside its box');
+      assert.equal(t.y, 127);
+      assert.equal(env.texts.find((x) => x[0] === label)[1].color, env.C.greyDark, label + ' is greyDark');
+      assert.ok(!env.frames.some((f) => f.x === b.x && f.y === b.y && f.w === b.w && f.h === b.h), label + ': dashed, not framed');
+    }
+    assert.ok(box(rec, want.daily) && inBox(box(rec, want.daily), dailyB), 'the daily build is the ordinary button');
+    assert.ok(env.frames.some((f) => f.x === dailyB.x && f.y === dailyB.y && f.w === dailyB.w && f.h === dailyB.h));
+    assert.ok(box(rec, want.start) && box(rec, want.l1) && box(rec, want.l2), 'start and the controls are as ever');
+    want.chips.forEach((c) => assert.ok(box(rec, c), dev + ': ' + c));
+    assertLayout(rec, 'locked title ' + dev);
+    // Locked, the card is the card it is with a hat.
+    const card = env.frames.find((f) => f.x === env.title.CARD.x && f.w === env.title.CARD.w);
+    assert.equal(card.y, 96);
+    assert.equal(card.y + card.h, env.title.CARD.bottom);
+  });
+}
+
+// A tap on a locked button on a phone: no hover to show the description, so the tap puts it up with the toast.
+test('title (touch): a tap on a locked button toasts and describes it; a tap beside it starts', () => {
+  const env = setup('touch');
+  enterTitle(env, { modes: false });
+  const [rush, yolo] = env.title.BUTTONS;
+  tick(env, 1, tapInput(rush.x + 5, rush.y + 5));
+  tick(env, 1, tapInput(yolo.x + 5, yolo.y + 5));
+  assert.equal(env.visits.length, 0);
+  assert.equal(env.fullscreen, 0, 'a poke is not a start: no fullscreen request');
+  assert.equal(env.title.yolo, false);
+  const rec = titleFrame(env);
+  assert.ok(box(rec, 'win a full run to unlock --yolo'));
+  assert.ok(box(rec, 'win a full run to unlock'));
+  assertLayout(rec, 'touch poke');
+  tick(env, 1, tapInput(160, 60));
+  assert.equal(env.visits.length, 1);
+  assert.equal(env.fullscreen, 1);
+});
+
 test('title: the mouse hover highlight on the mode buttons is for the keyboard and mouse only', () => {
   const env = setup('kbm');
   enterTitle(env, { modes: true });
@@ -480,17 +535,23 @@ test('title (pad): Y starts boss rush, X toggles --yolo; both need the modes unl
   tick(env, 1, padInput('y'));
   assert.deepEqual(env.visits, [['play', { runOpts: { bossRush: true, yolo: true } }]]);
 
+  // Changed with the locked teasers: Y and X while locked are no longer silent no-ops; each plays uiSelect and toasts what unlocks it. The buttons
+  // are on the title now, locked (they used to be absent).
   const locked = setup('pad');
   enterTitle(locked, { modes: false });
   locked.sounds.length = 0;
   tick(locked, 1, padInput('y'));
+  assert.deepEqual(locked.sounds, ['uiSelect']);
+  assert.ok(box(titleFrame(locked), 'win a full run to unlock boss rush'), 'Y: the toast');
   tick(locked, 1, padInput('x'));
   assert.equal(locked.visits.length, 0);
   assert.equal(locked.title.yolo, false);
-  assert.deepEqual(locked.sounds, []);
-  titleFrame(locked);
-  assert.ok(!locked.rec.texts().some((b) => /boss rush|yolo/.test(b.str)), 'the buttons are not there while locked');
-  assert.ok(locked.rec.texts().some((b) => b.str === 'B daily build'), 'the daily build is');
+  assert.deepEqual(locked.sounds, ['uiSelect', 'uiSelect']);
+  const rec = titleFrame(locked);
+  assert.ok(box(rec, 'win a full run to unlock --yolo'), 'X: the toast');
+  assert.ok(box(rec, 'Y boss rush') && box(rec, 'X --yolo'), 'the buttons are there, locked, with their pad keys');
+  assert.ok(!rec.texts().some((b) => /X --yolo: (ON|off)/.test(b.str)), 'and say nothing about --yolo being on or off');
+  assert.ok(rec.texts().some((b) => b.str === 'B daily build'), 'the daily build is too');
 });
 
 test('title (pad): LB wears the previous hat and RB (which arrives as compact) the next; Back and B are not hat buttons', () => {

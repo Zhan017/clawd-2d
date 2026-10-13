@@ -1,5 +1,6 @@
 // Title scene: dimmed arena, wavy logo, Clawd zapping wandering bugs, and one menu card under them: hat picker, START button, daily build / boss rush /
-// --yolo buttons, a description-or-controls line and the sound / music / calm chips; typed secrets.
+// --yolo buttons, a description-or-controls line and the sound / music / calm chips; typed secrets. What is still locked shows as a teaser: a dim
+// "beat a boss" line where the hat picker will be, dashed boss rush and --yolo buttons that only say what unlocks them.
 // Prompts follow the device in use (keyboard + mouse, touch or pad); a click or tap and the pad's buttons all work here.
 (function (CB) {
   'use strict';
@@ -24,11 +25,11 @@
   const CLAWD = { x: 160, y: 82, scale: 2 };
   const HAT_DY_FALLBACK = -7; // per scale: where an ordinary hat is centred above Clawd's centre (Player.HAT_DY says the same)
   const LOGO_GAP = 1; // extra logo letter spacing, in logo pixels (3 screen px each), on top of the font's own gap
-  // The card behind the menu. Its bottom edge is fixed; the top is 96 when the hat picker sits in its first row, else 106 (the START button is 3 px under the edge). Rows are 3 px apart, 2 px of padding at the card's top and bottom.
-  const CARD = Object.freeze({ x: 34, w: 252, bottom: 172, topWithHat: 96, topBare: 106 });
+  // The card behind the menu. Its edges are fixed: the hat row (the picker, or its locked teaser) is always the first row, and the START button is 3 px under it. Rows are 3 px apart, 2 px of padding at the card's top and bottom.
+  const CARD = Object.freeze({ x: 34, w: 252, top: 96, bottom: 172 });
   const START_BOX = Object.freeze({ x: 108, y: Y.start, w: 104, h: 13 });
-  // The mode buttons share the chips' grid (columns 45, 123 and 201, 74 x 11): the daily build is always there, centred; boss rush and --yolo flank it once the modes are unlocked.
-  // Fixed numbers: nothing may measure text at load time. Each box is exactly the frame that is drawn.
+  // The mode buttons share the chips' grid (columns 45, 123 and 201, 74 x 11): the daily build is always there, centred; boss rush and --yolo flank it, dashed and locked until the modes are unlocked.
+  // Fixed numbers: nothing may measure text at load time. Each box is exactly the frame that is drawn (for a locked one, the bounding box of its dashes).
   const BUTTONS = Object.freeze([
     Object.freeze({ id: 'rush', x: 45, y: Y.modes, w: 74, h: 11 }),
     Object.freeze({ id: 'yolo', x: 201, y: Y.modes, w: 74, h: 11 }),
@@ -37,7 +38,7 @@
   const [RUSH_BOX, YOLO_BOX, DAILY_BOX] = BUTTONS;
   // --yolo ON doubles its frame outward (drawButton), so while it is on the pointer hits the outer frame too: a click on the ring toggles it off instead of falling through to "start".
   const YOLO_ON_BOX = Object.freeze({ id: 'yolo', x: YOLO_BOX.x - 1, y: YOLO_BOX.y - 1, w: YOLO_BOX.w + 2, h: YOLO_BOX.h + 2 });
-  // The hat row (only there when a hat is unlocked): "Q ‹ name › E", the name centred in a fixed field so the chevrons stay put as it changes.
+  // The hat row (a picker only when a hat is unlocked; until then it is a dim line that takes no taps): "Q ‹ name › E", the name centred in a fixed field so the chevrons stay put as it changes.
   // A tap on its left part (the Q and the left chevron) wears the previous hat, anywhere else on it the next one.
   const HAT_BOX = Object.freeze({ x: 76, y: Y.hat - 2, w: 168, h: 11 });
   const HAT_LEFT = Object.freeze({ x: 76, y: Y.hat - 2, w: 46, h: 11 });
@@ -47,13 +48,18 @@
   const CHEV_W = 4;
   const HINT_GAP = 4; // px between a chevron and its key hint
   const PULSE_HZ = 1.5; // the START frame swaps between two shades this many times a second (0.75 Hz round trip)
-  const DESC_T = 2; // seconds a tapped --yolo keeps its description up (a touch has no hover)
+  const DESC_T = 2; // seconds a tapped --yolo (or a poked locked button) keeps its description up (a touch has no hover)
+  const TOAST_LOCKED_T = 1.6; // "win a full run to unlock ..."
   // What each mode button does, shown under the row while one is hovered or focused.
   const DESC = Object.freeze({
     rush: 'all four bosses back to back',
     daily: 'one seeded run a day, the same for everyone',
     yolo: '3 hearts, faster bullets: bragging rights',
   });
+  // The locked teasers: the hat row's stand-in line, the description of a locked mode button and the name its toast ends with.
+  const HATS_LOCKED = 'hats: beat a boss to earn one';
+  const DESC_LOCKED = 'win a full run to unlock';
+  const LOCKED_NAME = Object.freeze({ rush: 'boss rush', yolo: '--yolo' });
   const DISCLAIMER = 'Fan game. Not affiliated with Anthropic.';
   const SECRETS = {
     konami: { id: 'halo', text: 'cheat codes are just undocumented features' },
@@ -148,6 +154,28 @@
   }
 
   const inside = (b, x, y) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
+
+  // A dashed frame, 1 px thick: 2 px lit, 2 px dark along each side, counted in from both ends so the corners are always lit and the sides mirror. It spans exactly `b`.
+  function dashFrame(r, b, color) {
+    const lit = (i, n) => Math.min(i, n - 1 - i) % 4 < 2;
+    const runs = (n, draw) => {
+      for (let i = 0; i < n; i++) {
+        if (!lit(i, n)) continue;
+        let j = i + 1;
+        while (j < n && lit(j, n)) j++;
+        draw(i, j - i);
+        i = j; // j is dark (or the end); the loop's own step skips it
+      }
+    };
+    runs(b.w, (i, len) => {
+      r.rect(b.x + i, b.y, len, 1, color);
+      r.rect(b.x + i, b.y + b.h - 1, len, 1, color);
+    });
+    runs(b.h, (i, len) => {
+      r.rect(b.x, b.y + i, 1, len, color);
+      r.rect(b.x + b.w - 1, b.y + i, 1, len, color);
+    });
+  }
 
   CB.Scenes.title = {
     BUTTONS,
@@ -279,12 +307,29 @@
       sfx('uiSelect');
     },
 
-    // The box a pointer hits for a mode button: exactly its outermost drawn frame (BUTTONS holds the single frame; --yolo ON draws one more around it).
+    // The box a pointer hits for a mode button: exactly its outermost drawn frame (BUTTONS holds the single frame; --yolo ON draws one more around it, but a locked --yolo never does).
     hit(b) {
-      return b === YOLO_BOX && this.yolo ? YOLO_ON_BOX : b;
+      return b === YOLO_BOX && this.yolo && modesOn() ? YOLO_ON_BOX : b;
     },
 
-    // Enter, or a click or tap that missed the chips and the hat row (so it is on a button or anywhere else), past the input lock. Returns true when it started a run.
+    // The locked mode button under (x, y), or null (all of them are unlocked, or the point is elsewhere).
+    lockedAt(x, y) {
+      if (modesOn()) return null;
+      if (inside(RUSH_BOX, x, y)) return 'rush';
+      if (inside(YOLO_BOX, x, y)) return 'yolo';
+      return null;
+    },
+
+    // A click, tap or pad press on a locked button: nothing starts and nothing toggles, it says what unlocks it. The description stays up as well (a finger or a pad has no hover).
+    pokeLocked(id) {
+      this.setToast('win a full run to unlock ' + LOCKED_NAME[id], TOAST_LOCKED_T);
+      this.descId = id;
+      this.descT = DESC_T;
+      sfx('uiSelect');
+    },
+
+    // Enter, or a click or tap that missed the chips, the hat row and the locked buttons (so it is on a button or anywhere else), past the input lock. Returns true when it started a run.
+    // Enter over a locked button is "anywhere else": the pointer's last spot must never keep a keyboard player from starting.
     confirm(x, y) {
       if (dailyOn() && inside(DAILY_BOX, x, y)) {
         this.startDaily();
@@ -304,7 +349,7 @@
       return true;
     },
 
-    // A mouse click or a touch tap at (x, y), past the input lock: a chip, the hat arrows and row, a mode button, else start (the START button is just a part of "else"). True when it started a run.
+    // A mouse click or a touch tap at (x, y), past the input lock: a chip, the hat arrows and row, a locked mode button, a mode button, else start (the START button is just a part of "else"). True when it started a run.
     tapAt(x, y) {
       const T = chips();
       const id = T ? T.hit(x, y, Y.status) : null;
@@ -314,6 +359,11 @@
       }
       if (hatIds().length > 0 && inside(HAT_BOX, x, y) && CB.Unlocks && typeof CB.Unlocks.cycleHat === 'function') {
         this.cycleHat(inside(HAT_LEFT, x, y) ? -1 : 1);
+        return false;
+      }
+      const locked = this.lockedAt(x, y);
+      if (locked) {
+        this.pokeLocked(locked);
         return false;
       }
       return this.confirm(x, y);
@@ -363,7 +413,7 @@
         this.animate(dt);
         return;
       }
-      // Pad: A starts (its confirm edge is not also read as a click at the old pointer spot), B the daily build, Y boss rush, X --yolo.
+      // Pad: A starts (its confirm edge is not also read as a click at the old pointer spot), B the daily build, Y boss rush, X --yolo (locked, Y and X say what unlocks them).
       if (pad) {
         if (pad.a) {
           this.start({ yolo: this.yolo });
@@ -379,7 +429,8 @@
             return;
           }
           if (pad.x) this.toggleYolo();
-        }
+        } else if (pad.y) this.pokeLocked('rush');
+        else if (pad.x) this.pokeLocked('yolo');
       }
       // A click or tap hits the chips, the hat row and the mode buttons; Enter (a confirm with no pointer press) reads the pointer's last spot as it always has.
       if (inp.tap) {
@@ -556,6 +607,13 @@
       r.text(label, b.x + b.w / 2, b.y + 2, { color: on ? C.red : lit ? C.white : C.pale, align: 'center' });
     },
 
+    // A locked mode button: its box, filled like the others, but framed with dashes and written in greyDark, so the shape and not only the colour says "locked". It never lights up; the description line and the toast do the talking.
+    drawLocked(r, b, label) {
+      r.alpha(0.6, () => r.rect(b.x, b.y, b.w, b.h, C.ink));
+      dashFrame(r, b, C.greyDark);
+      r.text(label, b.x + b.w / 2, b.y + 2, { color: C.greyDark, align: 'center' });
+    },
+
     // The START button: clawd orange, its frame swapping between two shades through Comfort.blink (steady in calm mode); the text never blinks.
     drawStart(r, t, lit) {
       const b = START_BOX;
@@ -587,14 +645,14 @@
       }
     },
 
-    // The mode button whose description is up: the one under the mouse, else the pad's focus, else the --yolo a tap or X just flipped. Null when it is not on the title.
+    // The mode button whose description is up: the one under the mouse, else the pad's focus, else the --yolo a tap or X just flipped (or the locked button a tap or press just poked). Null when it is not on the title.
     describedId(aim, mouse) {
       let id = null;
       if (mouse) for (const b of BUTTONS) if (inside(this.hit(b), aim.x, aim.y)) id = b.id;
       if (!id && typeof this.focus === 'string') id = this.focus;
       if (!id && this.descT > 0) id = this.descId;
       if (!Object.prototype.hasOwnProperty.call(DESC, id)) return null;
-      return id === 'daily' ? (dailyOn() ? id : null) : modesOn() ? id : null;
+      return id === 'daily' && !dailyOn() ? null : id; // a locked rush or yolo is on the title too: its description says what unlocks it
     },
 
     drawText(r, t, aim) {
@@ -606,11 +664,11 @@
       const hover = (b) => mouse && inside(b, aim.x, aim.y);
 
       // The card the menu sits on, so it does not fight the arena's code lines.
-      const top = hats ? CARD.topWithHat : CARD.topBare;
-      r.alpha(0.7, () => r.rect(CARD.x, top, CARD.w, CARD.bottom - top, C.ink));
-      r.frame(CARD.x, top, CARD.w, CARD.bottom - top, C.greyDark);
+      r.alpha(0.7, () => r.rect(CARD.x, CARD.top, CARD.w, CARD.bottom - CARD.top, C.ink));
+      r.frame(CARD.x, CARD.top, CARD.w, CARD.bottom - CARD.top, C.greyDark);
 
       if (hats) this.drawHatRow(r, aim, mouse);
+      else r.text(HATS_LOCKED, mid, Y.hat, { color: C.grey, align: 'center' }); // the picker's place until a hat is earned: dim, no arrows, no keys, no taps
       this.drawStart(r, t, hover(START_BOX));
 
       const tag = (key, label) => (pad ? key + ' ' + label : label); // the pad's buttons are named in front of the label
@@ -618,11 +676,14 @@
       if (modesOn()) {
         this.drawButton(r, RUSH_BOX, tag('Y', 'boss rush'), { lit: hover(RUSH_BOX) || this.focus === 'rush' });
         this.drawButton(r, YOLO_BOX, tag('X', '--yolo: ' + (this.yolo ? 'ON' : 'off')), { lit: hover(this.hit(YOLO_BOX)) || this.focus === 'yolo', on: this.yolo });
+      } else {
+        this.drawLocked(r, RUSH_BOX, tag('Y', LOCKED_NAME.rush));
+        this.drawLocked(r, YOLO_BOX, tag('X', LOCKED_NAME.yolo));
       }
 
       // One line under the buttons: what the button under the pointer does, else the controls, dimmer so they sit behind the buttons.
       const id = this.describedId(aim, mouse);
-      if (id) r.text(DESC[id], mid, Y.desc, { color: C.pale, align: 'center' }); // centred on the two legend rows it stands in for
+      if (id) r.text(id !== 'daily' && !modesOn() ? DESC_LOCKED : DESC[id], mid, Y.desc, { color: C.pale, align: 'center' }); // centred on the two legend rows it stands in for
       else {
         r.text(this.say('legend1', 'WASD move · Mouse aim · Click shoot'), mid, Y.line1, { color: C.grey, align: 'center' });
         r.text(this.say('legend2', 'Space dash · E /compact · Esc pause'), mid, Y.line2, { color: C.grey, align: 'center' });
