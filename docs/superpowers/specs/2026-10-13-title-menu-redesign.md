@@ -30,7 +30,7 @@ The logo, Clawd, the wandering bugs and sparks, the secret codes, and every inpu
 
 **1. A menu card.** A dark translucent panel behind the menu: `C.ink` at about 0.7 alpha, with a 1 px `greyDark` frame. Suggested box x 34–286, y 97–171. The menu stops fighting the arena background.
 
-**2. The hat picker.** Shown only when a hat is unlocked, in the top row of the card: `‹ Crown ›` (or `‹ none ›`).
+**2. The hat picker.** Shown only when a hat is unlocked, in the top row of the card: `‹ Crown ›` (or `‹ no hat ›`).
 
 - The key hint goes on the outside: kbm `Q ‹ Crown › E`, pad `LB ‹ Crown › RB`, touch `‹ Crown ›`.
 - Mouse and touch: the left arrow cycles back, the right arrow and the name cycle forward.

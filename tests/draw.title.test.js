@@ -262,7 +262,7 @@ test('title: typing konami and ultrathink with moveX edges never changes the hat
   assert.deepEqual(s.calls, ['halo', 'rainbow']);
 });
 
-test('title: the hat picker names the worn hat (or none) between two chevrons, and the hat is drawn above Clawd at scale 2', () => {
+test('title: the hat picker names the worn hat (or no hat) between two chevrons, and the hat is drawn above Clawd at scale 2', () => {
   const env = setup();
   const s = stubUnlocks(env, { hats: ['branch', 'halo'], worn: 'branch' });
   const calls = [];
@@ -302,7 +302,7 @@ test('title: the hat picker names the worn hat (or none) between two chevrons, a
   s.worn = null;
   calls.length = 0;
   const bare = frame(env);
-  assert.ok(hasText(bare, 'none'));
+  assert.ok(hasText(bare, 'no hat'));
   assert.ok(!hasText(bare, 'Branch beanie'));
   assert.equal(calls.length, 0, 'no hat, no drawHat');
   assert.deepEqual(bare.overlaps(), []);
@@ -332,7 +332,7 @@ test('title: the chevrons stay put as the hat name changes, and every hat name f
   unlocked(env);
   const chevX = () => env.rec.sprites().filter((b) => b.name === 'title_chev').map((b) => b.x).sort((a, b) => a - b);
   const seen = new Set();
-  for (const h of [...HAT_NAMES, { id: null, name: 'none' }]) {
+  for (const h of [...HAT_NAMES, { id: null, name: 'no hat' }]) {
     s.worn = h.id;
     const rec = frame(env);
     const label = textOf(rec, h.name);
@@ -425,6 +425,58 @@ test('title: boss rush with yolo off, a normal start after toggling twice, and a
   unlocked(env);
   run(env, 1, at(rush.x, rush.y));
   assert.deepEqual(env.visits.pop(), ['play', { runOpts: { bossRush: true, yolo: false } }]);
+});
+
+test('title: with --yolo ON the doubled outer frame is part of its hit box: the whole ring toggles it off, one pixel beyond it starts a normal run', () => {
+  const env = setup();
+  stubUnlocks(env, { modes: true });
+  unlocked(env);
+  const yolo = env.title.BUTTONS.find((b) => b.id === 'yolo');
+  const at = (x, y) => H.makeInput({ confirm: true, aimX: x, aimY: y });
+  env.title.yolo = true;
+  frame(env);
+  const outer = env.frames.find((f) => f.x === yolo.x - 1 && f.y === yolo.y - 1 && f.w === yolo.w + 2 && f.h === yolo.h + 2);
+  assert.ok(outer, 'the second frame is drawn one pixel outside the single-frame box');
+  // Every pixel of the outer ring (its corners and the middle of each side).
+  const ring = [[outer.x, outer.y], [outer.x + outer.w - 1, outer.y], [outer.x, outer.y + outer.h - 1], [outer.x + outer.w - 1, outer.y + outer.h - 1],
+    [outer.x, yolo.y + 5], [outer.x + outer.w - 1, yolo.y + 5], [yolo.x + 30, outer.y], [yolo.x + 30, outer.y + outer.h - 1]];
+  for (const [px, py] of ring) {
+    env.title.yolo = true;
+    run(env, 1, at(px + 0.4, py + 0.4));
+    assert.equal(env.visits.length, 0, 'ring pixel ' + px + ',' + py + ' does not start a run');
+    assert.equal(env.title.yolo, false, 'ring pixel ' + px + ',' + py + ' toggles --yolo off');
+  }
+  // One pixel past the ring on each side starts a normal run (the screen's "click anywhere" still works).
+  for (const [px, py] of [[outer.x - 1, yolo.y + 5], [outer.x + outer.w, yolo.y + 5], [yolo.x + 30, outer.y - 1], [yolo.x + 30, outer.y + outer.h]]) {
+    env.title.enter(env.game, {});
+    unlocked(env);
+    env.title.yolo = true;
+    run(env, 1, at(px + 0.4, py + 0.4));
+    assert.deepEqual(env.visits.pop(), ['play', { runOpts: { yolo: true } }], 'click at ' + px + ',' + py + ' starts');
+  }
+  // With --yolo off the box is the single frame again: the pixel that was the ring starts a run.
+  env.title.enter(env.game, {});
+  unlocked(env);
+  run(env, 1, at(yolo.x - 0.6, yolo.y + 5));
+  assert.deepEqual(env.visits.pop(), ['play', { runOpts: { yolo: false } }]);
+});
+
+test('title: hovering the --yolo ON ring lights the button and shows its description', () => {
+  const env = setup();
+  stubUnlocks(env, { modes: true });
+  unlocked(env);
+  const yolo = env.title.BUTTONS.find((b) => b.id === 'yolo');
+  env.title.yolo = true;
+  env.aim = { x: yolo.x - 0.6, y: yolo.y + 5 };
+  run(env, 1, H.makeInput({ aimX: env.aim.x, aimY: env.aim.y }));
+  const rec = frame(env);
+  assert.ok(hasText(rec, DESCRIPTIONS.yolo), 'the description is up');
+  const C = env.CB.Pal.C;
+  assert.ok(env.frames.filter((f) => f.x === yolo.x || f.x === yolo.x - 1).every((f) => f.color === C.hurt), 'both frames are lit (hurt red) under the pointer');
+  env.aim = { x: yolo.x - 1.6, y: yolo.y + 5 }; // one pixel past the ring
+  run(env, 1, H.makeInput({ aimX: env.aim.x, aimY: env.aim.y }));
+  frame(env);
+  assert.ok(env.frames.filter((f) => f.x === yolo.x || f.x === yolo.x - 1).every((f) => f.color === C.red), 'not lit past the ring');
 });
 
 test('title: hit-testing uses input.aimX/aimY, not the cursor the game reports', () => {
@@ -1282,7 +1334,7 @@ test('title: real Unlocks and Secrets end to end: konami adds the halo, E wears 
   assert.ok(!frame(env).sprites().some((b) => b.name === 'title_chev'), 'no hat, no hat row');
   run(env, KONAMI.length, (i) => H.makeInput({ keys: [KONAMI[i]] }));
   assert.ok(env.CB.Unlocks.has('halo'));
-  assert.ok(hasText(frame(env), 'none'));
+  assert.ok(hasText(frame(env), 'no hat'));
   run(env, 1, H.makeInput({ compact: true }));
   assert.equal(env.CB.Unlocks.hat(), 'halo');
   assert.ok(hasText(frame(env), 'Halo'));

@@ -35,6 +35,8 @@
     Object.freeze({ id: 'daily', x: 123, y: Y.modes, w: 74, h: 11 }),
   ]);
   const [RUSH_BOX, YOLO_BOX, DAILY_BOX] = BUTTONS;
+  // --yolo ON doubles its frame outward (drawButton), so while it is on the pointer hits the outer frame too: a click on the ring toggles it off instead of falling through to "start".
+  const YOLO_ON_BOX = Object.freeze({ id: 'yolo', x: YOLO_BOX.x - 1, y: YOLO_BOX.y - 1, w: YOLO_BOX.w + 2, h: YOLO_BOX.h + 2 });
   // The hat row (only there when a hat is unlocked): "Q ‹ name › E", the name centred in a fixed field so the chevrons stay put as it changes.
   // A tap on its left part (the Q and the left chevron) wears the previous hat, anywhere else on it the next one.
   const HAT_BOX = Object.freeze({ x: 76, y: Y.hat - 2, w: 168, h: 11 });
@@ -277,6 +279,11 @@
       sfx('uiSelect');
     },
 
+    // The box a pointer hits for a mode button: exactly its outermost drawn frame (BUTTONS holds the single frame; --yolo ON draws one more around it).
+    hit(b) {
+      return b === YOLO_BOX && this.yolo ? YOLO_ON_BOX : b;
+    },
+
     // Enter, or a click or tap that missed the chips and the hat row (so it is on a button or anywhere else), past the input lock. Returns true when it started a run.
     confirm(x, y) {
       if (dailyOn() && inside(DAILY_BOX, x, y)) {
@@ -288,7 +295,7 @@
           this.start({ bossRush: true, yolo: this.yolo });
           return true;
         }
-        if (inside(YOLO_BOX, x, y)) {
+        if (inside(this.hit(YOLO_BOX), x, y)) {
           this.toggleYolo();
           return false;
         }
@@ -545,7 +552,7 @@
       const frame = on ? (lit ? C.hurt : C.red) : lit ? C.gold : C.grey;
       r.alpha(0.6, () => r.rect(b.x, b.y, b.w, b.h, C.ink));
       r.frame(b.x, b.y, b.w, b.h, frame);
-      if (on) r.frame(b.x - 1, b.y - 1, b.w + 2, b.h + 2, frame); // the second frame sits just outside the hit box, in the gap between buttons
+      if (on) r.frame(b.x - 1, b.y - 1, b.w + 2, b.h + 2, frame); // the second frame sits just outside the single-frame box, in the gap between buttons; hit() counts it
       r.text(label, b.x + b.w / 2, b.y + 2, { color: on ? C.red : lit ? C.white : C.pale, align: 'center' });
     },
 
@@ -563,7 +570,7 @@
     drawHatRow(r, aim, mouse) {
       const mid = CB.W / 2;
       const id = wornHat();
-      const name = id ? hatName(id) : 'none';
+      const name = id ? hatName(id) : 'no hat';
       const keys = String(this.say('hat', '(Q/E)')).replace(/[()]/g, '').split('/');
       const hint = keys.length === 2 && keys[0] && keys[1] ? keys : null;
       const lx = mid - HAT_FIELD / 2 - CHEV_GAP - CHEV_W;
@@ -583,7 +590,7 @@
     // The mode button whose description is up: the one under the mouse, else the pad's focus, else the --yolo a tap or X just flipped. Null when it is not on the title.
     describedId(aim, mouse) {
       let id = null;
-      if (mouse) for (const b of BUTTONS) if (inside(b, aim.x, aim.y)) id = b.id;
+      if (mouse) for (const b of BUTTONS) if (inside(this.hit(b), aim.x, aim.y)) id = b.id;
       if (!id && typeof this.focus === 'string') id = this.focus;
       if (!id && this.descT > 0) id = this.descId;
       if (!Object.prototype.hasOwnProperty.call(DESC, id)) return null;
@@ -610,7 +617,7 @@
       if (dailyOn()) this.drawButton(r, DAILY_BOX, tag('B', 'daily build' + (dailyDone() ? ' ✓' : '')), { lit: hover(DAILY_BOX) || this.focus === 'daily' });
       if (modesOn()) {
         this.drawButton(r, RUSH_BOX, tag('Y', 'boss rush'), { lit: hover(RUSH_BOX) || this.focus === 'rush' });
-        this.drawButton(r, YOLO_BOX, tag('X', '--yolo: ' + (this.yolo ? 'ON' : 'off')), { lit: hover(YOLO_BOX) || this.focus === 'yolo', on: this.yolo });
+        this.drawButton(r, YOLO_BOX, tag('X', '--yolo: ' + (this.yolo ? 'ON' : 'off')), { lit: hover(this.hit(YOLO_BOX)) || this.focus === 'yolo', on: this.yolo });
       }
 
       // One line under the buttons: what the button under the pointer does, else the controls, dimmer so they sit behind the buttons.
