@@ -306,7 +306,7 @@
 
   // ---- pause --------------------------------------------------------------------------------------------------------------
 
-  const CHIPS_Y = 66; // text row of the chips
+  const CHIPS_Y = 68; // text row of the chips: their frames clear the legend line above by 2 px
   const QUIT_Y = 152; // the 7th patch line ends at 152 and the disclaimer starts at 160
   const QUIT_BOX = Object.freeze({ x: 110, y: 150, w: 100, h: 10 });
 

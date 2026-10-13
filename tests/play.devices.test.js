@@ -235,7 +235,7 @@ test('pause chips: only the chips that exist take the focus (a missing module dr
   assert.equal(custom.boxArgs[custom.boxArgs.length - 1], 70, 'follows the pause screen\'s own CHIPS_Y');
   delete custom.CB.Screens.pause.CHIPS_Y;
   tick(custom, 1, in_({ navX: 1 }));
-  assert.equal(custom.boxArgs[custom.boxArgs.length - 1], 66, 'and falls back to 66');
+  assert.equal(custom.boxArgs[custom.boxArgs.length - 1], 68, 'and falls back to 68');
 });
 
 test('pause chips: the focus starts over every time the pause opens (Esc, Start, or the window losing focus)', () => {

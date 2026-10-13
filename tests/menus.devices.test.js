@@ -729,7 +729,7 @@ for (const dev of DEVICES) {
     row(want.line, 34);
     row(want.l1, 48);
     row(want.l2, 57);
-    want.chips.forEach((s, i) => assert.ok(Math.abs(centreX(row(s, 66)) - (45 + 78 * i + 37)) <= 1, s));
+    want.chips.forEach((s, i) => assert.ok(Math.abs(centreX(row(s, 68)) - (45 + 78 * i + 37)) <= 1, s));
     const quit = row('[ quit to title ]', 152);
     assert.ok(inBox(quit, env.CB.Screens.pause.QUIT_BOX));
     row(DISCLAIMER, 160);
@@ -748,7 +748,7 @@ for (const dev of DEVICES) {
 test('pause: the chips are at CHIPS_Y, the quit box is exported, and the hit helpers agree with what is drawn', () => {
   const env = setup('touch');
   const P = env.CB.Screens.pause;
-  assert.equal(P.CHIPS_Y, 66);
+  assert.equal(P.CHIPS_Y, 68);
   assert.deepEqual(H.plain(P.QUIT_BOX), { x: 110, y: 150, w: 100, h: 10 });
   assert.equal(typeof P.draw, 'function');
   const run = mkRun(env.CB, { state: 'wave' });

@@ -12,7 +12,7 @@
   const TOAST_Y = 171; // top of the toast text; its band (y 169-180) clears the victory prompt at y 160-166
   const BUBBLE_STATES = { wave: true, waveBreak: true, boss: true }; // states without a centred card, where Clawd may 'think'
   const POINTER_STATES = { patchPick: true, dead: true, victory: true }; // screens driven by a pointer (and paused): a mouse cursor, or taps
-  const PAUSE_CHIPS_Y = 66; // where the pause screen's sound/music/calm chips sit when screens.js does not say
+  const PAUSE_CHIPS_Y = 68; // where the pause screen's sound/music/calm chips sit when screens.js does not say
   const OVERLAY = {
     stageIntro: 'stageIntro', wave: 'waveBanner', waveBreak: 'waveBanner', bossWarn: 'bossWarn',
     bossDead: 'bossDead', patchPick: 'patchPick', dead: 'gameOver', victory: 'victory',

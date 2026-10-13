@@ -573,10 +573,10 @@ test('pause: the Rev 3 layout table, with every patch owned', () => {
   assert.equal(T('Space dash · E /compact (meter full)').y, 57);
   // The status line is now three chips, each its own text on row 66 and centred in its fixed box (x 45 / 123 / 201, 74 wide).
   [['M sound: on', 45], ['N music: on', 123], ['V calm: off', 201]].forEach(([s, x]) => {
-    assert.equal(T(s).y, 66, s);
+    assert.equal(T(s).y, 68, s);
     assert.ok(Math.abs(centreX(T(s)) - (x + 37)) <= 1, s + ' is centred in its chip');
   });
-  assert.equal(CB.Screens.pause.CHIPS_Y, 66);
+  assert.equal(CB.Screens.pause.CHIPS_Y, 68);
   assert.equal(T('patches').y, 82);
   const lines = ['Spread Shot ×2', 'Rapid Fire ×1', 'Pierce ×2', 'Heavy Bolts ×1', 'Extra Heart ×2', 'Quick Dash ×1', 'Ricochet ×1'];
   lines.forEach((s, i) => assert.equal(T(s).y, 91 + 9 * i, s));
@@ -637,7 +637,7 @@ test('pause: sound, music and calm chips show only for the modules that exist, i
   CB.Audio = { isMuted: () => false };
   assert.deepEqual(status(), ['M sound: on']);
   const rec = draw(env, 'pause', run, 0);
-  assert.equal(box(rec, 'M sound: on').y, 66);
+  assert.equal(box(rec, 'M sound: on').y, 68);
   assert.equal(overlapsOf(rec.texts()).length, 0);
 });
 

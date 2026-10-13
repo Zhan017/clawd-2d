@@ -4,7 +4,7 @@ A top-down pixel boss rush. You play as Clawd and shoot your way through four so
 
 Fan game. Not affiliated with Anthropic.
 
-It runs in the browser on desktop (keyboard and mouse) and takes about 10 minutes per run.
+It runs in the browser and takes about 10 minutes per run. Play with a keyboard and mouse, a controller, or a phone or tablet held sideways.
 
 ## Play
 
@@ -12,6 +12,10 @@ It runs in the browser on desktop (keyboard and mouse) and takes about 10 minute
 - **Locally:** `npm run serve`, then open http://127.0.0.1:8137/. You can also double-click `index.html`.
 
 ## Controls
+
+The prompts on screen always match whatever you touched last: keyboard, controller or touch screen.
+
+### Keyboard and mouse
 
 | Input | Action |
 |---|---|
@@ -25,8 +29,40 @@ It runs in the browser on desktop (keyboard and mouse) and takes about 10 minute
 | N | Toggle music |
 | V | Calm mode: no screen shake, softer flashes, slower blinking |
 | 1, 2, 3 or click | Pick a patch after a boss |
+| Arrows or A/D, then Enter | Move the focus and pick (patch pick, pause toggles) |
 | R or click | Retry from the checkpoint (game over screen) |
 | Q | Quit to the title (press twice from pause) |
+
+### Controller
+
+Any standard controller works: Xbox, PlayStation or Switch Pro.
+
+| Button | In a fight | In menus |
+|---|---|---|
+| Left stick or D-pad | Move | Move the focus (patch pick, pause toggles) |
+| Right stick | Aim and auto-fire | |
+| RT | Fire | |
+| A | Dash | Confirm: start, pick, retry, play again |
+| LB or LT | Dash | Title: previous hat (LB) |
+| RB or B | Cast /compact | Title: next hat (RB) |
+| Start | Pause and resume | |
+| Back or Select | Quit (twice from pause, once from game over) | |
+| Y / X | | Title, once unlocked: Boss Rush / toggle `--yolo` |
+
+The controller rumbles when you get hit, at boss phase changes, on /compact and when a boss goes down.
+
+### Touch (phone or tablet, in landscape)
+
+| Touch | Action |
+|---|---|
+| Left thumb, anywhere on the left half | A move stick appears where you land |
+| Right thumb, anywhere on the right half | An aim stick that fires while held; a quick tap fires the way you last aimed |
+| DASH button | Dash |
+| /c button | Cast /compact. It fills with the meter and glows when ready |
+| II (top right of the arena) | Pause |
+| Tap | Everything in menus: start, patches, retry, quit, play again |
+
+Starting a run goes fullscreen where the browser allows it. In portrait the game asks you to turn your phone, and a fight pauses until you do.
 
 ## Features
 
@@ -130,12 +166,19 @@ Picking a patch makes Clawd celebrate.
 - **`--yolo`:** a flag run with 3 base hearts, faster bullets and shorter mercy frames. Winning it earns a special hat.
 - **Secrets:** there are a couple for people who type the right things on the title screen.
 
+### Play your way
+
+- **Three ways to play:** keyboard and mouse, a controller, or touch. Switch at any moment and every prompt switches with you ("Click to start", "Tap to start", "Press A to start").
+- **Stick aim assist:** with a stick or a thumb, the aim gently snaps onto a regular bug within 10° of where you're shooting. It never helps on bosses, so the Heisenbug's decoys stay a puzzle. Mouse aim is never assisted.
+- **Toggles you can tap:** the title and pause screens have sound, music and calm toggles that work by click, tap or controller, so a phone needs no keyboard.
+- **Controller extras:** rumble, a "controller connected" toast, and an automatic pause if the controller disconnects mid-fight.
+
 ### Comfort and robustness
 
-- **Calm mode (V):** turns off screen shake, swaps full-screen flashes for edge glows and slows fast blinking. It's on by default if your system asks for reduced motion.
+- **Calm mode (V):** turns off screen shake and rumble, swaps full-screen flashes for edge glows and slows fast blinking. It's on by default if your system asks for reduced motion.
 - **Scaling:** whole-number pixel scaling with letterboxing fits any window and keeps the pixel art crisp.
 - **Auto-pause:** the game pauses when the tab loses focus.
-- **Crash screen:** if anything ever breaks, a **KERNEL PANIC** screen shows the error. Press R to reload.
+- **Crash screen:** if anything ever breaks, a **KERNEL PANIC** screen shows the error. Press R (or tap) to reload.
 - **No dependencies:** no npm packages, no image or audio files, no build step needed to play.
 
 ## How to play
@@ -151,7 +194,7 @@ Picking a patch makes Clawd celebrate.
 npm test
 ```
 
-This runs about 1,000 headless tests with `node:test`. They include a bot that plays every stage in invincible mode, checks every boss can be beaten, and prints a difficulty report.
+This runs about 1,370 headless tests with `node:test`. They include a bot that plays every stage in invincible mode, checks every boss can be beaten, and prints a difficulty report.
 
 Debug URLs work only on localhost or `file://`, never on a deployed page:
 
@@ -172,7 +215,7 @@ Debug URLs work only on localhost or `file://`, never on a deployed page:
 
 | Command | Output | Used for |
 |---|---|---|
-| `npm run build:site` | `public/`: `index.html` plus exactly the 45 scripts it lists. Tests, docs and tools stay out. | Static hosting (Vercel). |
+| `npm run build:site` | `public/`: `index.html` plus exactly the 49 scripts it lists. Tests, docs and tools stay out. | Static hosting (Vercel). |
 | `npm run build` | `dist/clawd-vs-bugs.html`: every script inlined into one file (one `<script>` per source file, with `sourceURL` comments so stack traces name the real file). | The claude.ai Artifact version. |
 
 ## Deploying (Vercel)
