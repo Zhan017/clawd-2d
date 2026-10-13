@@ -268,7 +268,7 @@ Debug URLs work only on localhost or `file://`, never on a deployed page:
 
 | Command | Output | Used for |
 |---|---|---|
-| `npm run build:site` | `public/`: the page, one content-hashed bundle of all 51 scripts (`game.<hash>.js`, about 120 KB gzipped) with a source map, a service worker for offline play, the app manifest and the images. Tests, docs and tools stay out. | Static hosting (Vercel). |
+| `npm run build:site` | `public/`: the page, one content-hashed bundle of all 52 scripts (`game.<hash>.js`, about 120 KB gzipped) with a source map, a service worker for offline play, the app manifest and the images. Tests, docs and tools stay out. | Static hosting (Vercel). |
 | `npm run build` | `dist/clawd-vs-bugs.html`: every script inlined into one file (one `<script>` per source file, with `sourceURL` comments so stack traces name the real file). | The claude.ai Artifact version. |
 
 ### Deploying (Vercel)

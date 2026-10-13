@@ -478,7 +478,7 @@ test('hints: a hint shows only in the wave and boss states, and waits for them',
   }
 });
 
-test('hints: the clock on a hint stops outside the wave and boss states, and starts again in them', () => {
+test('hints: a hint cut short by the wave break or a death goes back to the front of the queue and starts over, fading in, when the fight resumes', () => {
   const e = env();
   const run = runAt(e.CB, 'wave');
   tick(e, run, 60, [COMPACT_READY]);
@@ -486,13 +486,45 @@ test('hints: the clock on a hint stops outside the wave and boss states, and sta
   assert.ok(Math.abs(t - 59 / 60) < 1e-6, String(t));
   run.state = 'bossDead';
   tick(e, run, 500);
-  assert.equal(e.Hints.current().t, t, 'frozen in the slow-mo');
+  assert.equal(e.Hints.current(), null, 'not left frozen mid-sentence: it is taken off the screen');
+  assert.deepEqual(e.Hints.pending(), ['compact'], 'and waits for the fight to come back');
   const g = renderer(e);
   e.Hints.draw(g.r, 1, run);
   assert.equal(g.log.length, 0, 'and not drawn there');
+  assert.deepEqual(seenList(e), ['compact'], 'seen was marked when it started: the once-only storage is unchanged');
   run.state = 'boss';
-  tick(e, run, 10);
-  assert.ok(e.Hints.current().t > t, 'running again');
+  tick(e, run, 1);
+  assert.equal(shownId(e), 'compact', 'back on show');
+  assert.equal(e.Hints.current().t, 0, 'restarted from the top, not where it left off (' + t + ')');
+  g.clear();
+  e.Hints.draw(g.r, 1, run);
+  assert.equal(g.log.length, 0, 'invisible at t = 0: it fades in');
+  tick(e, run, 1);
+  assert.ok(Math.abs(e.Hints.current().t - 1 / 60) < 1e-6, 'counting again: ' + e.Hints.current().t);
+  g.clear();
+  e.Hints.draw(g.r, 1, run);
+  const s = shot(g.log);
+  assert.ok(s, 'drawn on its first frame back');
+  assert.ok(s.alphas[1] < 0.1 && s.alphas[1] > 0, 'fading in, not popping back at full brightness: ' + s.alphas[1]);
+  assert.deepEqual(e.Hints.pending(), [], 'and no longer waiting');
+  assert.deepEqual(seenList(e), ['compact'], 'still one entry');
+});
+
+test('hints: a hint cut short keeps its place ahead of the ones queued behind it, and a death gets the same treatment', () => {
+  const e = env();
+  const run = runAt(e.CB, 'wave');
+  tick(e, run, 30, [COMPACT_READY, PERFECT]);
+  assert.equal(shownId(e), 'compact');
+  assert.deepEqual(e.Hints.pending(), ['perfect']);
+  run.state = 'dying';
+  tick(e, run, 5);
+  assert.equal(e.Hints.current(), null);
+  assert.deepEqual(e.Hints.pending(), ['compact', 'perfect'], 'the cut-short hint is first in line');
+  run.state = 'wave';
+  tick(e, run, 1);
+  assert.equal(shownId(e), 'compact');
+  assert.ok(e.Hints.current().t < 0.1, 'from the top');
+  assert.deepEqual(e.Hints.pending(), ['perfect']);
 });
 
 test('hints: a new run forgets the queue and the hint on show, never what was seen', () => {
@@ -652,6 +684,43 @@ test('hints: it is fully opaque from 0.25 s to 2.5 s, rises over the first 0.25 
   const f1 = alphaAt(20); // 2.8
   const f2 = alphaAt(5); // 2.88
   assert.ok(f1 < 1 && f1 > f2 && f2 > 0, `falling: ${f1}, ${f2}`);
+});
+
+test('hints: the banner dims to 0.3 while Clawd is under it, and is unchanged anywhere else', () => {
+  const alphasWith = (px, py, over) => {
+    const e = env();
+    const g = renderer(e);
+    const run = runAt(e.CB, 'wave');
+    tick(e, run, 1, [COMPACT_READY]);
+    tick(e, run, 30); // t = 0.5: fully faded in
+    run.world.player.x = px;
+    run.world.player.y = py;
+    if (over) Object.assign(run.world.player, over);
+    g.clear();
+    e.Hints.draw(g.r, 0, run);
+    const s = shot(g.log);
+    assert.ok(s, 'drawn');
+    return { s, box: s.box };
+  };
+  const away = alphasWith(150, 100);
+  assert.ok(Math.abs(away.s.alphas[0] - 0.8) < 1e-9, 'the box at 0.8: ' + away.s.alphas[0]);
+  assert.equal(away.s.alphas[1], 1, 'the frame and text at 1');
+  const under = alphasWith(150, 25);
+  assert.ok(Math.abs(under.s.alphas[0] - 0.8 * 0.3) < 1e-9, 'the box at 0.3 times: ' + under.s.alphas[0]);
+  assert.ok(Math.abs(under.s.alphas[1] - 0.3) < 1e-9, 'the frame and text at 0.3 times: ' + under.s.alphas[1]);
+  assert.deepEqual(under.box, away.box, 'the banner has not moved');
+  const b = away.box;
+  // Her sprite spans about x-8..x+8 and y-9..y+3 (the check allows y-10..y+8), so a body one pixel clear of the box is not dimmed and one pixel in is.
+  for (const [px, py] of [[b.x - 9, 25], [b.x + b.w + 9, 25], [150, b.y - 9], [150, b.y + b.h + 11]]) {
+    const a = alphasWith(px, py);
+    assert.ok(Math.abs(a.s.alphas[1] - 1) < 1e-9, `clear of the banner at (${px}, ${py}): ${a.s.alphas[1]}`);
+  }
+  for (const [px, py] of [[b.x - 7, 25], [b.x + b.w + 7, 25], [150, b.y - 8], [150, b.y + b.h + 9]]) {
+    const a = alphasWith(px, py);
+    assert.ok(Math.abs(a.s.alphas[1] - 0.3) < 1e-9, `her edge under the banner at (${px}, ${py}): ${a.s.alphas[1]}`);
+  }
+  const dead = alphasWith(150, 25, { dead: true });
+  assert.equal(dead.s.alphas[1], 1, 'a dead Clawd does not dim it');
 });
 
 test('hints: the banner has no blink: the same pixels at any t, in calm mode or not', () => {

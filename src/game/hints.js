@@ -128,7 +128,15 @@
         else if (e.type === 'dash') done('dash'); // she already knows how
         else if (e.type === 'compact') done('compact');
       }
-      if (LIVE[run.state] !== true) return;
+      if (LIVE[run.state] !== true) {
+        // A hint cut short by the wave break or a death goes back to the front of the queue and starts over, with its fade-in, when the fight resumes.
+        if (cur) {
+          queue.unshift(cur.id);
+          cur = null;
+          gapT = 0;
+        }
+        return;
+      }
       const w = run.world;
       if (!(w.player && w.player.dead)) {
         if (canWant('dash') && bulletNear(w)) queue.push('dash');
@@ -155,8 +163,12 @@
       const a = clamp(Math.min(cur.t / FADE_IN, (SHOW_T - cur.t) / FADE_OUT), 0, 1);
       if (a <= 0) return;
       const b = Hints.box(text, r);
-      r.alpha(a * BOX_ALPHA, () => r.rect(b.x, b.y, b.w, b.h, C.ink));
-      r.alpha(a, () => {
+      // Clawd under the banner (her sprite spans about y-9..y+3): it dims to 0.3 so she and the bullet she means to dash through show. It fades, never blinks, so calm mode is unaffected.
+      const p = w && w.player;
+      const under = !!p && !p.dead && p.x + 8 >= b.x && p.x - 8 <= b.x + b.w && p.y + 8 >= b.y && p.y - 10 <= b.y + b.h;
+      const k = under ? 0.3 : 1;
+      r.alpha(a * BOX_ALPHA * k, () => r.rect(b.x, b.y, b.w, b.h, C.ink));
+      r.alpha(a * k, () => {
         r.frame(b.x, b.y, b.w, b.h, C.gold);
         r.text(text, b.textX, b.textY, { color: C.gold });
       });
