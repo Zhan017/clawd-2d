@@ -8,3 +8,4 @@ node_modules/
 !assets/**/*.png
 .playwright-mcp/
 public/
+.claude/worktrees/

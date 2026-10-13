@@ -326,6 +326,9 @@
       if (this.toasts.length) this.drawToast(r);
       if (this.paused) {
         this.ui.quitArmT = this.quitArmT;
+        const m = this.game.input.peekAim(); // the mouse lights the chip or quit button under it (screens.js ignores it off kbm)
+        this.ui.aimX = m.x;
+        this.ui.aimY = m.y;
         CB.Screens.pause.draw(r, run, t, this.ui);
       }
       if (device === 'kbm') {
