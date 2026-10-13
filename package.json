@@ -7,7 +7,8 @@
     "test": "node --test",
     "build": "node tools/build-artifact.mjs",
     "serve": "node tools/serve.mjs",
-    "build:site": "node tools/build-site.mjs"
+    "build:site": "node tools/build-site.mjs",
+    "art": "node tools/make-art.mjs"
   },
   "engines": {
     "node": ">=20"
