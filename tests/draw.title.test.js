@@ -945,7 +945,7 @@ test('title: the controls legend is dimmer than the buttons and the description;
   const colour = (str) => colours.find((c) => c[0] === str)[1];
   for (const l of LEGEND) assert.equal(colour(l), C.grey, l);
   assert.equal(colour('boss rush'), C.pale);
-  assert.equal(colour('Fan game. Not affiliated with Anthropic.'), C.greyDark);
+  assert.equal(colour('Fan game. Not affiliated with Anthropic.'), C.grey);
   env.aim = { x: env.title.BUTTONS[0].x + 3, y: env.title.BUTTONS[0].y + 3 };
   colours.length = 0;
   frame(env);

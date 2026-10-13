@@ -637,7 +637,7 @@
       const a = this.toast ? Math.min(1, this.toast.t / TOAST_FADE) : 0;
       r.alpha(FOOTER_ALPHA + (TOAST_ALPHA - FOOTER_ALPHA) * a, () => r.rect(0, CARD.bottom, CB.W, CB.H - CARD.bottom, C.ink));
       if (this.toast) r.alpha(a, () => r.text(this.toast.text, mid, Y.footer, { color: C.gold, align: 'center' }));
-      else r.text(DISCLAIMER, mid, Y.footer, { color: C.greyDark, align: 'center' });
+      else r.text(DISCLAIMER, mid, Y.footer, { color: C.grey, align: 'center' }); // grey, not greyDark: it must stay readable on the band
     },
   };
 })(window.CB);
