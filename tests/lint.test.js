@@ -207,10 +207,10 @@ test('lint: the whole set at once reports nothing', () => {
   assert.deepEqual(all, []);
 });
 
-// ---- more ways to play (+ daily and share): 51 scripts, in an order that lets input.js find its helpers -----------------------------------------------
+// ---- more ways to play (+ daily, share and the first-run hints): 52 scripts, in an order that lets input.js find its helpers -----------------------------------------------
 
-test('lint: index.html lists 51 scripts, with prompts, gamepad and touch before input.js and haptics, daily and share between input.js and audio.js', () => {
-  assert.equal(LIST.length, 51);
+test('lint: index.html lists 52 scripts, with prompts, gamepad and touch before input.js and haptics, daily and share between input.js and audio.js', () => {
+  assert.equal(LIST.length, 52);
   const at = (f) => {
     const i = LIST.indexOf(f);
     assert.ok(i >= 0, f + ' is listed');
@@ -222,6 +222,10 @@ test('lint: index.html lists 51 scripts, with prompts, gamepad and touch before 
     ['src/art/render.js', 'src/core/prompts.js', 'src/core/gamepad.js', 'src/core/touch.js', 'src/core/input.js', 'src/core/haptics.js', 'src/core/daily.js', 'src/core/share.js', 'src/core/audio.js'],
     'the order the plan fixes'
   );
+  // The first-run hints read the palette when they load and CB.Save / CB.Prompts when they run, and the play scene that calls them comes later.
+  const hints = at('src/game/hints.js');
+  for (const dep of ['src/art/palette.js', 'src/art/font.js', 'src/core/prompts.js', 'src/game/unlocks.js']) assert.ok(hints > at(dep), 'hints.js after ' + dep);
+  assert.ok(hints < at('src/scenes/play.js'), 'hints.js before the play scene');
 });
 
 test('lint: input.js and main.js never read a clock or a random source (input timing is event.timeStamp)', () => {

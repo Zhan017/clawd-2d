@@ -336,6 +336,7 @@
         CB.Audio.handleEvents(evs);
         if (CB.Haptics && typeof CB.Haptics.handleEvents === 'function') CB.Haptics.handleEvents(evs, game.input);
         this.celebrate(evs);
+        if (CB.Hints && typeof CB.Hints.onEvents === 'function') CB.Hints.onEvents(evs, run, game); // first-run tips: they read the step, they never change it
       }
       this.recordDaily(); // the step that ended the run
       if (run.attempt !== this.attemptSeen) {
@@ -391,6 +392,7 @@
       r.shaken(sx, sy, () => CB.WorldDraw.draw(r, w, t, { hitboxes, noBubble }));
       if (live && w.flash > 0) this.drawFlash(r, w);
       CB.Screens.hud.draw(r, run, t);
+      if (live && CB.Hints && typeof CB.Hints.draw === 'function') CB.Hints.draw(r, t, run); // under the overlays; a paused frame shows none
       const device = this.device();
       const pointer = this.pointerState();
       if (device === 'touch' && !pointer) this.drawTouch(r, w, t);

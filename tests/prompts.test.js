@@ -12,6 +12,7 @@ const MAX_W = 312; // the text column the screens centre in (320 minus a 4 px ma
 // retryKey is the front of 'R / click: <label>'. legend1 and legend2 were redrawn with the title's menu card (the chips under them now show
 // M, N and V); the rest never changes. hat is still where the title reads its key hints: '(Q/E)' names the Q before and the E after the hat name.
 // The three share keys came later (the victory screen's result button and the toasts that answer it); SHARE_KEYS names them.
+// The four hint keys are the newest (the first-run hints in src/game/hints.js); HINT_KEYS names them. Their kbm text is the spec's table.
 const KBM = {
   start: 'Click to start',
   again: 'Click to play again',
@@ -28,9 +29,14 @@ const KBM = {
   share: '[ copy result ] (C)',
   shareDone: 'result copied ✓',
   shareFail: "couldn't copy",
+  hintDash: 'Space: dash through bullets',
+  hintCompact: 'E: /compact clears the screen',
+  hintPerfect: 'perfect! dashing through bullets charges /compact',
+  hintLook: 'aim at a moth: only what you look at is real',
 };
 
 const SHARE_KEYS = ['share', 'shareDone', 'shareFail'];
+const HINT_KEYS = ['hintDash', 'hintCompact', 'hintPerfect', 'hintLook'];
 
 const TOUCH = {
   start: 'Tap to start',
@@ -48,6 +54,10 @@ const TOUCH = {
   share: '[ share result ]',
   shareDone: 'shared ✓',
   shareFail: "couldn't copy",
+  hintDash: 'DASH: dash through bullets',
+  hintCompact: '/c: /compact clears the screen',
+  hintPerfect: 'perfect! dashing through bullets charges /compact',
+  hintLook: 'aim at a moth: only what you look at is real',
 };
 
 const PAD = {
@@ -66,6 +76,10 @@ const PAD = {
   share: '[ X: copy result ]',
   shareDone: 'result copied ✓',
   shareFail: "couldn't copy",
+  hintDash: 'A: dash through bullets',
+  hintCompact: 'RB: /compact clears the screen',
+  hintPerfect: 'perfect! dashing through bullets charges /compact',
+  hintLook: 'aim at a moth: only what you look at is real',
 };
 
 const KEYS = Object.keys(KBM);
@@ -74,7 +88,7 @@ function load() {
   return H.load(FILES);
 }
 
-test('prompts: the table has exactly the fifteen keys, each with a string for every device', () => {
+test('prompts: the table has exactly the nineteen keys, each with a string for every device', () => {
   const { Prompts } = load();
   assert.deepEqual(Object.keys(Prompts.TABLE).sort(), KEYS.slice().sort());
   for (const k of KEYS) {
@@ -124,6 +138,28 @@ test('prompts: the share strings carry nothing but printable ASCII and the check
   }
   assert.equal(Prompts.text('shareDone', 'touch'), 'shared ✓', 'a phone shared it');
   assert.equal(Prompts.text('shareDone', 'kbm'), 'result copied ✓', 'a computer copied it');
+});
+
+test('prompts: the hint strings are plain ASCII, fit 300 px on every device, and the ones that name a button name the right one', () => {
+  const CB = load();
+  for (const k of HINT_KEYS) {
+    for (const d of DEVICES) {
+      const s = CB.Prompts.text(k, d);
+      assert.equal(s.replace(/[\x20-\x7e]/g, ''), '', `${k}/${d}: printable ASCII only`);
+      assert.ok(CB.Font.measure(s, 1) <= 300, `${k}/${d} is ${CB.Font.measure(s, 1)} px`);
+    }
+  }
+  // The dash and /compact lines lead with the input; the other two read the same on every device.
+  assert.match(CB.Prompts.text('hintDash', 'kbm'), /^Space: /);
+  assert.match(CB.Prompts.text('hintDash', 'touch'), /^DASH: /, 'the on-screen button is labelled DASH');
+  assert.match(CB.Prompts.text('hintDash', 'pad'), /^A: /);
+  assert.match(CB.Prompts.text('hintCompact', 'kbm'), /^E: /);
+  assert.match(CB.Prompts.text('hintCompact', 'touch'), /^\/c: /, 'the on-screen button is labelled /c');
+  assert.match(CB.Prompts.text('hintCompact', 'pad'), /^RB: /);
+  for (const k of ['hintPerfect', 'hintLook']) {
+    assert.equal(CB.Prompts.text(k, 'touch'), CB.Prompts.text(k, 'kbm'), k);
+    assert.equal(CB.Prompts.text(k, 'pad'), CB.Prompts.text(k, 'kbm'), k);
+  }
 });
 
 test('prompts: the toast strings fit the toast band (one line, well inside the screen) on every device', () => {

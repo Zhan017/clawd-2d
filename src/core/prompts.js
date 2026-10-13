@@ -40,6 +40,20 @@
     share: { kbm: '[ copy result ] (C)', touch: '[ share result ]', pad: '[ X: copy result ]' },
     shareDone: { kbm: 'result copied ✓', touch: 'shared ✓', pad: 'result copied ✓' },
     shareFail: { kbm: "couldn't copy", touch: "couldn't copy", pad: "couldn't copy" },
+    // The first-run hints (src/game/hints.js): one banner line each, under 300 px at scale 1. Touch and pad name their buttons; the lines that name
+    // none (perfect, look) read the same everywhere. On a phone the banner must also stay clear of the pause button in the corner (x 296 and up).
+    hintDash: { kbm: 'Space: dash through bullets', touch: 'DASH: dash through bullets', pad: 'A: dash through bullets' },
+    hintCompact: { kbm: 'E: /compact clears the screen', touch: '/c: /compact clears the screen', pad: 'RB: /compact clears the screen' },
+    hintPerfect: {
+      kbm: 'perfect! dashing through bullets charges /compact',
+      touch: 'perfect! dashing through bullets charges /compact',
+      pad: 'perfect! dashing through bullets charges /compact',
+    },
+    hintLook: {
+      kbm: 'aim at a moth: only what you look at is real',
+      touch: 'aim at a moth: only what you look at is real',
+      pad: 'aim at a moth: only what you look at is real',
+    },
   };
   for (const k of Object.keys(TABLE)) Object.freeze(TABLE[k]);
   Object.freeze(TABLE);
