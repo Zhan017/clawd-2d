@@ -1269,6 +1269,33 @@ test('panic: heading, wrapped message (6 lines max), first src/ stack line and t
   assert.ok(env.log.text.some((a) => a[0] === 'KERNEL PANIC' && a[3].color === '#FF6B6B'));
 });
 
+test('panic: the deployed bundle has no src/ frames, so the first game.<hash>.js frame shows, origin trimmed; a src/ frame still wins', () => {
+  const env = setup({ stub: true });
+  const { CB, rec } = env;
+  const err = new Error('boom');
+  err.stack = 'Error: boom\n    at f (https://x/game.2c90635059.js:53:23)\n    at g (https://x/game.2c90635059.js:9:9)';
+  CB.Screens.panic.draw(env.r, err);
+  let texts = rec.texts();
+  const frame = texts.find((b) => /game\.2c90635059\.js/.test(b.str));
+  assert.ok(frame, 'the bundle frame is shown');
+  assert.equal(frame.str, 'at f (game.2c90635059.js:53:23)', 'trimmed, origin dropped');
+  assert.ok(!texts.some((b) => /:9:9/.test(b.str)), 'only the first one');
+  // A stack with both forms keeps the src/ frame (a dev server running the sources).
+  const both = new Error('boom');
+  both.stack = 'Error: boom\n    at f (https://x/game.2c90635059.js:53:23)\n    at Object.update (http://localhost:8000/src/game/world.js:123:45)';
+  const env2 = setup({ stub: true });
+  env2.CB.Screens.panic.draw(env2.r, both);
+  texts = env2.rec.texts();
+  assert.ok(texts.some((b) => /^at Object\.update \(src\/game\/world\.js:123:45\)$/.test(b.str)), 'src/ wins');
+  assert.ok(!texts.some((b) => /game\.2c90635059/.test(b.str)));
+  // No frame at all (a stack with neither form) shows no frame line.
+  const none = new Error('boom');
+  none.stack = 'Error: boom\n    at f (https://x/other.js:1:1)';
+  const env3 = setup({ stub: true });
+  env3.CB.Screens.panic.draw(env3.r, none);
+  assert.ok(!env3.rec.texts().some((b) => /other\.js/.test(b.str)));
+});
+
 test('panic: clears to #0A0A14 and survives a missing font, a missing ctx and a hostile error', () => {
   const env = setup({ stub: true });
   const { CB, r } = env;

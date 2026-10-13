@@ -399,6 +399,65 @@ test('hot snapshot round trip: what one session saves, the next boots into', () 
   assert.deepEqual(H.plain(run.squashed), { memoryLeak: 4 });
 });
 
+test('hot snapshot: carries the daily key and the seed, so a resumed daily is the same day\'s build', () => {
+  let snap = null;
+  const env = bootEnv({ claude: { hot: { snapshot: (fn) => { snap = fn; }, data: {} } } });
+  env.runMain();
+  const { CB } = env;
+  CB.game.go('play', { runOpts: { startStage: 1, daily: '2026-10-13', seed: 123456789 } });
+  CB.Scenes.play.run.state = 'wave';
+  let s = H.plain(snap());
+  assert.equal(s.daily, '2026-10-13');
+  assert.equal(s.seed, 123456789);
+  CB.game.go('play', { runOpts: { startStage: 1, seed: 77 } });
+  CB.Scenes.play.run.state = 'wave';
+  s = H.plain(snap());
+  assert.equal(s.daily, null, 'a plain run has no day');
+  assert.equal(s.seed, 77);
+});
+
+test('hot data: a resume keeps the daily key and the seed; a missing or malformed one is left out so the run picks its own', () => {
+  const data = { stageIndex: 2, patches: { rapid: 1 }, deaths: 1, time: 50, history: ['rapid'], daily: '2026-10-13', seed: 4242 };
+  const env = bootEnv({ claude: { hot: { data } } });
+  env.runMain();
+  const run = env.CB.Scenes.play.run;
+  assert.equal(run.daily, '2026-10-13');
+  assert.equal(run.seed, 4242);
+  const edge = bootEnv({ claude: { hot: { data: { stageIndex: 1, seed: 0xffffffff } } } });
+  edge.runMain();
+  assert.equal(edge.CB.Scenes.play.run.seed, 0xffffffff, 'the top of the uint range is a seed');
+  assert.equal(edge.CB.Scenes.play.run.daily, null, 'no key, a plain run');
+  for (const daily of [5, '', '2026-1-3', 'tomorrow', '2026-10-13T00:00', { a: 1 }, ['2026-10-13'], null, true]) {
+    const bad = bootEnv({ claude: { hot: { data: { stageIndex: 1, daily } } } });
+    bad.runMain();
+    assert.equal(bad.CB.game.sceneName, 'play', JSON.stringify(daily));
+    assert.equal(bad.CB.Scenes.play.run.daily, null, 'not a day: ' + JSON.stringify(daily));
+  }
+  for (const seed of [-1, 1.5, NaN, Infinity, '7', 2 ** 32, null, {}, [7], true]) {
+    const bad = bootEnv({ claude: { hot: { data: { stageIndex: 1, seed } } } });
+    bad.runMain();
+    const got = bad.CB.Scenes.play.run.seed;
+    assert.ok(Number.isInteger(got) && got >= 0 && got <= 0xffffffff, 'a usable seed anyway: ' + String(seed));
+    assert.notEqual(got, seed >>> 0, 'not the bad one coerced: ' + String(seed));
+  }
+});
+
+test('hot snapshot round trip: a daily run resumes as the same daily with the same seed', () => {
+  let snap = null;
+  const a = bootEnv({ claude: { hot: { snapshot: (fn) => { snap = fn; }, data: {} } } });
+  a.runMain();
+  a.CB.game.go('play', { runOpts: { startStage: 2, daily: '2026-10-13', seed: 31337, patches: { dash: 1 } } });
+  a.CB.Scenes.play.run.state = 'boss';
+  const saved = JSON.parse(JSON.stringify(H.plain(snap())));
+  const b = bootEnv({ claude: { hot: { data: saved } } });
+  b.runMain();
+  const run = b.CB.Scenes.play.run;
+  assert.equal(run.daily, '2026-10-13');
+  assert.equal(run.seed, 31337);
+  assert.equal(run.stageIndex, 2);
+  assert.deepEqual(H.plain(run.patches), { dash: 1 });
+});
+
 // ---- more ways to play: touch unlock, notify, controller events, the portrait pause, touch-aware crash text ----------------------
 
 const lastInput = (env) => env.probe.inputs[env.probe.inputs.length - 1];

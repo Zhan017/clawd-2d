@@ -35,13 +35,17 @@
     }
   }
 
-  // The first line of the stack that mentions src/, trimmed, with the page origin dropped from the file name.
+  // The first line of the stack that mentions src/ (source files), else the first in the deployed bundle (game.<hash>.js), trimmed, with the
+  // page origin dropped from the file name.
   function stackFrame(err) {
     try {
       const stack = err && err.stack;
       if (typeof stack !== 'string') return '';
-      const line = stack.split('\n').find((l) => l.includes('src/'));
-      return line ? line.trim().replace(/(?:https?|file):\/\/[^\s)]*?(src\/)/, '$1') : '';
+      const lines = stack.split('\n');
+      const src = lines.find((l) => l.includes('src/'));
+      if (src) return src.trim().replace(/(?:https?|file):\/\/[^\s)]*?(src\/)/, '$1');
+      const bundle = lines.find((l) => /game\.[0-9a-f]+\.js:\d+:\d+/.test(l));
+      return bundle ? bundle.trim().replace(/(?:https?|file):\/\/[^\s)]*?(game\.[0-9a-f]+\.js)/, '$1') : '';
     } catch (e) {
       return '';
     }

@@ -718,16 +718,19 @@ test('victory: a daily run is recorded once with its time, deaths and yolo flag,
   assert.equal(calls.length, 1);
 });
 
-test('notify: with a kind a waiting toast of that kind is rewritten; without one every message queues as before', () => {
+test('notify: with a kind a waiting toast of that kind is rewritten and a new one shows first; without one every message queues as before', () => {
   const s = setup();
   s.play.notify('controller connected');
   s.play.notify('controller connected');
   assert.equal(s.play.toasts.length, 2);
   s.play.notify('one', 'share');
-  s.play.toasts[2].t = 0.5;
+  assert.equal(s.play.toasts.length, 3);
+  assert.deepEqual([s.play.toasts[0].text, s.play.toasts[0].kind], ['one', 'share'], 'a kinded toast with none waiting jumps the queue');
+  assert.deepEqual(s.play.toasts.slice(1).map((q) => q.text), ['controller connected', 'controller connected'], 'the others keep their order behind it');
+  s.play.toasts[0].t = 0.5;
   s.play.notify('two', 'share');
   assert.equal(s.play.toasts.length, 3);
-  assert.deepEqual([s.play.toasts[2].text, s.play.toasts[2].t], ['two', 2.5]);
+  assert.deepEqual([s.play.toasts[0].text, s.play.toasts[0].t], ['two', 2.5]);
 });
 
 // ---- haptics and host toasts -----------------------------------------------------------------------------------------------

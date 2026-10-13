@@ -107,14 +107,16 @@
     },
 
     // A toast from outside the run (the host: "controller connected"). With a `kind`, a toast of that kind still waiting is rewritten
-    // instead of queued again, so a mashed share button shows one toast.
+    // instead of queued again, so a mashed share button shows one toast; a kinded toast with none waiting jumps the queue (it answers
+    // an action, so it shows now, and the toast it displaced resumes after it with its remaining time: only toasts[0] counts down).
     notify(text, kind) {
       if (typeof text !== 'string' || !text) return;
       const queued = kind ? this.toasts.find((q) => q.kind === kind) : null;
       if (queued) {
         queued.text = text;
         queued.t = TOAST_T;
-      } else this.toasts.push(kind ? { text, t: TOAST_T, kind } : { text, t: TOAST_T });
+      } else if (kind) this.toasts.unshift({ text, t: TOAST_T, kind });
+      else this.toasts.push({ text, t: TOAST_T });
     },
 
     // A daily run's result goes to CB.Daily the first time the run is seen in 'victory', and never again. Daily is optional, and a result
@@ -155,8 +157,9 @@
         if (result === 'cancelled') return;
         const done = result === 'shared' || result === 'copied';
         const P = CB.Prompts;
-        const said = P && typeof P.text === 'function' ? P.text(done ? 'shareDone' : 'shareFail', device) : '';
-        this.notify(said || (done ? 'result copied ✓' : "couldn't copy"), 'share');
+        // The wording follows what happened, not the device: only the share sheet says "shared" (a phone whose sheet failed copied instead).
+        const said = P && typeof P.text === 'function' ? P.text(done ? 'shareDone' : 'shareFail', result === 'shared' ? 'touch' : 'kbm') : '';
+        this.notify(said || (result === 'shared' ? 'shared ✓' : done ? 'result copied ✓' : "couldn't copy"), 'share');
       };
       const send = () => {
         let sent;

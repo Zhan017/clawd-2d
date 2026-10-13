@@ -177,6 +177,8 @@
         history: run.history.slice(),
         bossRush: !!run.bossRush,
         yolo: !!run.yolo,
+        daily: run.daily, // a resumed daily build stays that day's build, with the seed its patch offers and fights came from
+        seed: run.seed,
         squashed: Object.assign({}, run.stageSquashed), // the tally as the stage began: the resume restarts at that stage's intro
       };
     } catch (e) {
@@ -263,10 +265,12 @@
 
     if (debug.active) game.go('play', { runOpts: debug });
     else if (hotData && hotData.stageIndex != null) {
-      game.go('play', {
-        runOpts: { startStage: hotData.stageIndex, patches: hotData.patches || {}, bossRush: !!hotData.bossRush, yolo: !!hotData.yolo },
-        restore: hotData,
-      });
+      const runOpts = { startStage: hotData.stageIndex, patches: hotData.patches || {}, bossRush: !!hotData.bossRush, yolo: !!hotData.yolo };
+      // The host hands the snapshot back as plain data, so both are checked; a missing or bad one leaves the run to pick its own (the key stays out, or
+      // an undefined would overwrite the default seed).
+      if (typeof hotData.daily === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(hotData.daily)) runOpts.daily = hotData.daily;
+      if (Number.isInteger(hotData.seed) && hotData.seed >= 0 && hotData.seed <= 0xffffffff) runOpts.seed = hotData.seed;
+      game.go('play', { runOpts, restore: hotData });
     } else game.go('title');
 
     loop = CB.createLoop({

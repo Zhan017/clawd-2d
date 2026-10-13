@@ -9,6 +9,7 @@ It runs in the browser and takes about 10 minutes per run. Play with a keyboard 
 ## Play
 
 - **Web:** https://clawd-2d.vercel.app (deployed from `main` on Vercel)
+- **Install it:** on a phone, use *Add to Home Screen*; in desktop Chrome or Edge, use the install button in the address bar. It opens fullscreen with its own icon, and works offline after your first visit.
 - **Locally:** `npm run serve`, then open http://127.0.0.1:8137/. You can also double-click `index.html`.
 
 ## Controls
@@ -31,6 +32,7 @@ The prompts on screen always match whatever you touched last: keyboard, controll
 | 1, 2, 3 or click | Pick a patch after a boss |
 | Arrows or A/D, then Enter | Move the focus and pick (patch pick, pause toggles) |
 | R or click | Retry from the checkpoint (game over screen) |
+| C | Copy your result (victory screen) |
 | Q | Quit to the title (press twice from pause) |
 
 ### Controller
@@ -48,6 +50,8 @@ Any standard controller works: Xbox, PlayStation or Switch Pro.
 | Start | Pause and resume | |
 | Back or Select | Quit (twice from pause, once from game over) | |
 | Y / X | | Title, once unlocked: Boss Rush / toggle `--yolo` |
+| B | | Title: today's daily build |
+| X | | Victory screen: copy your result |
 
 The controller rumbles when you get hit, at boss phase changes, on /compact and when a boss goes down.
 
@@ -60,7 +64,7 @@ The controller rumbles when you get hit, at boss phase changes, on /compact and 
 | DASH button | Dash |
 | /c button | Cast /compact. It fills with the meter and glows when ready |
 | II (top right of the arena) | Pause |
-| Tap | Everything in menus: start, patches, retry, quit, play again |
+| Tap | Everything in menus: start, daily build, patches, retry, quit, play again, share your result |
 
 Starting a run goes fullscreen where the browser allows it. In portrait the game asks you to turn your phone, and a fight pauses until you do.
 
@@ -166,6 +170,21 @@ Picking a patch makes Clawd celebrate.
 - **`--yolo`:** a flag run with 3 base hearts, faster bullets and shorter mercy frames. Winning it earns a special hat.
 - **Secrets:** there are a couple for people who type the right things on the title screen.
 
+### Daily build and sharing
+
+- **Daily build:** one seeded run per day (UTC), the same for everyone. It ships with a starting patch picked for the day, and everyone is offered the same patches, so you can compare runs with friends. The title's `[ daily build ]` button gets a ✓ once you've cleared today's build, and the game keeps your best result for each day.
+- **Share your run:** the victory screen has a `[ copy result ]` button (C on a keyboard, X on a controller). On a phone it opens the share sheet. The text looks like this:
+
+  ```
+  Clawd vs Bugs: ALL TESTS PASSING ✓
+  ⏱ 08:42 · 💀 3 deaths · 🐛 214 bugs squashed
+  🔧 Pierce, Spread Shot, Rapid Fire ×2
+  📅 Daily build 2026-10-13
+  https://clawd-2d.vercel.app
+  ```
+
+- **Link preview:** paste the link anywhere (Slack, Discord, X, iMessage) and it unfolds into a pixel-art card of Clawd fighting the bugs.
+
 ### Play your way
 
 - **Three ways to play:** keyboard and mouse, a controller, or touch. Switch at any moment and every prompt switches with you ("Click to start", "Tap to start", "Press A to start").
@@ -179,7 +198,7 @@ Picking a patch makes Clawd celebrate.
 - **Scaling:** whole-number pixel scaling with letterboxing fits any window and keeps the pixel art crisp.
 - **Auto-pause:** the game pauses when the tab loses focus.
 - **Crash screen:** if anything ever breaks, a **KERNEL PANIC** screen shows the error. Press R (or tap) to reload.
-- **No dependencies:** no npm packages, no image or audio files, no build step needed to play.
+- **No dependencies:** no npm packages and no audio files. The only images are the link preview and app icons, and those are drawn from the game's own sprites. There's no build step needed to play locally.
 
 ## How to play
 
@@ -194,7 +213,7 @@ Picking a patch makes Clawd celebrate.
 npm test
 ```
 
-This runs about 1,370 headless tests with `node:test`. They include a bot that plays every stage in invincible mode, checks every boss can be beaten, and prints a difficulty report.
+This runs about 1,530 headless tests with `node:test`. They include a bot that plays every stage in invincible mode, checks every boss can be beaten, and prints a difficulty report.
 
 Debug URLs work only on localhost or `file://`, never on a deployed page:
 
@@ -215,18 +234,25 @@ Debug URLs work only on localhost or `file://`, never on a deployed page:
 
 | Command | Output | Used for |
 |---|---|---|
-| `npm run build:site` | `public/`: `index.html` plus exactly the 49 scripts it lists. Tests, docs and tools stay out. | Static hosting (Vercel). |
+| `npm run build:site` | `public/`: the page, one content-hashed bundle of all 51 scripts (`game.<hash>.js`, about 120 KB gzipped) with a source map, a service worker for offline play, the app manifest and the images. Tests, docs and tools stay out. | Static hosting (Vercel). |
 | `npm run build` | `dist/clawd-vs-bugs.html`: every script inlined into one file (one `<script>` per source file, with `sourceURL` comments so stack traces name the real file). | The claude.ai Artifact version. |
 
 ## Deploying (Vercel)
 
 - `vercel.json` sets `framework: null`, runs `node tools/build-site.mjs` and serves `public/`.
 - Pushing to `main` deploys production through the Vercel Git integration.
+- **Caching:**
+  - The bundle's name changes with its content, so browsers cache it forever.
+  - The page itself is always checked for a new version.
+  - The service worker loads the page from the network first, so a new deploy shows up on the next visit and offline play still works.
 - Preview deployments stay behind Vercel Authentication. The production domain is meant to be public; that's set under the project's Deployment Protection settings.
+
+Regenerate the link preview card and app icons with `npm run art` after changing Clawd, a bug sprite, the palette or the font (a test fails until you do).
 
 ## How it's built
 
 - Plain JavaScript classic scripts on one global, `window.CB`, rendered with Canvas 2D on a 320×180 buffer scaled up with integer scaling.
 - Game logic is deterministic: a seeded RNG and a fixed 60 Hz step, with drawing kept separate. The whole game can therefore run headless in Node for tests and the playthrough bot.
 - Every sprite is a string of palette characters in the source. Sound effects and music are synthesised with Web Audio.
+- The link preview card and app icons are rendered from those same sprites and the bitmap font by `tools/make-art.mjs`, which has its own tiny rasterizer and PNG encoder and gives byte-identical output on every run.
 - Design spec: `docs/superpowers/specs/2026-10-06-clawd-vs-bugs-design.md`. Implementation plan and balance log: `docs/superpowers/plans/2026-10-12-clawd-vs-bugs.md`.

@@ -217,6 +217,80 @@ test('daily: reading window.localStorage itself can throw (blocked site data)', 
   assert.equal(CB.Daily.result(DAY).time, 12);
 });
 
+// ---- two tabs ----------------------------------------------------------------------------------------------------------------------
+// Each load() is a page with its own cache over the one localStorage, so two loads of the same store are two tabs.
+
+test('daily: a second tab never overwrites a better saved result with a worse one', () => {
+  const store = memStore();
+  const a = load(store).Daily;
+  const b = load(store).Daily;
+  assert.equal(a.result(DAY), null, 'tab A has looked, and found nothing');
+  b.record(DAY, { time: 300, deaths: 0, yolo: false });
+  a.record(DAY, { time: 200, deaths: 2, yolo: false });
+  assert.deepEqual(JSON.parse(store.m['cb.daily'])[DAY], { time: 300, deaths: 0, yolo: false }, 'the saved better clear stands');
+  assert.deepEqual(H.plain(a.result(DAY)), { time: 300, deaths: 0, yolo: false }, 'and tab A now shows it');
+  // A better clear still wins, in either tab, and the tie rule is record()'s.
+  a.record(DAY, { time: 250, deaths: 0, yolo: true });
+  assert.deepEqual(JSON.parse(store.m['cb.daily'])[DAY], { time: 250, deaths: 0, yolo: true });
+  b.record(DAY, { time: 250, deaths: 0, yolo: false });
+  assert.equal(JSON.parse(store.m['cb.daily'])[DAY].yolo, true, 'a tie keeps what is saved');
+});
+
+test('daily: a tab sees another tab\'s clear without recording anything itself (the title tick)', () => {
+  const store = memStore();
+  const a = load(store).Daily;
+  const b = load(store).Daily;
+  assert.equal(a.result(DAY), null);
+  b.record(DAY, { time: 123, deaths: 1, yolo: false });
+  assert.deepEqual(H.plain(a.result(DAY)), { time: 123, deaths: 1, yolo: false });
+  // And one written straight into storage (anything else on the page) is seen too, then bettered by a later write.
+  store.m['cb.daily'] = JSON.stringify({ [DAY]: { time: 100, deaths: 0, yolo: false }, '2026-10-14': { time: 50, deaths: 0, yolo: true } });
+  assert.deepEqual(H.plain(a.result(DAY)), { time: 100, deaths: 0, yolo: false }, 'a better entry replaces the cached one');
+  assert.deepEqual(H.plain(a.result('2026-10-14')), { time: 50, deaths: 0, yolo: true }, 'and a new date arrives');
+});
+
+test('daily: a worse entry written by another tab does not replace the better one this tab has', () => {
+  const store = memStore();
+  const a = load(store).Daily;
+  a.record(DAY, { time: 100, deaths: 0, yolo: false });
+  store.m['cb.daily'] = JSON.stringify({ [DAY]: { time: 900, deaths: 5, yolo: false } });
+  assert.deepEqual(H.plain(a.result(DAY)), { time: 100, deaths: 0, yolo: false });
+  a.record('2026-10-14', { time: 70, deaths: 1, yolo: false });
+  const saved = JSON.parse(store.m['cb.daily']);
+  assert.deepEqual(saved[DAY], { time: 100, deaths: 0, yolo: false }, 'the next save puts the better one back');
+  assert.deepEqual(saved['2026-10-14'], { time: 70, deaths: 1, yolo: false });
+});
+
+test('daily: record keeps the other tab\'s other dates when it writes', () => {
+  const store = memStore();
+  const a = load(store).Daily;
+  const b = load(store).Daily;
+  a.record('2026-10-12', { time: 10, deaths: 0, yolo: false });
+  b.record('2026-10-13', { time: 20, deaths: 0, yolo: false });
+  a.record('2026-10-14', { time: 30, deaths: 0, yolo: false });
+  assert.deepEqual(Object.keys(JSON.parse(store.m['cb.daily'])).sort(), ['2026-10-12', '2026-10-13', '2026-10-14']);
+  assert.equal(b.result('2026-10-14').time, 30);
+});
+
+test('daily: memory-only results survive storage that was wiped, went unreadable or turned to junk', () => {
+  const store = memStore();
+  let blocked = false;
+  const flaky = { getItem: (k) => { if (blocked) throw new Error('blocked'); return store.getItem(k); }, setItem: (k, v) => { if (blocked) throw new Error('blocked'); store.setItem(k, v); } };
+  const a = load(flaky).Daily;
+  a.record(DAY, { time: 80, deaths: 1, yolo: false });
+  delete store.m['cb.daily']; // another tab (or the player) cleared the site data
+  assert.deepEqual(H.plain(a.result(DAY)), { time: 80, deaths: 1, yolo: false }, 'wiped: still served');
+  store.m['cb.daily'] = 'not json';
+  assert.deepEqual(H.plain(a.result(DAY)), { time: 80, deaths: 1, yolo: false }, 'junk: still served');
+  blocked = true;
+  assert.deepEqual(H.plain(a.result(DAY)), { time: 80, deaths: 1, yolo: false }, 'unreadable: still served');
+  a.record('2026-10-14', { time: 60, deaths: 0, yolo: false });
+  assert.ok(a.result(DAY) && a.result('2026-10-14'), 'and recording on top of it keeps both');
+  blocked = false;
+  a.record('2026-10-15', { time: 50, deaths: 0, yolo: false });
+  assert.deepEqual(Object.keys(JSON.parse(store.m['cb.daily'])).sort(), [DAY, '2026-10-14', '2026-10-15'], 'storage is back: the next save writes everything held');
+});
+
 // ---- the run ---------------------------------------------------------------------------------------------------------------------------
 
 function runSetup() {

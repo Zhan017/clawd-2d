@@ -24,6 +24,7 @@
   // vanish at any time) and `mem` is a write-through copy, so a blocked or full store still serves the session. Storage can hold
   // anything, so every entry read back is validated.
   let mem = null;
+  let seen = null; // the storage text last folded into `mem`, so a store nobody changed costs no parse (the title asks every frame)
 
   function clean(raw) {
     const out = {};
@@ -37,21 +38,32 @@
     return out;
   }
 
-  function table() {
-    if (mem) return mem;
-    let raw = null;
-    try {
-      const text = window.localStorage.getItem(STORE_KEY);
-      if (text) raw = JSON.parse(text);
-    } catch (e) {
-      // blocked, or the stored text is not JSON: start empty
-    }
-    mem = clean(raw);
-    return mem;
-  }
-
   // Fewer deaths win, then the faster clear; a tie keeps what is saved.
   const better = (a, b) => a.deaths < b.deaths || (a.deaths === b.deaths && a.time < b.time);
+
+  // `mem` with what storage holds right now folded in: another tab may have saved since this page last looked, so per date the better
+  // entry wins, and an entry only in memory stays (storage that is blocked, unreadable or wiped never loses a result).
+  function table() {
+    if (!mem) mem = {};
+    let text = null;
+    try {
+      text = window.localStorage.getItem(STORE_KEY);
+    } catch (e) {
+      // blocked: memory alone serves
+    }
+    if (text && text !== seen) {
+      seen = text;
+      let raw = null;
+      try {
+        raw = JSON.parse(text);
+      } catch (e) {
+        // not JSON: nothing to fold in
+      }
+      const fresh = clean(raw);
+      for (const k of Object.keys(fresh)) if (!mem[k] || better(fresh[k], mem[k])) mem[k] = fresh[k];
+    }
+    return mem;
+  }
 
   const Daily = {
     hash32,
@@ -79,7 +91,8 @@
       return order[Daily.seedFor(key) % order.length];
     },
 
-    // Keeps the best clear per date (fewest deaths, then fastest); ignores a key or a result that is not usable.
+    // Keeps the best clear per date (fewest deaths, then fastest), against a fresh read of storage so another tab's better clear is never
+    // overwritten; ignores a key or a result that is not usable.
     record(key, res) {
       if (typeof key !== 'string' || !KEY_RE.test(key) || !res || !Number.isFinite(res.time) || res.time < 0) return;
       const t = table();
@@ -88,13 +101,15 @@
       t[key] = entry;
       for (const old of Object.keys(t).sort().slice(0, -KEEP)) delete t[old];
       try {
-        window.localStorage.setItem(STORE_KEY, JSON.stringify(t));
+        const text = JSON.stringify(t);
+        window.localStorage.setItem(STORE_KEY, text);
+        seen = text;
       } catch (e) {
         // blocked or full: the in-memory copy still serves this session
       }
     },
 
-    // The saved best for that date, or null.
+    // The saved best for that date (this tab's or another's), or null.
     result(key) {
       const e = typeof key === 'string' && KEY_RE.test(key) ? table()[key] : null;
       return e ? { time: e.time, deaths: e.deaths, yolo: e.yolo } : null;

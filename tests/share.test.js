@@ -467,7 +467,7 @@ test('play victory: a tap on the share button shares and does not play again, th
     assert.equal(s.sent.length, 1, dev);
     assert.deepEqual(s.visits, [], dev + ': stayed');
     await tick();
-    assert.deepEqual(s.toastTexts(), [dev === 'touch' ? 'shared ✓' : 'result copied ✓'], dev);
+    assert.deepEqual(s.toastTexts(), ['result copied ✓'], dev + ': the stub copied, whatever the device');
   }
 });
 
@@ -570,9 +570,10 @@ test('play victory: with no navigator or document (a headless host) it sends not
   assert.equal(s2.sent[0].env.doc, null);
 });
 
-test('play victory: the toast answers the outcome -- done on shared and copied, failed on failed, nothing on cancelled', async () => {
+test('play victory: the toast answers the outcome, not the device -- shared on shared, copied on copied, failed on failed, nothing on cancelled', async () => {
   const cases = [
-    ['shared', 'touch', 'shared ✓'], ['shared', 'kbm', 'result copied ✓'], ['copied', 'kbm', 'result copied ✓'], ['copied', 'pad', 'result copied ✓'], ['copied', 'touch', 'shared ✓'],
+    ['shared', 'touch', 'shared ✓'], ['shared', 'kbm', 'shared ✓'], ['shared', 'pad', 'shared ✓'],
+    ['copied', 'kbm', 'result copied ✓'], ['copied', 'pad', 'result copied ✓'], ['copied', 'touch', 'result copied ✓'],
     ['failed', 'kbm', "couldn't copy"], ['failed', 'touch', "couldn't copy"], ['failed', 'pad', "couldn't copy"], ['cancelled', 'touch', null], ['cancelled', 'kbm', null],
   ];
   for (const [result, dev, want] of cases) {
@@ -582,6 +583,43 @@ test('play victory: the toast answers the outcome -- done on shared and copied, 
     assert.deepEqual(s.toastTexts(), want === null ? [] : [want], `${result} on ${dev}`);
     if (want !== null) assert.equal(s.play.toasts[0].t, 2.5, 'the usual toast time');
   }
+});
+
+test('play victory: a phone whose share sheet is refused falls back to the clipboard, and the toast says copied, not shared', async () => {
+  // The real CB.Share.send, end to end: touch device, navigator.share rejects (not an abort), no clipboard API, execCommand('copy') works.
+  const nav = mkNav({ share: () => Promise.reject(denied()) });
+  const doc = mkDoc();
+  const s = playScene({ device: 'touch', navigator: nav, document: doc });
+  s.step({ keys: ['KeyC'] });
+  await tick();
+  assert.deepEqual(H.plain(nav.calls.map((c) => c[0])), ['share'], 'the sheet was tried first');
+  assert.equal(doc.copied, s.CB.Share.text(s.play.run), 'then the hidden textarea copied the result');
+  assert.deepEqual(s.toastTexts(), ['result copied ✓']);
+  // The same phone with a working sheet says shared.
+  const ok2 = playScene({ device: 'touch', navigator: mkNav({ share: () => Promise.resolve() }), document: mkDoc() });
+  ok2.step({ keys: ['KeyC'] });
+  await tick();
+  assert.deepEqual(ok2.toastTexts(), ['shared ✓']);
+});
+
+test('play victory: the share answer shows now, ahead of the unlock toasts already waiting, which resume after it with their remaining time', async () => {
+  const s = playScene({ send: ok });
+  s.play.toasts.push({ text: 'NEW HAT: Cap', t: 2.5 }, { text: 'NEW HAT: Crown', t: 2.5 });
+  s.step({ keys: ['KeyC'] });
+  const left = s.play.toasts[0].t; // the answer has not come yet: the first unlock toast is still the one on screen, part way through
+  assert.ok(left < 2.5);
+  await tick();
+  assert.equal(s.play.toasts[0].kind, 'share', 'the answer to the press is on screen');
+  assert.deepEqual(s.toastTexts(), ['result copied ✓', 'NEW HAT: Cap', 'NEW HAT: Crown']);
+  assert.equal(s.play.toasts[1].t, left, 'the displaced toast kept its remaining time');
+  // Pressing again rewrites the share toast in place, not a second one at the front.
+  s.step({ keys: ['KeyC'] });
+  await tick();
+  assert.deepEqual(s.toastTexts(), ['result copied ✓', 'NEW HAT: Cap', 'NEW HAT: Crown']);
+  // It runs out first (only toasts[0] counts down), then the displaced one carries on from where it was.
+  for (let i = 0; i < 160; i++) s.step({});
+  assert.deepEqual(s.toastTexts(), ['NEW HAT: Cap', 'NEW HAT: Crown']);
+  assert.ok(s.play.toasts[0].t <= left && s.play.toasts[0].t > 0);
 });
 
 test('play victory: a send that throws, rejects or answers nonsense is a failed toast, never a crash', async () => {

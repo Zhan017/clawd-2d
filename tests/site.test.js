@@ -525,6 +525,26 @@ test('site build copies the manifest and every asset (recursively, no dotfiles),
   });
 });
 
+test('site build re-versions sw.js when only index.html changes: same bundle name, new worker (the cached page is the offline fallback)', async () => {
+  await withTree({ 'index.html': PAGE, 'src/a.js': 'var a = 1;\n', 'src/sub/b.js': 'var b = 2;\n' }, (root, out, buildSite) => {
+    const res = buildSite({ root });
+    const sw1 = fs.readFileSync(path.join(out, 'sw.js'), 'utf8');
+    const page1 = fs.readFileSync(path.join(out, 'index.html'), 'utf8');
+    fs.writeFileSync(path.join(root, 'index.html'), PAGE.replace('<title>t</title>', '<title>t, renamed</title>'));
+    const res2 = buildSite({ root });
+    const sw2 = fs.readFileSync(path.join(out, 'sw.js'), 'utf8');
+    assert.notEqual(fs.readFileSync(path.join(out, 'index.html'), 'utf8'), page1, 'the page really changed');
+    assert.equal(res2.bundle, res.bundle, 'same scripts, same bundle name');
+    assert.deepEqual(res2.precache, res.precache);
+    assert.equal(sw2.match(/const CACHE = .*/)[0], sw1.match(/const CACHE = .*/)[0], 'the cache name follows the bundle');
+    assert.notEqual(sw2, sw1, 'but the page is part of the precache digest, so browsers get a new sw.js and refresh the cached "/"');
+    assert.notEqual(sw2.match(/Precache digest ([0-9a-f]{10})/)[1], sw1.match(/Precache digest ([0-9a-f]{10})/)[1]);
+    // And an unchanged tree builds the same worker again.
+    buildSite({ root });
+    assert.equal(fs.readFileSync(path.join(out, 'sw.js'), 'utf8'), sw2, 'deterministic');
+  });
+});
+
 test('site build normalises CRLF and a missing final newline, so source lines stay bundle lines', async () => {
   await withTree({ 'index.html': PAGE, 'src/a.js': 'var a = 1;\r\nvar a2 = 2;', 'src/sub/b.js': 'var b = 2;\n' }, (root, out, buildSite) => {
     const res = buildSite({ root });
