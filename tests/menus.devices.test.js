@@ -835,17 +835,39 @@ for (const dev of DEVICES) {
 
 test('victory: the play-again prompt reads for the device, after 1.5 s, and the layout holds', () => {
   const want = { kbm: 'Click to play again', touch: 'Tap to play again', pad: 'Press A to play again' };
+  const share = { kbm: '[ copy result ] (C)', touch: '[ share result ]', pad: '[ X: copy result ]' };
   for (const dev of DEVICES) {
     const env = setup(dev);
     const run = mkRun(env.CB, { state: 'victory', deaths: 3, time: 61.9, bossesFixed: 4, history: ['spread', 'rapid'], squashed: { syntaxError: 3, nullPointer: 2 } });
     assert.ok(!box(drawScreen(env, 'victory', run, 1.5), want[dev]), dev + ': not yet');
+    assert.ok(!box(drawScreen(env, 'victory', run, 1.5), share[dev]), dev + ': no share button yet either');
     const rec = drawScreen(env, 'victory', run, 2.0);
     const b = box(rec, want[dev]);
     assert.ok(b, dev);
     assert.equal(b.y, 160);
-    assert.ok(Math.abs(centreX(b) - 160) <= 1);
-    for (const other of DEVICES.filter((d) => d !== dev)) assert.ok(!box(rec, want[other]), dev + ' shows no ' + other + ' prompt');
+    // With CB.Share loaded (the whole game) the prompt shares its row with the share button: the prompt starts right of the middle,
+    // the button ends left of it, and both are on the row the toast band clears.
+    assert.equal(b.x, 166, dev + ': the prompt starts right of the gutter');
+    const s = box(rec, share[dev]);
+    assert.ok(s, dev + ': the share button');
+    assert.equal(s.y, 160);
+    assert.equal(s.x + s.w, 154, dev + ': the button ends left of the gutter');
+    for (const other of DEVICES.filter((d) => d !== dev)) assert.ok(!box(rec, want[other]) && !box(rec, share[other]), dev + ' shows no ' + other + ' prompt');
     assert.deepEqual(rec.overlaps().filter((p) => p[0].str !== '✻' && p[1].str !== '✻').map((p) => p[0].str + ' / ' + p[1].str), []);
+  }
+});
+
+test('victory: without CB.Share there is no share button and the play-again prompt keeps the middle of the row', () => {
+  for (const dev of DEVICES) {
+    const env = setup(dev);
+    delete env.CB.Share;
+    const run = mkRun(env.CB, { state: 'victory', deaths: 3, time: 61.9, bossesFixed: 4, history: ['spread', 'rapid'], squashed: { syntaxError: 3, nullPointer: 2 } });
+    const want = { kbm: 'Click to play again', touch: 'Tap to play again', pad: 'Press A to play again' }[dev];
+    const b = box(drawScreen(env, 'victory', run, 2.0), want);
+    assert.ok(b, dev);
+    assert.equal(b.y, 160);
+    assert.ok(Math.abs(centreX(b) - 160) <= 1, dev + ': centred as it always was');
+    assert.ok(!strs(env.rec).some((t) => /result/.test(t)), dev + ': no share button');
   }
 });
 

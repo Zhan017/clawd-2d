@@ -1,4 +1,6 @@
 // Victory screen: the receipt of a clear (time, deaths, patches, bugs squashed, a git log of the four fixes) with a happy Clawd and confetti.
+// The bottom row holds the share button and the play-again prompt side by side, so the disclaimer above it and the play scene's toast band
+// (y 169-180) below it both stay clear.
 (function (CB) {
   'use strict';
   const C = CB.Pal.C;
@@ -15,10 +17,21 @@
   const MAX_LINE = 250; // the patches line is kept to this width, clear of the confetti margins
   const CONFETTI = 24;
   const CONFETTI_COLORS = [C.gold, C.spark, C.clawd];
+  const LOG_HEAD_Y = 106; // the log header; a daily build's date sits at the right end of the same row
+  const DAILY_X = 280; // right edge of the daily line: the mirror of LOG_X
+  const ROW_Y = 160; // the bottom row (y 160-166)
+  const SHARE_RIGHT = 154; // the share label ends here...
+  const AGAIN_LEFT = 166; // ...and the play-again prompt starts here, a 12 px gutter either side of the middle
+  // A tap here shares (play.js). Every device's label (67-80 px, right-aligned at SHARE_RIGHT) sits inside it, and no other text touches it:
+  // the disclaimer ends at y 158 and the prompt starts at x 166.
+  const SHARE_BOX = Object.freeze({ x: 70, y: 159, w: 88, h: 10 });
 
   const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
   const calm = () => !!(CB.Comfort && typeof CB.Comfort.calm === 'function' && CB.Comfort.calm());
+
+  // The share button shows only when there is a CB.Share for it to talk to (optional module); without one the prompt keeps the whole row.
+  const canShare = () => !!(CB.Share && typeof CB.Share.send === 'function');
 
   // The prompt for `key` on the current device (a missing CB.Prompts or an unknown device reads as keyboard + mouse); `kbm` shows without CB.Prompts.
   function say(key, kbm) {
@@ -38,10 +51,23 @@
     return ((seed * 2654435761 + i * 97) >>> 0).toString(16).padStart(8, '0').slice(0, 7);
   }
 
-  // The patches taken, in the order they were first picked: "Spread Shot ×2, Rapid Fire". Too wide: the short ids, then cut with "...".
+  // Patch id -> times taken, in the order first taken: what the run started with (a daily build's patch), then the picks.
+  function patchesTaken(run) {
+    const picked = new Map();
+    for (const id of Array.isArray(run.history) ? run.history : []) picked.set(String(id), (picked.get(String(id)) || 0) + 1);
+    const taken = new Map();
+    const held = run.patches && typeof run.patches === 'object' ? run.patches : {};
+    for (const id of Object.keys(held)) {
+      const extra = Math.floor(num(held[id], 0)) - (picked.get(id) || 0);
+      if (extra > 0) taken.set(id, extra);
+    }
+    for (const [id, n] of picked) taken.set(id, (taken.get(id) || 0) + n);
+    return taken;
+  }
+
+  // The patches taken: "Spread Shot ×2, Rapid Fire". Too wide: the short ids, then cut with "...".
   function patchesLine(r, run) {
-    const picks = new Map();
-    for (const id of Array.isArray(run.history) ? run.history : []) picks.set(String(id), (picks.get(String(id)) || 0) + 1);
+    const picks = patchesTaken(run);
     const defs = (CB.Patches && CB.Patches.DEFS) || {};
     const line = (label) => 'patches: ' + (picks.size ? [...picks].map(([id, n]) => label(id) + (n > 1 ? ' ×' + n : '')).join(', ') : 'none');
     const named = line((id) => (defs[id] ? defs[id].name : id));
@@ -126,15 +152,24 @@
       r.text(patchesLine(r, run), W / 2, 71, { color: C.pale, shadow: C.ink, align: 'center' });
     });
     r.alpha(show(0.8), () => drawTally(r, run));
-    r.alpha(show(1.0), () => r.text('git log --oneline', LOG_X, 106, { color: C.pale }));
+    r.alpha(show(1.0), () => {
+      r.text('git log --oneline', LOG_X, LOG_HEAD_Y, { color: C.pale });
+      if (typeof run.daily === 'string' && run.daily) r.text('daily build ' + run.daily, DAILY_X, LOG_HEAD_Y, { color: C.gold, align: 'right' });
+    });
     fixes(run).forEach((B, i) => {
       const line = commitHash(num(run.seed, 1), i) + ' ' + B.commitMsg;
       r.alpha(show(1.1 + 0.1 * i), () => r.text(line, LOG_X, 115 + 9 * i, { color: C.grey }));
     });
     r.alpha(show(0.5), () => r.text(DISCLAIMER, W / 2, 152, { color: C.grey, align: 'center' }));
-    if (st > CLICK_AT && Math.floor(st * 2) % 2 === 0) r.text(say('again', 'Click to play again'), W / 2, 160, { color: C.white, shadow: C.ink, align: 'center' });
+    if (st > CLICK_AT) {
+      const blinkOn = Math.floor(st * 2) % 2 === 0;
+      if (canShare()) {
+        r.text(say('share', '[ copy result ] (C)'), SHARE_RIGHT, ROW_Y, { color: C.pale, shadow: C.ink, align: 'right' }); // steady: it is a button
+        if (blinkOn) r.text(say('again', 'Click to play again'), AGAIN_LEFT, ROW_Y, { color: C.white, shadow: C.ink });
+      } else if (blinkOn) r.text(say('again', 'Click to play again'), W / 2, ROW_Y, { color: C.white, shadow: C.ink, align: 'center' });
+    }
     if (st > 0.3) drawConfetti(r, st);
   }
 
-  CB.Screens.victory = { formatTime, commitHash, draw };
+  CB.Screens.victory = { formatTime, commitHash, SHARE_BOX, draw };
 })(window.CB);

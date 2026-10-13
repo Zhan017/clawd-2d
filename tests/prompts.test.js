@@ -10,6 +10,7 @@ const MAX_W = 312; // the text column the screens centre in (320 minus a 4 px ma
 
 // The keyboard + mouse strings the game shipped with (title.js, screens.js pause, gameOver.js, victory.js, panic.js).
 // retryKey is the front of 'R / click: <label>' and hat the tail of 'hat: <name> (Q/E)'. These never change.
+// The three share keys came later (the victory screen's result button and the toasts that answer it); SHARE_KEYS names them.
 const KBM = {
   start: 'Click to start',
   again: 'Click to play again',
@@ -23,7 +24,12 @@ const KBM = {
   pauseLegend2: 'Space dash · E /compact (meter full)',
   hat: '(Q/E)',
   reload: 'Press R to reload',
+  share: '[ copy result ] (C)',
+  shareDone: 'result copied ✓',
+  shareFail: "couldn't copy",
 };
+
+const SHARE_KEYS = ['share', 'shareDone', 'shareFail'];
 
 const TOUCH = {
   start: 'Tap to start',
@@ -38,6 +44,9 @@ const TOUCH = {
   pauseLegend2: 'DASH · /compact (meter full)',
   hat: '(tap)',
   reload: 'Tap to reload',
+  share: '[ share result ]',
+  shareDone: 'shared ✓',
+  shareFail: "couldn't copy",
 };
 
 const PAD = {
@@ -53,6 +62,9 @@ const PAD = {
   pauseLegend2: 'A/LB dash · RB/B /compact (meter full)',
   hat: '(LB/RB)',
   reload: 'Press R to reload',
+  share: '[ X: copy result ]',
+  shareDone: 'result copied ✓',
+  shareFail: "couldn't copy",
 };
 
 const KEYS = Object.keys(KBM);
@@ -61,7 +73,7 @@ function load() {
   return H.load(FILES);
 }
 
-test('prompts: the table has exactly the twelve keys, each with a string for every device', () => {
+test('prompts: the table has exactly the fifteen keys, each with a string for every device', () => {
   const { Prompts } = load();
   assert.deepEqual(Object.keys(Prompts.TABLE).sort(), KEYS.slice().sort());
   for (const k of KEYS) {
@@ -87,12 +99,37 @@ test('prompts: every key on every device matches the table in the plan', () => {
 
 test('prompts: the kbm strings are byte-identical to the shipped ones (U+00B7 separators, nothing else non-ASCII)', () => {
   const { Prompts } = load();
-  for (const k of KEYS) {
+  for (const k of KEYS.filter((x) => !SHARE_KEYS.includes(x))) {
     const s = Prompts.text(k, 'kbm');
     assert.equal(Buffer.from(s, 'utf8').toString('hex'), Buffer.from(KBM[k], 'utf8').toString('hex'), k);
     assert.equal(s.replace(/·/g, '').replace(/[\x20-\x7e]/g, ''), '', `${k}: only printable ASCII and the middle dot`);
   }
   assert.equal(Prompts.text('pauseLine', 'kbm').split('·').length, 2);
+});
+
+test('prompts: the share strings carry nothing but printable ASCII and the check mark, and each says what it is for', () => {
+  const { Prompts } = load();
+  for (const k of SHARE_KEYS) {
+    for (const d of DEVICES) assert.equal(Prompts.text(k, d).replace(/✓/g, '').replace(/[\x20-\x7e]/g, ''), '', `${k}/${d}`);
+  }
+  // The button names its input on every device that has one to name; the phone's says what it does.
+  assert.match(Prompts.text('share', 'kbm'), /\(C\)$/, 'the keyboard shortcut is C');
+  assert.match(Prompts.text('share', 'pad'), /^\[ X: /, 'the pad button is X');
+  assert.doesNotMatch(Prompts.text('share', 'touch'), /\(|X:/, 'a phone has no key to name');
+  for (const d of DEVICES) {
+    assert.notEqual(Prompts.text('shareDone', d), Prompts.text('shareFail', d), d);
+    assert.match(Prompts.text('shareDone', d), /✓$/, d + ': done reads as done');
+    assert.doesNotMatch(Prompts.text('shareFail', d), /✓/, d + ': fail is not ticked');
+  }
+  assert.equal(Prompts.text('shareDone', 'touch'), 'shared ✓', 'a phone shared it');
+  assert.equal(Prompts.text('shareDone', 'kbm'), 'result copied ✓', 'a computer copied it');
+});
+
+test('prompts: the toast strings fit the toast band (one line, well inside the screen) on every device', () => {
+  const CB = load();
+  for (const k of ['shareDone', 'shareFail']) {
+    for (const d of DEVICES) assert.ok(CB.Font.measure(CB.Prompts.text(k, d), 1) <= 160, `${k}/${d}`);
+  }
 });
 
 test('prompts: text() defaults to the current device and follows setDevice', () => {

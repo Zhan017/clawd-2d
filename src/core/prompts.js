@@ -35,6 +35,10 @@
     },
     hat: { kbm: '(Q/E)', touch: '(tap)', pad: '(LB/RB)' },
     reload: { kbm: 'Press R to reload', touch: 'Tap to reload', pad: 'Press R to reload' },
+    // The victory screen's share button and the toasts that answer it (the result goes to the share sheet on a phone, the clipboard elsewhere).
+    share: { kbm: '[ copy result ] (C)', touch: '[ share result ]', pad: '[ X: copy result ]' },
+    shareDone: { kbm: 'result copied ✓', touch: 'shared ✓', pad: 'result copied ✓' },
+    shareFail: { kbm: "couldn't copy", touch: "couldn't copy", pad: "couldn't copy" },
   };
   for (const k of Object.keys(TABLE)) Object.freeze(TABLE[k]);
   Object.freeze(TABLE);

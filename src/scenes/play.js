@@ -9,7 +9,8 @@
   const TOAST_FADE = 0.4; // a toast fades out over its last seconds
   const MODES_TEXT = 'UNLOCKED: boss rush + --yolo on the title';
   const RETRY_LABEL = '$ git reset --hard HEAD'; // typed by the transition after a retry
-  const TOAST_Y = 171; // top of the toast text; its band (y 169-180) clears the victory prompt at y 160-166
+  const TOAST_Y = 171; // top of the toast text; its band (y 169-180) clears the victory prompt and share button at y 160-166
+  const VICTORY_INPUT_AT = 1.5; // the victory screen takes play-again and share input strictly after this (victory.js CLICK_AT)
   const BUBBLE_STATES = { wave: true, waveBreak: true, boss: true }; // states without a centred card, where Clawd may 'think'
   const POINTER_STATES = { patchPick: true, dead: true, victory: true }; // screens driven by a pointer (and paused): a mouse cursor, or taps
   const PAUSE_CHIPS_Y = 68; // where the pause screen's sound/music/calm chips sit when screens.js does not say
@@ -45,6 +46,7 @@
     stateSeen: null, // run.state as of the last unpaused update: a change to patchPick starts the pick's focus
     aimSeenX: NaN, // the pointer as of the last unpaused update: a move hands a patch pick back to the pointer
     aimSeenY: NaN,
+    dailyDone: false, // a daily run's result has gone to CB.Daily (once, when the run first reaches victory)
 
     enter(game, data) {
       const d = data || {};
@@ -70,6 +72,7 @@
       this.stateSeen = null;
       this.aimSeenX = NaN;
       this.aimSeenY = NaN;
+      this.dailyDone = false;
     },
 
     // The device in use ('kbm' | 'pad' | 'touch'); a host that does not say is the keyboard and mouse.
@@ -103,9 +106,70 @@
       }
     },
 
-    // A toast from outside the run (the host: "controller connected").
-    notify(text) {
-      if (typeof text === 'string' && text) this.toasts.push({ text, t: TOAST_T });
+    // A toast from outside the run (the host: "controller connected"). With a `kind`, a toast of that kind still waiting is rewritten
+    // instead of queued again, so a mashed share button shows one toast.
+    notify(text, kind) {
+      if (typeof text !== 'string' || !text) return;
+      const queued = kind ? this.toasts.find((q) => q.kind === kind) : null;
+      if (queued) {
+        queued.text = text;
+        queued.t = TOAST_T;
+      } else this.toasts.push(kind ? { text, t: TOAST_T, kind } : { text, t: TOAST_T });
+    },
+
+    // A daily run's result goes to CB.Daily the first time the run is seen in 'victory', and never again. Daily is optional, and a result
+    // that cannot be saved must not stop the screen.
+    recordDaily() {
+      const run = this.run;
+      if (this.dailyDone || run.state !== 'victory' || typeof run.daily !== 'string' || !run.daily) return;
+      this.dailyDone = true;
+      try {
+        if (CB.Daily && typeof CB.Daily.record === 'function') CB.Daily.record(run.daily, { time: run.time, deaths: run.deaths, yolo: !!run.yolo });
+      } catch (err) {
+        // the best-of-the-day record is a nicety
+      }
+    },
+
+    // Victory, after the prompt delay: C, the pad's X, or a tap on the share button. Without CB.Share there is no button and no share.
+    wantsShare(inp) {
+      const S = CB.Share;
+      if (!S || typeof S.send !== 'function' || typeof S.text !== 'function') return false;
+      if (Array.isArray(inp.keys) && inp.keys.includes('KeyC')) return true;
+      if (inp.pad && inp.pad.x) return true;
+      return !!inp.tap && inBox(CB.Screens.victory && CB.Screens.victory.SHARE_BOX, inp.aimX, inp.aimY);
+    },
+
+    // Sends the result: to the share sheet on a phone, the clipboard elsewhere. The text is made now. The send runs inside a user activation
+    // (a touch's lift; the input says when) and its outcome becomes a toast: nothing when the player closed the share sheet themselves.
+    share() {
+      const S = CB.Share;
+      const device = this.device();
+      let text = '';
+      try {
+        text = S.text(this.run);
+      } catch (err) {
+        text = '';
+      }
+      const env = { nav: typeof navigator !== 'undefined' ? navigator : null, doc: typeof document !== 'undefined' ? document : null, device };
+      const answer = (result) => {
+        if (result === 'cancelled') return;
+        const done = result === 'shared' || result === 'copied';
+        const P = CB.Prompts;
+        const said = P && typeof P.text === 'function' ? P.text(done ? 'shareDone' : 'shareFail', device) : '';
+        this.notify(said || (done ? 'result copied ✓' : "couldn't copy"), 'share');
+      };
+      const send = () => {
+        let sent;
+        try {
+          sent = S.send(text, env);
+        } catch (err) {
+          sent = 'failed';
+        }
+        Promise.resolve(sent).then(answer, () => answer('failed'));
+      };
+      const input = this.game && this.game.input;
+      if (input && typeof input.withActivation === 'function') input.withActivation(send);
+      else send();
     },
 
     // Runs the unlock rules on one step's events: a hat (or the modes unlock) queues a toast, and any unlock chimes (once per step) through the audio handler.
@@ -250,9 +314,14 @@
           return;
         }
       }
-      if (run.state === 'victory' && run.stateT > 1.5 && inp.confirm) {
-        this.leave();
-        return;
+      this.recordDaily();
+      if (run.state === 'victory' && run.stateT > VICTORY_INPUT_AT) {
+        // The share button keeps the player on the receipt (its own click or tap is also a confirm); any other confirm plays again.
+        if (this.wantsShare(inp)) this.share();
+        else if (inp.confirm) {
+          this.leave();
+          return;
+        }
       }
       if (this.toasts.length) {
         this.toasts[0].t -= dt; // frozen while paused (the pause branch returned above)
@@ -265,6 +334,7 @@
         if (CB.Haptics && typeof CB.Haptics.handleEvents === 'function') CB.Haptics.handleEvents(evs, game.input);
         this.celebrate(evs);
       }
+      this.recordDaily(); // the step that ended the run
       if (run.attempt !== this.attemptSeen) {
         // The step (or a caller outside update) retried the stage: wipe to the new attempt.
         this.attemptSeen = run.attempt;

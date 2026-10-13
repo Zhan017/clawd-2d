@@ -668,6 +668,68 @@ test('victory: a tap (a confirm) leaves for the title after the delay', () => {
   assert.equal(s.visits.length, 1);
 });
 
+test('victory: without CB.Share the share inputs are nothing, even over a SHARE_BOX', () => {
+  const s = setup();
+  s.CB.Screens.victory = { draw() {}, SHARE_BOX: { x: 70, y: 159, w: 88, h: 10 } };
+  s.play.run.state = 'victory';
+  s.play.run.stateT = 2;
+  tick(s, 1, in_({ keys: ['KeyC'] }));
+  tick(s, 1, in_({ pad: padBtns({ x: true }) }));
+  assert.equal(s.visits.length, 0, 'C and X do nothing');
+  tick(s, 1, in_({ confirm: true, tap: true, aimX: 100, aimY: 164 }));
+  assert.equal(s.visits.length, 1, 'a tap over the box is only a tap: it plays again');
+});
+
+test('victory: the share button is where the victory screen says (CB.Screens.victory.SHARE_BOX), and a missing screen means no box', () => {
+  const sent = [];
+  const s = setup({ files: ['src/core/prompts.js'] });
+  s.CB.Share = { text: () => 'result', send: (text, env) => { sent.push([text, env.device]); return Promise.resolve('copied'); } };
+  s.CB.Screens.victory = { draw() {}, SHARE_BOX: { x: 200, y: 20, w: 30, h: 10 } };
+  s.play.run.state = 'victory';
+  s.play.run.stateT = 2;
+  tick(s, 1, in_({ confirm: true, tap: true, aimX: 210, aimY: 25 }));
+  assert.deepEqual(sent, [['result', 'kbm']]);
+  assert.equal(s.visits.length, 0, 'a tap in the box stays');
+  tick(s, 1, in_({ confirm: true, tap: true, aimX: 100, aimY: 164 }));
+  assert.equal(s.visits.length, 1, 'where the button used to be is just a tap now');
+  const t = setup();
+  t.CB.Share = { text: () => 'result', send: () => Promise.resolve('copied') };
+  delete t.CB.Screens.victory;
+  t.play.run.state = 'victory';
+  t.play.run.stateT = 2;
+  assert.doesNotThrow(() => tick(t, 1, in_({ confirm: true, tap: true, aimX: 100, aimY: 164 })));
+  assert.equal(t.visits.length, 1, 'no victory screen, no box: a tap leaves');
+});
+
+test('victory: a daily run is recorded once with its time, deaths and yolo flag, a plain run never', () => {
+  const calls = [];
+  const s = setup();
+  s.CB.Daily = { record: (key, res) => calls.push([key, H.plain(res)]) };
+  s.play.run.state = 'victory';
+  s.play.run.stateT = 0.2;
+  s.play.run.time = 75.5;
+  s.play.run.deaths = 4;
+  tick(s, 3);
+  assert.deepEqual(calls, [], 'a plain run');
+  s.play.run.daily = '2026-10-13';
+  tick(s, 3);
+  assert.deepEqual(calls, [['2026-10-13', { time: 75.5, deaths: 4, yolo: false }]]);
+  tick(s, 10);
+  assert.equal(calls.length, 1);
+});
+
+test('notify: with a kind a waiting toast of that kind is rewritten; without one every message queues as before', () => {
+  const s = setup();
+  s.play.notify('controller connected');
+  s.play.notify('controller connected');
+  assert.equal(s.play.toasts.length, 2);
+  s.play.notify('one', 'share');
+  s.play.toasts[2].t = 0.5;
+  s.play.notify('two', 'share');
+  assert.equal(s.play.toasts.length, 3);
+  assert.deepEqual([s.play.toasts[2].text, s.play.toasts[2].t], ['two', 2.5]);
+});
+
 // ---- haptics and host toasts -----------------------------------------------------------------------------------------------
 
 test('haptics: every step\'s events go to CB.Haptics.handleEvents after the audio, with the input as the sink', () => {

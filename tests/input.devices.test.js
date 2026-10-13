@@ -1275,6 +1275,190 @@ test('fullscreen: with the real Touch helper and a fake document it asks for ful
   assert.deepEqual(log, [['fs', 'hide'], ['lock', 'landscape']]);
 });
 
+// ---- withActivation ----------------------------------------------------------------------------------------------------------------------
+
+test('withActivation: with no touch down it runs now (a key or a click already granted the activation), once', () => {
+  const e = makeEnv();
+  const log = [];
+  assert.equal(e.input.withActivation(() => log.push('a')), true, 'true: it ran now');
+  assert.deepEqual(log, ['a']);
+  e.tdown(1, 400, 200);
+  e.tup(1);
+  assert.deepEqual(log, ['a'], 'a later touch does not run it again');
+  e.key('KeyC');
+  assert.equal(e.input.withActivation(() => log.push('b')), true, 'after a key');
+  e.mdown(400, 200);
+  assert.equal(e.input.withActivation(() => log.push('c')), true, 'after a click');
+  assert.deepEqual(log, ['a', 'b', 'c']);
+});
+
+test('withActivation: while a touch pointer is down it waits for the next touch pointerup and runs there, once', () => {
+  const e = makeEnv();
+  const log = [];
+  e.tdown(1, 400, 200);
+  assert.equal(e.input.withActivation(() => log.push('x')), false, 'false: it is waiting');
+  assert.deepEqual(log, []);
+  e.tmove(1, 404, 200);
+  e.key('KeyC');
+  e.mdown(400, 200);
+  e.win.fire('pointerup', { pointerType: 'mouse', pointerId: 1 });
+  assert.deepEqual(log, [], 'a move, a key, a click and a mouse pointerup are not the touch release');
+  e.tup(1);
+  assert.deepEqual(log, ['x'], 'the release runs it');
+  e.tdown(2, 400, 200);
+  e.tup(2);
+  assert.deepEqual(log, ['x'], 'and only once');
+});
+
+test('withActivation: it runs inside the pointerup handler, after the touch layer has taken the release, and the fullscreen request goes first', () => {
+  const doc = { documentElement: {} };
+  const e = makeEnv({ win: { document: doc, screen: {} } });
+  const order = [];
+  e.CB.Touch.requestFullscreen = () => order.push('fullscreen');
+  const upCalls = [];
+  const realUp = e.CB.Touch.up;
+  e.CB.Touch.up = (st, id) => { upCalls.push(id); order.push('touch.up'); return realUp(st, id); };
+  e.input.requestFullscreenOnRelease();
+  e.tdown(7, 400, 200);
+  e.input.withActivation(() => order.push('fn'));
+  e.tup(7);
+  assert.deepEqual(order, ['touch.up', 'fullscreen', 'fn']);
+  assert.deepEqual(upCalls, [7]);
+});
+
+test('withActivation: with two fingers down it runs at the first lift, even though another is still down', () => {
+  const e = makeEnv();
+  const log = [];
+  e.tdown(1, ...CLIENT.moveSide);
+  e.tdown(2, ...CLIENT.aimSide);
+  e.input.withActivation(() => log.push('x'));
+  e.tup(2);
+  assert.deepEqual(log, ['x'], 'a pointerup is an activation whichever finger it is');
+  e.tup(1);
+  assert.deepEqual(log, ['x']);
+  // A function asked for while one finger is still down waits for that finger.
+  e.tdown(3, ...CLIENT.moveSide);
+  e.tdown(4, ...CLIENT.aimSide);
+  e.tup(4);
+  e.input.withActivation(() => log.push('y'));
+  assert.deepEqual(log, ['x'], 'one finger is still down: it waits');
+  e.tup(3);
+  assert.deepEqual(log, ['x', 'y']);
+});
+
+test('withActivation: a cancelled touch is no activation, and with no finger left the waiting function is dropped, not saved for a later tap', () => {
+  const e = makeEnv();
+  const log = [];
+  e.tdown(1, 400, 200);
+  e.input.withActivation(() => log.push('x'));
+  e.tcancel(1);
+  assert.deepEqual(log, [], 'a cancel is not a release');
+  e.tdown(2, 400, 200);
+  e.tup(2);
+  assert.deepEqual(log, [], 'the cancelled tap is over: a later one does not fire it');
+  assert.equal(e.input.withActivation(() => log.push('y')), true, 'and with no finger down a new request runs at once');
+  assert.deepEqual(log, ['y']);
+  // One finger cancelled, another still down: the request survives for that finger's release.
+  e.tdown(3, ...CLIENT.moveSide);
+  e.tdown(4, ...CLIENT.aimSide);
+  e.input.withActivation(() => log.push('z'));
+  e.tcancel(3);
+  assert.deepEqual(log, ['y']);
+  e.tup(4);
+  assert.deepEqual(log, ['y', 'z']);
+});
+
+test('withActivation: several waiting functions each run once, in the order they were asked', () => {
+  const e = makeEnv();
+  const log = [];
+  e.tdown(1, 400, 200);
+  e.input.withActivation(() => log.push(1));
+  e.input.withActivation(() => log.push(2));
+  e.input.withActivation(() => log.push(3));
+  e.tup(1);
+  e.tdown(2, 400, 200);
+  e.tup(2);
+  assert.deepEqual(log, [1, 2, 3]);
+});
+
+test('withActivation: a function that throws never reaches the page, now or at the release, and the rest still run', () => {
+  const e = makeEnv();
+  const log = [];
+  assert.doesNotThrow(() => e.input.withActivation(() => { throw new Error('boom'); }));
+  e.tdown(1, 400, 200);
+  e.input.withActivation(() => { throw new Error('later'); });
+  e.input.withActivation(() => log.push('after'));
+  assert.doesNotThrow(() => e.tup(1));
+  assert.deepEqual(log, ['after']);
+  e.tdown(2, 400, 200);
+  assert.doesNotThrow(() => e.tup(2));
+  assert.equal(e.input.sample().device, 'touch', 'input is intact');
+});
+
+test('withActivation: anything but a function is ignored, and a function asked for inside a release runs at once', () => {
+  const e = makeEnv();
+  for (const junk of [undefined, null, 'x', 5, {}, []]) assert.equal(e.input.withActivation(junk), false);
+  e.tdown(1, 400, 200);
+  e.input.withActivation(undefined);
+  e.input.withActivation(7);
+  const log = [];
+  e.input.withActivation(() => {
+    log.push('outer');
+    e.input.withActivation(() => log.push('inner'));
+  });
+  e.tup(1);
+  assert.deepEqual(log, ['outer', 'inner'], 'the finger is up, so the inner one has its activation already');
+});
+
+test('withActivation: losing the window drops what waits and forgets the fingers, so the next request runs at once', () => {
+  const e = makeEnv();
+  const log = [];
+  e.tdown(1, 400, 200);
+  e.input.withActivation(() => log.push('x'));
+  e.win.fire('blur', {});
+  assert.deepEqual(log, []);
+  e.tup(1);
+  assert.deepEqual(log, [], 'the blur dropped it');
+  e.tdown(2, 400, 200);
+  e.win.fire('blur', {});
+  assert.equal(e.input.withActivation(() => log.push('y')), true, 'no finger is counted after a blur');
+  assert.deepEqual(log, ['y']);
+});
+
+test('withActivation: dispose drops what waits', () => {
+  const e = makeEnv();
+  const log = [];
+  e.tdown(1, 400, 200);
+  e.input.withActivation(() => log.push('x'));
+  e.input.dispose();
+  e.win.fire('pointerup', { pointerType: 'touch', pointerId: 1 });
+  assert.deepEqual(log, []);
+});
+
+test('withActivation: without a touch module a touch is not tracked, so it runs at once', () => {
+  const e = makeEnv({ files: ['src/core/ns.js', 'src/core/math.js', 'src/core/input.js'] });
+  const log = [];
+  e.canvas.fire('pointerdown', { pointerType: 'touch', pointerId: 1, clientX: 400, clientY: 200 });
+  assert.equal(e.input.withActivation(() => log.push('x')), true);
+  assert.deepEqual(log, ['x']);
+});
+
+test('withActivation: it changes nothing else -- a tap still reads as a tap and the device stays touch', () => {
+  const e = makeEnv();
+  e.tdown(1, 400, 200);
+  e.input.withActivation(() => {});
+  const s = e.input.sample();
+  assert.equal(s.device, 'touch');
+  assert.equal(s.tap, true);
+  assert.equal(s.confirm, true);
+  assert.equal(s.aimX, 100);
+  assert.equal(s.aimY, 50);
+  e.tup(1);
+  const s2 = e.input.sample();
+  assert.equal(s2.tap, false);
+  assert.equal(s2.confirm, false);
+});
+
 // ---- modules that are not loaded ----------------------------------------------------------------------------------------------------
 
 test('partial environment: without Prompts, Gamepad or Touch the keyboard and mouse still work and nothing throws', () => {

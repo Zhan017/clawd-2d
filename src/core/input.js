@@ -57,6 +57,8 @@
     let touchMode = 'menu';
     let lastTouchTS = -Infinity; // event.timeStamp of the last touch pointer event; the tests' events carry none, so they never look like compat events
     let fullscreenArmed = false;
+    const touchDown = new Set(); // ids of the touch pointers that are down now (tracked while CB.Touch is loaded)
+    let afterRelease = []; // functions waiting for the next touch release, which is the first user activation of that touch
 
     // CB.Touch is optional (tests load partial stubs), so every call is guarded on the method itself.
     function touchCall(name, a, b, c) {
@@ -68,6 +70,14 @@
     const touchLoaded = () => !!(CB.Touch && typeof CB.Touch.down === 'function');
     function stampTouch(e) {
       if (typeof e.timeStamp === 'number' && Number.isFinite(e.timeStamp)) lastTouchTS = e.timeStamp;
+    }
+    // A nicety waiting for an activation (share, fullscreen) must never take input down with it.
+    function runQuietly(fn) {
+      try {
+        fn();
+      } catch (err) {
+        // the caller's own error handling is not input's business
+      }
     }
     function toInternal(e) {
       return renderer && typeof renderer.toInternal === 'function' ? renderer.toInternal(e.clientX, e.clientY) : null;
@@ -88,6 +98,7 @@
         // a pointer that already lifted cannot be captured; the window listeners still get its moves
       }
       if (canvas.focus) canvas.focus();
+      touchDown.add(e.pointerId);
       const p = toInternal(e);
       if (p) touchCall('down', e.pointerId, p.x, p.y);
       setDevice('touch');
@@ -102,6 +113,7 @@
       if (e.pointerType !== 'touch' || !touchLoaded()) return;
       stampTouch(e);
       touchCall('up', e.pointerId);
+      touchDown.delete(e.pointerId);
       // A touch pointerdown is not a user activation but its pointerup is, so a requested fullscreen waits for the release.
       if (fullscreenArmed) {
         fullscreenArmed = false;
@@ -111,11 +123,19 @@
           // fullscreen is a nicety
         }
       }
+      // The same goes for whatever withActivation() held back: each function runs once, now that the finger is up.
+      if (afterRelease.length) {
+        const waiting = afterRelease;
+        afterRelease = [];
+        for (const fn of waiting) runQuietly(fn);
+      }
     }
     function onPointerCancel(e) {
       if (e.pointerType !== 'touch' || !touchLoaded()) return;
       stampTouch(e);
       touchCall('up', e.pointerId);
+      touchDown.delete(e.pointerId);
+      if (!touchDown.size) afterRelease = []; // a cancelled touch is no activation, and its tap is over: nothing is left waiting for a later one
     }
 
     // ---- keyboard and mouse ----------------------------------------------------------------------------------------------
@@ -185,6 +205,8 @@
     function releaseAll() {
       releaseKbm();
       touchCall('releaseAll');
+      touchDown.clear();
+      afterRelease = [];
     }
     function onContext(e) { if (e.preventDefault) e.preventDefault(); }
 
@@ -347,7 +369,19 @@
       requestFullscreenOnRelease() {
         fullscreenArmed = true;
       },
+      // Runs fn inside a user activation (the clipboard and the share sheet need one). A key or mouse press has already granted it, so fn runs
+      // now; while a touch pointer is down it waits for the next touch release instead, and runs there once. True when it ran now.
+      withActivation(fn) {
+        if (typeof fn !== 'function') return false;
+        if (touchDown.size) {
+          afterRelease.push(fn);
+          return false;
+        }
+        runQuietly(fn);
+        return true;
+      },
       dispose() {
+        afterRelease = [];
         win.removeEventListener('keydown', onKeyDown);
         win.removeEventListener('keyup', onKeyUp);
         win.removeEventListener('blur', releaseAll);

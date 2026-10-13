@@ -1027,6 +1027,170 @@ test('victory: Clawd hops with abs(sin(6t)) * 4 and wears the hat, clear of the 
   assert.ok(hat0.y >= box(rest, quip).y + 7, 'at rest the hat is below the quip');
 });
 
+// ---- victory: the share button, the daily build line and the bottom row ----------------------------------------------------------
+
+const SHARE_JS = 'src/core/share.js';
+const SHARE_LABEL = { kbm: '[ copy result ] (C)', touch: '[ share result ]', pad: '[ X: copy result ]' };
+const AGAIN_LABEL = { kbm: 'Click to play again', touch: 'Tap to play again', pad: 'Press A to play again' };
+const DEVICES = ['kbm', 'touch', 'pad'];
+const touchesBox = (b, hit) => b.x < hit.x + hit.w && hit.x < b.x + b.w && b.y < hit.y + hit.h && hit.y < b.y + b.h;
+const shareEnv = (dev) => {
+  const env = setup({ real: true, extra: [QUIPS, SHARE_JS] });
+  env.CB.Prompts.setDevice(dev || 'kbm');
+  return env;
+};
+
+test('victory share: the button shows with the play-again prompt, does not blink, and the rows above it have not moved', () => {
+  const env = shareEnv('kbm');
+  const { CB, C } = env;
+  const run = victoryRun(CB);
+  const SH = SHARE_LABEL.kbm;
+  assert.ok(!box(draw(env, 'victory', run, 1.4), SH), 'hidden at 1.4');
+  assert.ok(!box(draw(env, 'victory', run, 1.5), SH), 'and at exactly 1.5: play.js accepts the share strictly after it, like the click');
+  const shows = [];
+  const agains = [];
+  for (let st = 1.6; st < 3.6; st += 0.05) {
+    const rec = draw(env, 'victory', run, st);
+    shows.push(!!box(rec, SH));
+    agains.push(!!box(rec, AGAIN_LABEL.kbm));
+  }
+  assert.ok(shows.every((v) => v), 'the share button never blinks');
+  assert.ok(agains.some((v) => v) && agains.some((v) => !v), 'the play-again prompt does');
+  const rec = draw(env, 'victory', run, 2.0);
+  const share = box(rec, SH);
+  const again = box(rec, AGAIN_LABEL.kbm);
+  assert.equal(share.y, 160);
+  assert.equal(again.y, 160, 'one row');
+  assert.equal(share.x + share.w, 154, 'the button ends left of the gutter');
+  assert.equal(again.x, 166, 'the prompt starts right of it');
+  assert.ok(env.log.text.some((a) => a[0] === SH && a[3].color === C.pale && a[3].align === 'right'));
+  assert.ok(env.log.text.some((a) => a[0] === AGAIN_LABEL.kbm && a[3].color === C.white));
+  // Everything above the row is where it was.
+  assert.equal(box(rec, DISCLAIMER).y, 152);
+  assert.equal(box(rec, 'git log --oneline').y, 106);
+  CB.STAGES.forEach((stage, i) => assert.equal(box(rec, CB.Screens.victory.commitHash(7, i) + ' ' + CB.Bosses[stage.boss].commitMsg).y, 115 + 9 * i));
+  assert.equal(box(rec, 'time 01:01 · deaths 3').y, 62);
+  assert.ok(share.y + share.h < 169 && again.y + again.h < 169, 'both clear the toast band (y 169-180)');
+  assertLayout(rec, 'victory with share');
+});
+
+test('victory share: SHARE_BOX is frozen, holds the label on every device, touches no other text and stays above the toast band', () => {
+  for (const dev of DEVICES) {
+    const env = shareEnv(dev);
+    const S = env.CB.Screens.victory.SHARE_BOX;
+    assert.ok(Object.isFrozen(S));
+    assert.deepEqual(H.plain(S), { x: 70, y: 159, w: 88, h: 10 });
+    assert.ok(S.x >= 0 && S.y >= 0 && S.x + S.w <= 320 && S.y + S.h <= 169, 'on screen, above the toast band');
+    const run = victoryRun(env.CB);
+    for (const st of [1.6, 2.1, 3.1]) {
+      const rec = draw(env, 'victory', run, st);
+      const label = box(rec, SHARE_LABEL[dev]);
+      assert.ok(label, dev + ' label at ' + st);
+      assert.ok(inBox(label, S), `${dev}: the label (${label.x},${label.y} ${label.w}x${label.h}) is inside the box`);
+      const others = rec.texts().filter((b) => b !== label && b.str !== '✻' && touchesBox(b, S));
+      assert.deepEqual(others.map((b) => b.str), [], dev + ': no other text touches the box');
+    }
+  }
+});
+
+test('victory share: the box fits the widest label closely and the labels each fit it with room to spare for a thumb', () => {
+  const env = shareEnv('kbm');
+  const S = env.CB.Screens.victory.SHARE_BOX;
+  const widest = Math.max(...DEVICES.map((d) => env.CB.Font.measure(SHARE_LABEL[d], 1)));
+  assert.ok(widest <= S.w && S.w - widest <= 12, `box ${S.w} px for a ${widest} px label`);
+  assert.ok(S.h >= 8 && S.h <= 12, 'about a text row tall');
+});
+
+test('victory share: a pad shows its X button, a phone its tap label, and each device only its own', () => {
+  for (const dev of DEVICES) {
+    const env = shareEnv(dev);
+    const rec = draw(env, 'victory', victoryRun(env.CB), 2.1);
+    for (const other of DEVICES.filter((d) => d !== dev)) assert.ok(!box(rec, SHARE_LABEL[other]), dev + ' shows no ' + other + ' label');
+    assert.ok(box(rec, SHARE_LABEL[dev]), dev);
+  }
+});
+
+test('victory share: without CB.Share there is no button and the prompt is centred as before', () => {
+  const env = setup({ real: true, extra: [QUIPS] });
+  assert.equal(env.CB.Share, undefined);
+  const run = victoryRun(env.CB);
+  let seen = false;
+  for (let st = 1.6; st < 3.6; st += 0.05) {
+    const rec = draw(env, 'victory', run, st);
+    assert.ok(!strs(rec).some((s) => /result/.test(s)), 'no share label');
+    const b = box(rec, 'Click to play again');
+    if (b) {
+      seen = true;
+      assert.equal(b.y, 160);
+      assert.ok(Math.abs(centreX(b) - 160) <= 1);
+    }
+  }
+  assert.ok(seen);
+});
+
+test('victory daily: the date shows in gold at the right end of the log header row, only when run.daily is a string', () => {
+  for (const dev of DEVICES) {
+    const env = shareEnv(dev);
+    const { CB, C } = env;
+    const daily = victoryRun(CB, { daily: '2026-10-13' });
+    const rec = draw(env, 'victory', daily, 3);
+    const line = box(rec, 'daily build 2026-10-13');
+    assert.ok(line, dev);
+    assert.ok(env.log.text.some((a) => a[0] === 'daily build 2026-10-13' && a[3].color === C.gold), 'gold');
+    const head = box(rec, 'git log --oneline');
+    assert.equal(line.y, head.y, 'the same row as the log header');
+    assert.equal(line.x + line.w, 280, 'right-aligned to the mirror of the log margin');
+    assert.ok(line.x >= head.x + head.w + 8, 'clear of the header text');
+    assert.ok(line.x + line.w <= 285 && line.x >= 4, 'inside the confetti margins');
+    assertLayout(rec, 'daily ' + dev);
+    for (const none of [null, undefined, '', 5, true, {}, ['2026-10-13']]) {
+      const rec2 = draw(env, 'victory', victoryRun(CB, { daily: none }), 3);
+      assert.ok(!strs(rec2).some((s) => /daily/.test(s)), `${dev}: daily ${JSON.stringify(none)} shows nothing`);
+    }
+  }
+});
+
+test('victory daily: every combination of device, daily, fix count and time lays out with no overlap and nothing off screen', () => {
+  for (const dev of DEVICES) {
+    const env = shareEnv(dev);
+    const { CB } = env;
+    for (const daily of [null, '2026-10-13']) {
+      for (const fixed of [0, 1, 2, 3, 4]) {
+        const run = victoryRun(CB, { daily, bossesFixed: fixed, history: ['spread', 'rapid', 'pierce', 'heavy', 'heart', 'dash', 'ricochet'] });
+        for (const st of [0, 0.6, 1.2, 1.6, 2.1, 2.6, 5]) assertLayout(draw(env, 'victory', run, st), `${dev} daily=${daily} fixed=${fixed} @${st}`);
+      }
+    }
+  }
+});
+
+test('victory daily: the bottom row, the log lines and the toast band never share a pixel', () => {
+  const env = shareEnv('pad');
+  const { CB } = env;
+  const run = victoryRun(CB, { daily: '2026-10-13' });
+  const rec = draw(env, 'victory', run, 2.1);
+  const TOAST_BAND = { x: 0, y: 169, w: 320, h: 11 }; // play.js: TOAST_Y 171, the band starts two above it
+  const others = noConfetti(rec).filter((b) => touchesBox(b, TOAST_BAND));
+  assert.deepEqual(others.map((b) => b.str), [], 'no text reaches the toast band');
+  const last = Math.max(...CB.STAGES.map((s, i) => 115 + 9 * i + 7));
+  assert.ok(last <= box(rec, DISCLAIMER).y - 1, 'the last log line ends above the disclaimer');
+});
+
+test('victory patches: the line counts what the run holds, so a daily build starts with its patch on the receipt', () => {
+  const env = shareEnv('kbm');
+  const { CB } = env;
+  const line = (run) => noConfetti(draw(env, 'victory', victoryRun(CB, run), 3)).map((b) => b.str).find((s) => s.startsWith('patches:'));
+  // A daily run starts holding a patch it never picked: it leads, then the picks follow.
+  assert.equal(line({ patches: { rapid: 1, spread: 1 }, history: ['spread'] }), 'patches: Rapid Fire, Spread Shot');
+  assert.equal(line({ patches: { rapid: 1 }, history: ['rapid', 'rapid'] }), 'patches: Rapid Fire ×2', 'history ahead of what is held counts too');
+  // A plain run holds exactly its picks, so the line is the one it always was.
+  assert.equal(line({ patches: { spread: 2, rapid: 1 }, history: ['spread', 'rapid', 'spread'] }), 'patches: Spread Shot ×2, Rapid Fire');
+  assert.equal(line({ patches: {}, history: ['spread', 'rapid', 'spread'] }), 'patches: Spread Shot ×2, Rapid Fire');
+  assert.equal(line({ patches: { spread: 1, rapid: 1 }, history: [] }), 'patches: Spread Shot, Rapid Fire');
+  assert.equal(line({ patches: undefined, history: undefined }), 'patches: none');
+  assert.equal(line({ patches: null, history: ['spread'] }), 'patches: Spread Shot');
+  assert.equal(line({ patches: { rapid: NaN, spread: -1, heavy: 'x' }, history: [] }), 'patches: none', 'junk counts are nothing');
+});
+
 // ---- calm mode ----------------------------------------------------------------------------------------------------------------
 
 function calmStore(value) {
