@@ -1,16 +1,43 @@
+<p align="center">
+  <img src="assets/og.png" alt="Clawd vs Bugs: a pixel-art Clawd fires sparks at four software bugs" width="720">
+</p>
+
+<p align="center">
+  <b><a href="https://clawd-2d.vercel.app">▶ Play Clawd vs Bugs in your browser</a></b><br>
+  keyboard and mouse · controller · phone or tablet · about 10 minutes a run · free
+</p>
+
 # Clawd vs Bugs
 
 A top-down pixel boss rush. You play as Clawd and shoot your way through four software-bug bosses, fixing a codebase one stage at a time: `~/src/`, `~/node_modules/`, `~/.git/` and `~/prod/`.
 
+<p align="center">
+  <img src="docs/screenshots/gameplay.gif" alt="Gameplay: Clawd fights the Heisenbug. The moth under the crosshair turns to stone while its ghost twin circles round" width="640"><br>
+  <sub>The final boss, the Heisenbug: only what you look at is real.</sub>
+</p>
+
 Fan game. Not affiliated with Anthropic.
 
-It runs in the browser and takes about 10 minutes per run. Play with a keyboard and mouse, a controller, or a phone or tablet held sideways.
+## Screenshots
+
+| | |
+|:---:|:---:|
+| <img src="docs/screenshots/title.png" alt="Title screen with the menu card: START, daily build, boss rush and --yolo buttons" width="420"><br><sub>The title menu</sub> | <img src="docs/screenshots/fight.png" alt="A wave of bugs in the red ~/prod/ stage" width="420"><br><sub>A wave in <code>~/prod/</code></sub> |
+| <img src="docs/screenshots/patch-pick.png" alt="Choosing one of three patch cards" width="420"><br><sub>Pick a patch after each boss</sub> | <img src="docs/screenshots/bug-fixed.png" alt="BUG FIXED card showing the commit message and the code diff" width="420"><br><sub>Every boss ends with the diff that fixed it</sub> |
+| <img src="docs/screenshots/victory.png" alt="Victory screen: ALL TESTS PASSING, time, deaths, patches, bug tally and git log" width="420"><br><sub>The victory receipt, ready to copy and share</sub> | <img src="docs/screenshots/touch.png" alt="Touch controls: move and aim sticks, DASH, /compact and pause buttons" width="420"><br><sub>Twin-stick touch controls on a phone</sub> |
 
 ## Play
 
 - **Web:** https://clawd-2d.vercel.app (deployed from `main` on Vercel)
 - **Install it:** on a phone, use *Add to Home Screen*; in desktop Chrome or Edge, use the install button in the address bar. It opens fullscreen with its own icon, and works offline after your first visit.
 - **Locally:** `npm run serve`, then open http://127.0.0.1:8137/. You can also double-click `index.html`.
+
+## How to play
+
+- **Fight, then upgrade:** beat each stage's waves and boss, then pick a patch.
+- **Watch the bars:** each boss has a trick, and the health bars and the screen hint at it. In `.git/`, watch the twins' bars; in `prod/`, watch what happens when you stare.
+- **Use E:** /compact is your panic button. Every boss fight hands you one charge.
+- **Grab P0 drops:** P0 elites and boss phase changes drop hotfix hearts, so go get them.
 
 ## Controls
 
@@ -35,7 +62,8 @@ The prompts on screen always match whatever you touched last: keyboard, controll
 | C | Copy your result (victory screen) |
 | Q | Quit to the title (press twice from pause) |
 
-### Controller
+<details>
+<summary><b>Controller</b> (Xbox, PlayStation, Switch Pro)</summary>
 
 Any standard controller works: Xbox, PlayStation or Switch Pro.
 
@@ -55,7 +83,10 @@ Any standard controller works: Xbox, PlayStation or Switch Pro.
 
 The controller rumbles when you get hit, at boss phase changes, on /compact and when a boss goes down.
 
-### Touch (phone or tablet, in landscape)
+</details>
+
+<details>
+<summary><b>Touch</b> (phone or tablet, in landscape)</summary>
 
 | Touch | Action |
 |---|---|
@@ -67,6 +98,8 @@ The controller rumbles when you get hit, at boss phase changes, on /compact and 
 | Tap | Everything in menus: start, daily build, patches, retry, quit, play again, share your result |
 
 Starting a run goes fullscreen where the browser allows it. In portrait the game asks you to turn your phone, and a fight pauses until you do.
+
+</details>
 
 ## Features
 
@@ -109,6 +142,11 @@ Starting a run goes fullscreen where the browser allows it. In portrait the game
 **P0 elites** wear a gold ring and a `P0` tag. They're tougher and faster, and they drop a hotfix heart when they die.
 
 ### Bosses
+
+| | |
+|:---:|:---:|
+| <img src="docs/screenshots/boss-infinite-loop.png" alt="The Infinite Loop: a centipede circling the arena" width="420"><br><sub>The Infinite Loop</sub> | <img src="docs/screenshots/boss-memory-leak.png" alt="Memory Leak: a slime with green puddles on the floor" width="420"><br><sub>Memory Leak</sub> |
+| <img src="docs/screenshots/boss-merge-conflict.png" alt="Merge Conflict: twin beetles HEAD and incoming" width="420"><br><sub>Merge Conflict</sub> | <img src="docs/screenshots/boss-heisenbug.png" alt="The Heisenbug: a stone moth with a strain ring and a ghost moth" width="420"><br><sub>The Heisenbug</sub> |
 
 | Boss | Stage | Trick |
 |---|---|---|
@@ -201,20 +239,15 @@ Picking a patch makes Clawd celebrate.
 - **Crash screen:** if anything ever breaks, a **KERNEL PANIC** screen shows the error. Press R (or tap) to reload.
 - **No dependencies:** no npm packages and no audio files. The only images are the link preview and app icons, and those are drawn from the game's own sprites. There's no build step needed to play locally.
 
-## How to play
+## For developers
 
-- **Fight, then upgrade:** beat each stage's waves and boss, then pick a patch.
-- **Watch the bars:** each boss has a trick, and the health bars and the screen hint at it. In `.git/`, watch the twins' bars; in `prod/`, watch what happens when you stare.
-- **Use E:** /compact is your panic button. Every boss fight hands you one charge.
-- **Grab P0 drops:** P0 elites and boss phase changes drop hotfix hearts, so go get them.
-
-## Development
+### Tests and debug URLs
 
 ```bash
 npm test
 ```
 
-This runs about 1,530 headless tests with `node:test`. They include a bot that plays every stage in invincible mode, checks every boss can be beaten, and prints a difficulty report.
+This runs about 1,570 headless tests with `node:test`. They include a bot that plays every stage in invincible mode, checks every boss can be beaten, and prints a difficulty report.
 
 Debug URLs work only on localhost or `file://`, never on a deployed page:
 
@@ -231,14 +264,14 @@ Debug URLs work only on localhost or `file://`, never on a deployed page:
 
 `window.CB.debug.run` exposes the live run in the console.
 
-## Building
+### Building
 
 | Command | Output | Used for |
 |---|---|---|
 | `npm run build:site` | `public/`: the page, one content-hashed bundle of all 51 scripts (`game.<hash>.js`, about 120 KB gzipped) with a source map, a service worker for offline play, the app manifest and the images. Tests, docs and tools stay out. | Static hosting (Vercel). |
 | `npm run build` | `dist/clawd-vs-bugs.html`: every script inlined into one file (one `<script>` per source file, with `sourceURL` comments so stack traces name the real file). | The claude.ai Artifact version. |
 
-## Deploying (Vercel)
+### Deploying (Vercel)
 
 - `vercel.json` sets `framework: null`, runs `node tools/build-site.mjs` and serves `public/`.
 - Pushing to `main` deploys production through the Vercel Git integration.
@@ -250,10 +283,11 @@ Debug URLs work only on localhost or `file://`, never on a deployed page:
 
 Regenerate the link preview card and app icons with `npm run art` after changing Clawd, a bug sprite, the palette or the font (a test fails until you do).
 
-## How it's built
+### How it's built
 
 - Plain JavaScript classic scripts on one global, `window.CB`, rendered with Canvas 2D on a 320×180 buffer scaled up with integer scaling.
 - Game logic is deterministic: a seeded RNG and a fixed 60 Hz step, with drawing kept separate. The whole game can therefore run headless in Node for tests and the playthrough bot.
 - Every sprite is a string of palette characters in the source. Sound effects and music are synthesised with Web Audio.
 - The link preview card and app icons are rendered from those same sprites and the bitmap font by `tools/make-art.mjs`, which has its own tiny rasterizer and PNG encoder and gives byte-identical output on every run.
-- Design spec: `docs/superpowers/specs/2026-10-06-clawd-vs-bugs-design.md`. Implementation plan and balance log: `docs/superpowers/plans/2026-10-12-clawd-vs-bugs.md`.
+- Design docs: the base spec is `docs/superpowers/specs/2026-10-06-clawd-vs-bugs-design.md`, with later specs beside it (controller and touch, the Heisenbug redesign, the title menu). The implementation plan and balance log are in `docs/superpowers/plans/`.
+- The screenshots in this README are real frames captured from the game with the test bot playing (`docs/screenshots/`).
