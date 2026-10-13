@@ -1,6 +1,6 @@
 'use strict';
 // Daily build: CB.Daily (date key, seed, starting patch, saved best), the run's daily flag and its own patch-offer stream,
-// and the title's [ daily build ] button on every device.
+// and the title's daily build button on every device.
 const test = require('node:test');
 const assert = require('node:assert');
 const H = require('./harness');
@@ -483,7 +483,7 @@ function titleEnv(dev, o) {
   const opt = o || {};
   const store = memStore(opt.store);
   const { CB, sandbox } = H.load(undefined, { returnSandbox: true, localStorage: store });
-  const env = { CB, sandbox, store, C: CB.Pal.C, visits: [], sounds: [], texts: [], aim: { x: 0, y: 0 }, fullscreen: 0, day: DAY };
+  const env = { CB, sandbox, store, C: CB.Pal.C, visits: [], sounds: [], texts: [], frames: [], aim: { x: 0, y: 0 }, fullscreen: 0, day: DAY };
   CB.Daily.today = () => env.day;
   env.r = CB.createRenderer(sandbox.document.createElement('canvas'), { innerWidth: 1280, innerHeight: 720, devicePixelRatio: 1 });
   env.r.resize();
@@ -492,6 +492,11 @@ function titleEnv(dev, o) {
   env.r.text = function (str, x, y, opts) {
     env.texts.push([String(str), opts || {}, y]);
     return text.apply(this, arguments);
+  };
+  const drawFrame = env.r.frame;
+  env.r.frame = function (x, y, w, h, color) {
+    env.frames.push({ x, y, w, h, color });
+    return drawFrame.apply(this, arguments);
   };
   CB.Audio = { play: (n) => env.sounds.push(n), isMuted: () => false, toggleMute() {} };
   CB.Music = { stop() {}, isEnabled: () => true, toggle() {} };
@@ -516,6 +521,7 @@ function tick(env, n, input) {
 function frame(env, t) {
   env.rec.clear();
   env.texts.length = 0;
+  env.frames.length = 0;
   env.title.draw(env.r, t == null ? 0.3 : t);
   return env.rec;
 }
@@ -527,10 +533,10 @@ const touches = (b, hit) => b.x < hit.x + hit.w && hit.x < b.x + b.w && b.y < hi
 const centreX = (b) => b.x + b.w / 2;
 const mid = (b) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
 
-const LABEL = { kbm: '[ daily build ]', touch: '[ daily build ]', pad: 'B: daily build' };
-const LABEL_DONE = { kbm: '[ daily build ✓ ]', touch: '[ daily build ✓ ]', pad: 'B: daily build ✓' };
-const RUSH = { kbm: '[ boss rush ]', touch: '[ boss rush ]', pad: 'Y: boss rush' };
-const YOLO = { kbm: ['[ ] --yolo', '[x] --yolo'], touch: ['[ ] --yolo', '[x] --yolo'], pad: ['X: [ ] --yolo', 'X: [x] --yolo'] };
+const LABEL = { kbm: 'daily build', touch: 'daily build', pad: 'B daily build' };
+const LABEL_DONE = { kbm: 'daily build ✓', touch: 'daily build ✓', pad: 'B daily build ✓' };
+const RUSH = { kbm: 'boss rush', touch: 'boss rush', pad: 'Y boss rush' };
+const YOLO = { kbm: ['--yolo: off', '--yolo: ON'], touch: ['--yolo: off', '--yolo: ON'], pad: ['X --yolo: off', 'X --yolo: ON'] };
 
 function expectedDailyOpts(env, yolo) {
   const D = env.CB.Daily;
@@ -544,9 +550,11 @@ for (const dev of DEVICES) {
     const label = boxOf(rec, LABEL[dev]);
     assert.ok(label, 'label ' + LABEL[dev]);
     assert.ok(Math.abs(centreX(label) - 160) <= 1, 'centred');
-    assert.equal(label.y, 124, 'the modes row');
+    assert.equal(label.y, 127, 'the modes row: the text of the 11 px buttons that start at 125');
+    assert.deepEqual(H.plain(env.title.BUTTONS.find((b) => b.id === 'daily')), { id: 'daily', x: 123, y: 125, w: 74, h: 11 }, 'the middle column of the chips\' grid');
     const B = env.title.BUTTONS.find((b) => b.id === 'daily');
     assert.ok(B && inBox(label, B), 'the label sits inside its hit box');
+    assert.ok(env.frames.some((f) => f.x === B.x && f.y === B.y && f.w === B.w && f.h === B.h), 'and the drawn frame is exactly the hit box');
     assert.ok(Math.abs(centreX(B) - 160) <= 1, 'the hit box is centred too');
     assert.ok(!rec.texts().some((b) => /boss rush|yolo/.test(b.str)), 'rush and yolo are still locked');
     assert.deepEqual(rec.outside().map((b) => b.str || b.name), []);
@@ -570,9 +578,9 @@ for (const dev of DEVICES) {
           assert.ok(inBox(rush, BR) && inBox(daily, BD) && inBox(yoloBox, BY), tag + ': labels inside their boxes');
           assert.ok(rush.x + rush.w + 8 <= daily.x && daily.x + daily.w + 8 <= yoloBox.x, tag + ': labels at least 8 px apart, rush | daily | yolo');
           assert.ok(BR.x + BR.w <= BD.x && BD.x + BD.w <= BY.x, tag + ': hit boxes disjoint in the same order');
-          assert.equal(rush.y, 124);
-          assert.equal(daily.y, 124);
-          assert.equal(yoloBox.y, 124);
+          assert.equal(rush.y, 127);
+          assert.equal(daily.y, 127);
+          assert.equal(yoloBox.y, 127);
           assert.deepEqual(rec.outside().map((b) => b.str || b.name), [], tag + ': on screen');
           assert.deepEqual(rec.overlaps().map((p) => p[0].str + ' / ' + p[1].str), [], tag + ': no overlapping text');
           // No hit box swallows any text but its own label: the start prompt, the hat row and the legend stay clear.

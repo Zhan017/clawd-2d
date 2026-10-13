@@ -1,4 +1,5 @@
-// Title scene: dimmed arena, wavy logo, Clawd zapping wandering bugs, start, daily build and mode buttons, hat, sound / music / calm chips, typed secrets.
+// Title scene: dimmed arena, wavy logo, Clawd zapping wandering bugs, and one menu card under them: hat picker, START button, daily build / boss rush /
+// --yolo buttons, a description-or-controls line and the sound / music / calm chips; typed secrets.
 // Prompts follow the device in use (keyboard + mouse, touch or pad); a click or tap and the pad's buttons all work here.
 (function (CB) {
   'use strict';
@@ -6,6 +7,8 @@
   const START_LOCK = 0.3; // seconds before a click, tap, Enter or pad button starts anything
   const DIM = 0.55;
   const TOAST_FADE = 0.4;
+  const FOOTER_ALPHA = 0.55; // the ink band under the card behind the disclaimer...
+  const TOAST_ALPHA = 0.85; // ...and the heavier one a toast puts there
   const TOAST_SECRET_T = 2.0;
   const TOAST_NOTIFY_T = 2.0; // "controller connected" and friends
   const TOAST_CALM_T = 1.5;
@@ -16,21 +19,40 @@
   const SPARK_TWINKLE_HZ = 20; // colour swaps a second; calm mode caps it through Comfort.blink
   const TITLE_STAGE = Object.freeze({ id: 'title', palette: 'src' });
 
-  // Top of each 7 px text cell (the Rev 3 layout table). `status` is the text row of the sound / music / calm chips.
-  const Y = { clawd: 4, vs: 27, bugs: 36, hat: 105, start: 114, modes: 124, keys1: 138, keys2: 147, footer: 160, status: 170 };
+  // Rows of the logo and of the menu card, as the top of each 7 px text cell (or of each button box). `status` is the text row of the chips.
+  const Y = { clawd: 4, vs: 27, bugs: 36, hat: 99, start: 109, modes: 125, line1: 139, line2: 148, desc: 143, status: 160, footer: 173 };
   const CLAWD = { x: 160, y: 82, scale: 2 };
   const HAT_DY_FALLBACK = -7; // per scale: where an ordinary hat is centred above Clawd's centre (Player.HAT_DY says the same)
   const LOGO_GAP = 1; // extra logo letter spacing, in logo pixels (3 screen px each), on top of the font's own gap
-  // One row: the daily build is always there, centred; boss rush and --yolo flank it once the modes are unlocked.
-  const MODE_X = { rush: 70, daily: 160, yolo: 250 };
-  // Hit boxes of the three labels (6 px of slack around the widest text each shows, pad prompts and the daily's tick included). Fixed numbers: nothing may measure text at load time.
+  // The card behind the menu. Its bottom edge is fixed; the top is 96 when the hat picker sits in its first row, else 106 (the START button is 3 px under the edge). Rows are 3 px apart, 2 px of padding at the card's top and bottom.
+  const CARD = Object.freeze({ x: 34, w: 252, bottom: 172, topWithHat: 96, topBare: 106 });
+  const START_BOX = Object.freeze({ x: 108, y: Y.start, w: 104, h: 13 });
+  // The mode buttons share the chips' grid (columns 45, 123 and 201, 74 x 11): the daily build is always there, centred; boss rush and --yolo flank it once the modes are unlocked.
+  // Fixed numbers: nothing may measure text at load time. Each box is exactly the frame that is drawn.
   const BUTTONS = Object.freeze([
-    Object.freeze({ id: 'rush', x: 36, y: 121, w: 68, h: 13 }),
-    Object.freeze({ id: 'yolo', x: 220, y: 121, w: 60, h: 13 }),
-    Object.freeze({ id: 'daily', x: 120, y: 121, w: 80, h: 13 }),
+    Object.freeze({ id: 'rush', x: 45, y: Y.modes, w: 74, h: 11 }),
+    Object.freeze({ id: 'yolo', x: 201, y: Y.modes, w: 74, h: 11 }),
+    Object.freeze({ id: 'daily', x: 123, y: Y.modes, w: 74, h: 11 }),
   ]);
   const [RUSH_BOX, YOLO_BOX, DAILY_BOX] = BUTTONS;
-  const HAT_BOX = Object.freeze({ x: 90, y: 102, w: 140, h: 11 }); // a tap on the hat row (only there when a hat is unlocked) wears the next hat
+  // The hat row (only there when a hat is unlocked): "Q ‹ name › E", the name centred in a fixed field so the chevrons stay put as it changes.
+  // A tap on its left part (the Q and the left chevron) wears the previous hat, anywhere else on it the next one.
+  const HAT_BOX = Object.freeze({ x: 76, y: Y.hat - 2, w: 168, h: 11 });
+  const HAT_LEFT = Object.freeze({ x: 76, y: Y.hat - 2, w: 46, h: 11 });
+  const HAT_RIGHT = Object.freeze({ x: 122, y: Y.hat - 2, w: 122, h: 11 }); // the name, the right chevron and its key hint
+  const HAT_FIELD = 74; // px the name may take (the longest hat name is 59)
+  const CHEV_GAP = 5; // px between the name field and each chevron
+  const CHEV_W = 4;
+  const HINT_GAP = 4; // px between a chevron and its key hint
+  const PULSE_HZ = 1.5; // the START frame swaps between two shades this many times a second (0.75 Hz round trip)
+  const DESC_T = 2; // seconds a tapped --yolo keeps its description up (a touch has no hover)
+  // What each mode button does, shown under the row while one is hovered or focused.
+  const DESC = Object.freeze({
+    rush: 'all four bosses back to back',
+    daily: 'one seeded run a day, the same for everyone',
+    yolo: '3 hearts, faster bullets: bragging rights',
+  });
+  const DISCLAIMER = 'Fan game. Not affiliated with Anthropic.';
   const SECRETS = {
     konami: { id: 'halo', text: 'cheat codes are just undocumented features' },
     ultrathink: { id: 'rainbow', text: '✻ ultrathink enabled' },
@@ -66,6 +88,17 @@
     '.kzkfkzk.',
     'kqkkfkkqk',
     '.k..k..k.',
+  ]);
+
+  // The hat picker's chevron, pointing left (the font has no ‹ or ›); the right one is this flipped. Gold, white while the pointer is on it.
+  CB.Art.defineSprite('title_chev', [
+    '...q',
+    '..q.',
+    '.q..',
+    'q...',
+    '.q..',
+    '..q.',
+    '...q',
   ]);
 
   // Optional modules are called by method, never by object only: tests stub partial ones.
@@ -116,7 +149,11 @@
 
   CB.Scenes.title = {
     BUTTONS,
+    START_BOX,
     HAT_BOX,
+    HAT_LEFT,
+    HAT_RIGHT,
+    CARD,
     game: null,
     t: 0, // scene time (drawing uses the game clock it is given)
     yolo: false,
@@ -132,6 +169,9 @@
     aimX: 0,
     aimY: 0,
     musicToggledAt: -Infinity,
+    focus: null, // the pad's focused mode button ('rush', 'daily', 'yolo') or null; the pad plays the buttons directly, so only a pad menu cursor would set it
+    descId: null, // the mode button whose description a tap or the pad's X keeps up, for descT more seconds
+    descT: 0,
 
     enter(game) {
       this.game = game;
@@ -149,6 +189,9 @@
       this.aimX = 0;
       this.aimY = 0;
       this.musicToggledAt = -Infinity;
+      this.focus = null;
+      this.descId = null;
+      this.descT = 0;
       this.bugs = BUGS.map((def) => {
         const b = { def, x: 0, y: 0, tx: 0, ty: 0, wait: 0, speed: 0, face: 1, flash: 0, kx: 0 };
         b.x = this.rng.range(def.cell.x0, def.cell.x1);
@@ -226,7 +269,15 @@
       this.start({ daily: key, seed: d.seedFor(key), patches: patch ? { [patch]: 1 } : {}, yolo: this.yolo });
     },
 
-    // Enter, or a click or tap that missed the chips and the hat row, past the input lock. Returns true when it started a run.
+    // --yolo flips, chimes, and its description stays up for a moment (a finger or a pad has no hover to keep it there).
+    toggleYolo() {
+      this.yolo = !this.yolo;
+      this.descId = 'yolo';
+      this.descT = DESC_T;
+      sfx('uiSelect');
+    },
+
+    // Enter, or a click or tap that missed the chips and the hat row (so it is on a button or anywhere else), past the input lock. Returns true when it started a run.
     confirm(x, y) {
       if (dailyOn() && inside(DAILY_BOX, x, y)) {
         this.startDaily();
@@ -238,8 +289,7 @@
           return true;
         }
         if (inside(YOLO_BOX, x, y)) {
-          this.yolo = !this.yolo;
-          sfx('uiSelect');
+          this.toggleYolo();
           return false;
         }
       }
@@ -247,7 +297,7 @@
       return true;
     },
 
-    // A mouse click or a touch tap at (x, y), past the input lock: a chip, the hat row, a mode button, else start. True when it started a run.
+    // A mouse click or a touch tap at (x, y), past the input lock: a chip, the hat arrows and row, a mode button, else start (the START button is just a part of "else"). True when it started a run.
     tapAt(x, y) {
       const T = chips();
       const id = T ? T.hit(x, y, Y.status) : null;
@@ -256,7 +306,7 @@
         return false;
       }
       if (hatIds().length > 0 && inside(HAT_BOX, x, y) && CB.Unlocks && typeof CB.Unlocks.cycleHat === 'function') {
-        this.cycleHat(1);
+        this.cycleHat(inside(HAT_LEFT, x, y) ? -1 : 1);
         return false;
       }
       return this.confirm(x, y);
@@ -273,6 +323,7 @@
         this.toast.t -= dt;
         if (this.toast.t <= 0) this.toast = null;
       }
+      if (this.descT > 0) this.descT = Math.max(0, this.descT - dt);
       // N comes before the typed codes: a fast "ultrathink" can bring its N and K in one tick.
       if (inp.music && CB.Music && typeof CB.Music.toggle === 'function') {
         CB.Music.toggle();
@@ -320,10 +371,7 @@
             this.start({ bossRush: true, yolo: this.yolo });
             return;
           }
-          if (pad.x) {
-            this.yolo = !this.yolo;
-            sfx('uiSelect');
-          }
+          if (pad.x) this.toggleYolo();
         }
       }
       // A click or tap hits the chips, the hat row and the mode buttons; Enter (a confirm with no pointer press) reads the pointer's last spot as it always has.
@@ -489,46 +537,100 @@
       this.word(r, 'BUGS', Y.bugs, C.red, C.redDark, t, 5);
     },
 
+    // Frame, fill and label of one framed button in the toggle chips' look: ink at 0.6, a frame, a centred label.
+    // o: lit (the pointer or the pad's focus is on it), on (--yolo is on: red, and the frame is doubled so it is not colour only).
+    drawButton(r, b, label, o) {
+      const lit = !!o.lit;
+      const on = !!o.on;
+      const frame = on ? (lit ? C.hurt : C.red) : lit ? C.gold : C.grey;
+      r.alpha(0.6, () => r.rect(b.x, b.y, b.w, b.h, C.ink));
+      r.frame(b.x, b.y, b.w, b.h, frame);
+      if (on) r.frame(b.x - 1, b.y - 1, b.w + 2, b.h + 2, frame); // the second frame sits just outside the hit box, in the gap between buttons
+      r.text(label, b.x + b.w / 2, b.y + 2, { color: on ? C.red : lit ? C.white : C.pale, align: 'center' });
+    },
+
+    // The START button: clawd orange, its frame swapping between two shades through Comfort.blink (steady in calm mode); the text never blinks.
+    drawStart(r, t, lit) {
+      const b = START_BOX;
+      const calm = !!(CB.Comfort && typeof CB.Comfort.calm === 'function' && CB.Comfort.calm());
+      const bright = !calm && (CB.Comfort && typeof CB.Comfort.blink === 'function' ? CB.Comfort.blink(t, PULSE_HZ) : Math.floor(t * PULSE_HZ) % 2 === 0);
+      r.alpha(lit ? 0.75 : bright ? 0.55 : 0.4, () => r.rect(b.x, b.y, b.w, b.h, C.clawdDark));
+      r.frame(b.x, b.y, b.w, b.h, lit ? C.white : bright ? C.clawdLight : C.clawd);
+      r.text(this.say('start', 'Click to start'), b.x + b.w / 2, b.y + 3, { color: C.white, shadow: C.ink, align: 'center' });
+    },
+
+    // "Q ‹ Crown › E": the worn hat between two chevrons, the key hints outside them (the hat prompt is "(Q/E)", "(LB/RB)" or "(tap)"; a phone has no keys to name).
+    drawHatRow(r, aim, mouse) {
+      const mid = CB.W / 2;
+      const id = wornHat();
+      const name = id ? hatName(id) : 'none';
+      const keys = String(this.say('hat', '(Q/E)')).replace(/[()]/g, '').split('/');
+      const hint = keys.length === 2 && keys[0] && keys[1] ? keys : null;
+      const lx = mid - HAT_FIELD / 2 - CHEV_GAP - CHEV_W;
+      const rx = mid + HAT_FIELD / 2 + CHEV_GAP;
+      const cy = Y.hat + 3.5;
+      const left = mouse && inside(HAT_LEFT, aim.x, aim.y);
+      const right = mouse && inside(HAT_RIGHT, aim.x, aim.y);
+      r.text(name, mid, Y.hat, { color: C.pale, align: 'center' });
+      r.sprite('title_chev', lx + CHEV_W / 2, cy, { white: left });
+      r.sprite('title_chev', rx + CHEV_W / 2, cy, { flip: true, white: right });
+      if (hint) {
+        r.text(hint[0], lx - HINT_GAP, Y.hat, { color: C.grey, align: 'right' });
+        r.text(hint[1], rx + CHEV_W + HINT_GAP, Y.hat, { color: C.grey });
+      }
+    },
+
+    // The mode button whose description is up: the one under the mouse, else the pad's focus, else the --yolo a tap or X just flipped. Null when it is not on the title.
+    describedId(aim, mouse) {
+      let id = null;
+      if (mouse) for (const b of BUTTONS) if (inside(b, aim.x, aim.y)) id = b.id;
+      if (!id && typeof this.focus === 'string') id = this.focus;
+      if (!id && this.descT > 0) id = this.descId;
+      if (!Object.prototype.hasOwnProperty.call(DESC, id)) return null;
+      return id === 'daily' ? (dailyOn() ? id : null) : modesOn() ? id : null;
+    },
+
     drawText(r, t, aim) {
       const mid = CB.W / 2;
       const dev = this.device();
       const mouse = dev === 'kbm'; // only a mouse has a pointer to hover with
-
-      if (hatIds().length > 0) {
-        const id = wornHat();
-        r.text('hat: ' + (id ? hatName(id) : 'none') + ' ' + this.say('hat', '(Q/E)'), mid, Y.hat, { color: C.pale, align: 'center' });
-      }
-
-      // 0.6 s on, 0.3 s off
-      if (t % 0.9 < 0.6) r.text(this.say('start', 'Click to start'), mid, Y.start, { color: C.white, shadow: C.ink, align: 'center' });
-
-      const hover = (b) => mouse && inside(b, aim.x, aim.y);
       const pad = dev === 'pad'; // the pad has no pointer: its buttons are named on the labels
-      if (dailyOn()) {
-        const tick = dailyDone() ? ' ✓' : ''; // today's build has been cleared
-        const label = pad ? 'B: daily build' + tick : '[ daily build' + tick + ' ]';
-        r.text(label, MODE_X.daily, Y.modes, { color: hover(DAILY_BOX) ? C.white : C.pale, align: 'center' });
-      }
+      const hats = hatIds().length > 0;
+      const hover = (b) => mouse && inside(b, aim.x, aim.y);
+
+      // The card the menu sits on, so it does not fight the arena's code lines.
+      const top = hats ? CARD.topWithHat : CARD.topBare;
+      r.alpha(0.7, () => r.rect(CARD.x, top, CARD.w, CARD.bottom - top, C.ink));
+      r.frame(CARD.x, top, CARD.w, CARD.bottom - top, C.greyDark);
+
+      if (hats) this.drawHatRow(r, aim, mouse);
+      this.drawStart(r, t, hover(START_BOX));
+
+      const tag = (key, label) => (pad ? key + ' ' + label : label); // the pad's buttons are named in front of the label
+      if (dailyOn()) this.drawButton(r, DAILY_BOX, tag('B', 'daily build' + (dailyDone() ? ' ✓' : '')), { lit: hover(DAILY_BOX) || this.focus === 'daily' });
       if (modesOn()) {
-        r.text(pad ? 'Y: boss rush' : '[ boss rush ]', MODE_X.rush, Y.modes, { color: hover(RUSH_BOX) ? C.white : C.pale, align: 'center' });
-        r.text((pad ? 'X: ' : '') + (this.yolo ? '[x] --yolo' : '[ ] --yolo'), MODE_X.yolo, Y.modes, { color: this.yolo ? C.red : hover(YOLO_BOX) ? C.white : C.pale, align: 'center' });
+        this.drawButton(r, RUSH_BOX, tag('Y', 'boss rush'), { lit: hover(RUSH_BOX) || this.focus === 'rush' });
+        this.drawButton(r, YOLO_BOX, tag('X', '--yolo: ' + (this.yolo ? 'ON' : 'off')), { lit: hover(YOLO_BOX) || this.focus === 'yolo', on: this.yolo });
       }
 
-      r.text(this.say('legend1', 'WASD move · Mouse aim · Click shoot · Space dash'), mid, Y.keys1, { color: C.pale, align: 'center' });
-      r.text(this.say('legend2', 'E /compact · N music · M mute · V calm · Esc pause'), mid, Y.keys2, { color: C.pale, align: 'center' });
-
-      // A toast takes the footer row while it is up.
-      if (this.toast) {
-        const a = Math.min(1, this.toast.t / TOAST_FADE);
-        r.alpha(a * 0.85, () => r.rect(0, Y.footer - 3, CB.W, 13, C.ink));
-        r.alpha(a, () => r.text(this.toast.text, mid, Y.footer, { color: C.gold, align: 'center' }));
-      } else {
-        r.text('Fan game. Not affiliated with Anthropic.', mid, Y.footer, { color: C.grey, align: 'center' });
+      // One line under the buttons: what the button under the pointer does, else the controls, dimmer so they sit behind the buttons.
+      const id = this.describedId(aim, mouse);
+      if (id) r.text(DESC[id], mid, Y.desc, { color: C.pale, align: 'center' }); // centred on the two legend rows it stands in for
+      else {
+        r.text(this.say('legend1', 'WASD move · Mouse aim · Click shoot'), mid, Y.line1, { color: C.grey, align: 'center' });
+        r.text(this.say('legend2', 'Space dash · E /compact · Esc pause'), mid, Y.line2, { color: C.grey, align: 'center' });
       }
 
-      // The sound / music / calm chips, over the toast band's last rows when a toast is up.
+      // The sound / music / calm chips close the card.
       const T = chips();
       if (T) T.draw(r, Y.status, -1, mouse ? aim : null);
+
+      // The last row, under the card, sits on a dark band so the dim text stays readable over the arena's wall. The disclaimer has it; a toast takes it
+      // (a heavier band, fading with the toast) and never covers a button.
+      const a = this.toast ? Math.min(1, this.toast.t / TOAST_FADE) : 0;
+      r.alpha(FOOTER_ALPHA + (TOAST_ALPHA - FOOTER_ALPHA) * a, () => r.rect(0, CARD.bottom, CB.W, CB.H - CARD.bottom, C.ink));
+      if (this.toast) r.alpha(a, () => r.text(this.toast.text, mid, Y.footer, { color: C.gold, align: 'center' }));
+      else r.text(DISCLAIMER, mid, Y.footer, { color: C.greyDark, align: 'center' });
     },
   };
 })(window.CB);

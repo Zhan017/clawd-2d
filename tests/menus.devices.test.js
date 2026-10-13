@@ -153,7 +153,8 @@ test('toggles: three fixed chips, 74 x 11, gap 4, centred, box 2 px above the te
   ]);
   assert.deepEqual(H.plain(T.boxes(170)).map((b) => b.y), [168, 168, 168]);
   assert.equal(45 + 230 + 45, 320, 'centred');
-  assert.equal(T.boxes(170).at(-1).y + 11, 179, 'the title row ends inside the 180 px screen');
+  assert.equal(T.boxes(170).at(-1).y + 11, 179, 'a row at 170 ends inside the 180 px screen');
+  assert.equal(T.boxes(160).at(-1).y + 11, 169, 'the title row (160) ends inside its card, whose bottom edge is at 172');
 });
 
 test('toggles: a chip exists only for a module that can report its state, and the others keep their places', () => {
@@ -299,9 +300,9 @@ test('toggles: every label fits its chip with room to spare, in every state and 
 // ---- title: prompts per device ----------------------------------------------------------------------------------------------------
 
 const TITLE_TEXT = {
-  kbm: { start: 'Click to start', l1: 'WASD move · Mouse aim · Click shoot · Space dash', l2: 'E /compact · N music · M mute · V calm · Esc pause', hat: 'hat: Loop cap (Q/E)', rush: '[ boss rush ]', yolo: '[ ] --yolo', chips: ['M sound: on', 'N music: on', 'V calm: off'] },
-  touch: { start: 'Tap to start', l1: 'Left thumb: move · Right thumb: aim + shoot', l2: 'DASH and /compact buttons · II pause', hat: 'hat: Loop cap (tap)', rush: '[ boss rush ]', yolo: '[ ] --yolo', chips: ['sound: on', 'music: on', 'calm: off'] },
-  pad: { start: 'Press A to start', l1: 'L-stick move · R-stick aim + shoot · A dash', l2: 'RB /compact · Start pause · RT shoot', hat: 'hat: Loop cap (LB/RB)', rush: 'Y: boss rush', yolo: 'X: [ ] --yolo', chips: ['sound: on', 'music: on', 'calm: off'] },
+  kbm: { start: 'Click to start', l1: 'WASD move · Mouse aim · Click shoot', l2: 'Space dash · E /compact · Esc pause', hat: 'Loop cap', hints: ['Q', 'E'], rush: 'boss rush', daily: 'daily build', yolo: '--yolo: off', chips: ['M sound: on', 'N music: on', 'V calm: off'] },
+  touch: { start: 'Tap to start', l1: 'Left thumb move · Right thumb aim + shoot', l2: 'DASH and /c buttons · II pause', hat: 'Loop cap', hints: [], rush: 'boss rush', daily: 'daily build', yolo: '--yolo: off', chips: ['sound: on', 'music: on', 'calm: off'] },
+  pad: { start: 'Press A to start', l1: 'L-stick move · R-stick aim + shoot', l2: 'A dash · RB /compact · Start pause', hat: 'Loop cap', hints: ['LB', 'RB'], rush: 'Y boss rush', daily: 'B daily build', yolo: 'X --yolo: off', chips: ['sound: on', 'music: on', 'calm: off'] },
 };
 
 for (const dev of DEVICES) {
@@ -316,20 +317,31 @@ for (const dev of DEVICES) {
       if (y != null) assert.equal(b.y, y, s);
       return b;
     };
-    assert.ok(Math.abs(centreX(row(want.start, 114)) - 160) <= 1);
-    row(want.l1, 138);
-    row(want.l2, 147);
-    row(want.hat, 105);
-    const rush = row(want.rush, 124);
-    const yolo = row(want.yolo, 124);
-    assert.ok(inBox(rush, env.title.BUTTONS[0]) && inBox(yolo, env.title.BUTTONS[1]), 'labels inside their hit boxes');
-    want.chips.forEach((s, i) => assert.ok(Math.abs(centreX(row(s, 170)) - (45 + 78 * i + 37)) <= 1, s));
-    row(DISCLAIMER, 160);
-    assert.ok(inBox(row(want.hat, 105), { x: 90, y: 102, w: 140, h: 11 }), 'the hat row sits inside HAT_BOX');
+    const START = env.title.START_BOX;
+    const start = row(want.start, 112);
+    assert.ok(Math.abs(centreX(start) - 160) <= 1);
+    assert.ok(inBox(start, START), 'the label sits inside the START button');
+    assert.deepEqual(H.plain(START), { x: 108, y: 109, w: 104, h: 13 });
+    row(want.l1, 139);
+    row(want.l2, 148);
+    const hat = row(want.hat, 99);
+    const rush = row(want.rush, 127);
+    const daily = row(want.daily, 127);
+    const yolo = row(want.yolo, 127);
+    const [rushB, yoloB, dailyB] = env.title.BUTTONS;
+    assert.ok(inBox(rush, rushB) && inBox(yolo, yoloB) && inBox(daily, dailyB), 'labels inside their hit boxes');
+    for (const [txt, b] of [[rush, rushB], [yolo, yoloB], [daily, dailyB]]) assert.ok(env.frames.some((f) => f.x === b.x && f.y === b.y && f.w === b.w && f.h === b.h), 'a frame is drawn at exactly the box of ' + b.id);
+    want.chips.forEach((s, i) => assert.ok(Math.abs(centreX(row(s, 160)) - (45 + 78 * i + 37)) <= 1, s));
+    row(DISCLAIMER, 173);
+    assert.ok(inBox(hat, env.title.HAT_BOX), 'the hat name sits inside HAT_BOX');
+    for (const k of want.hints) assert.ok(inBox(row(k, 99), env.title.HAT_BOX), k + ' is in the hat row');
+    for (const k of ['Q', 'E', 'LB', 'RB']) if (!want.hints.includes(k)) assert.ok(!box(rec, k), dev + ' shows no ' + k);
+    assert.equal(rec.sprites().filter((b) => b.name === 'title_chev').length, 2, 'two chevrons');
     assertLayout(rec, 'title ' + dev);
+    for (const f of env.frames) assert.ok(f.x >= 0 && f.y >= 0 && f.x + f.w <= 320 && f.y + f.h <= 180, dev + ': frame on screen ' + JSON.stringify(f));
     // Nothing from another device leaks in, and the small-screen note is gone everywhere.
     for (const other of DEVICES.filter((d) => d !== dev)) {
-      for (const k of ['start', 'l1', 'l2']) if (TITLE_TEXT[other][k] !== want[k]) assert.ok(!box(rec, TITLE_TEXT[other][k]), dev + ' shows no ' + other + ' text: ' + TITLE_TEXT[other][k]);
+      for (const k of ['start', 'l1', 'l2', 'rush', 'yolo', 'daily']) if (TITLE_TEXT[other][k] !== want[k]) assert.ok(!box(rec, TITLE_TEXT[other][k]), dev + ' shows no ' + other + ' text: ' + TITLE_TEXT[other][k]);
     }
     assert.ok(!rec.texts().some((b) => /Best on desktop/.test(b.str)));
   });
@@ -338,39 +350,62 @@ for (const dev of DEVICES) {
     const env = setup(dev);
     enterTitle(env, { modes: true });
     env.title.yolo = true;
-    assert.ok(box(titleFrame(env), dev === 'pad' ? 'X: [x] --yolo' : '[x] --yolo'));
+    assert.ok(box(titleFrame(env), dev === 'pad' ? 'X --yolo: ON' : '--yolo: ON'));
     assert.equal(env.cursor.length, dev === 'kbm' ? 1 : 0, 'cursor calls');
     if (dev === 'kbm') assert.equal(env.cursor[0].mode, 'pointer');
   });
 }
 
-test('title: the mouse hover highlight on the mode labels is for the keyboard and mouse only', () => {
+test('title: the mouse hover highlight on the mode buttons is for the keyboard and mouse only', () => {
   const env = setup('kbm');
   enterTitle(env, { modes: true });
   const rush = env.title.BUTTONS[0];
   env.aim = { x: rush.x + 4, y: rush.y + 4 };
-  const colourOf = (s) => {
+  const lookOf = (s) => {
     titleFrame(env);
-    return env.texts.find((t) => t[0] === s)[1].color;
+    return { text: env.texts.find((t) => t[0] === s)[1].color, frame: env.frames.find((f) => f.x === rush.x && f.y === rush.y && f.w === rush.w).color };
   };
-  assert.equal(colourOf('[ boss rush ]'), env.C.white, 'kbm hover');
+  assert.deepEqual(lookOf('boss rush'), { text: env.C.white, frame: env.C.gold }, 'kbm hover: the chips\' hover look');
   device(env, 'touch');
-  assert.equal(colourOf('[ boss rush ]'), env.C.pale, 'a stale tap spot does not highlight on touch');
+  assert.deepEqual(lookOf('boss rush'), { text: env.C.pale, frame: env.C.grey }, 'a stale tap spot does not highlight on touch');
   device(env, 'pad');
-  assert.equal(colourOf('Y: boss rush'), env.C.pale);
+  assert.deepEqual(lookOf('Y boss rush'), { text: env.C.pale, frame: env.C.grey });
+});
+
+test('title: the mode buttons and the chips share one button language (the same hover frame), and the modes read as the stronger of the two', () => {
+  const env = setup('kbm');
+  enterTitle(env, { modes: true });
+  const rush = env.title.BUTTONS[0];
+  const chip = env.CB.Screens.toggles.boxes(160)[0];
+  const frameOf = (b) => env.frames.find((f) => f.x === b.x && f.y === b.y && f.w === b.w && f.h === b.h);
+  env.aim = { x: rush.x + 4, y: rush.y + 4 };
+  titleFrame(env);
+  const lit = frameOf(rush).color;
+  env.aim = { x: chip.x + 4, y: chip.y + 4 };
+  titleFrame(env);
+  assert.equal(frameOf(chip).color, lit, 'a hovered chip and a hovered mode button use the same frame colour');
+  assert.equal(frameOf(rush).color, env.C.grey);
+  assert.equal(frameOf(chip).color === env.C.gold, true);
+  env.aim = { x: 5, y: 5 };
+  titleFrame(env);
+  assert.notEqual(frameOf(rush).color, frameOf(chip).color, 'idle: the mode buttons are brighter than the chips');
+  assert.equal(frameOf(rush).h, frameOf(chip).h);
+  assert.equal(frameOf(rush).w, frameOf(chip).w);
 });
 
 test('title: the sound chip lights under the mouse (keyboard and mouse only)', () => {
   const env = setup('kbm');
   enterTitle(env);
-  const at = chipAt(env, 'sound', 170);
+  const at = chipAt(env, 'sound', 160);
+  const [sound, music] = env.CB.Screens.toggles.boxes(160);
+  const frameOf = (b) => env.frames.find((f) => f.x === b.x && f.y === b.y && f.w === b.w && f.h === b.h);
   env.aim = at;
   titleFrame(env);
-  assert.equal(env.frames[0].color, env.C.gold);
-  assert.equal(env.frames[1].color, env.C.greyDark);
+  assert.equal(frameOf(sound).color, env.C.gold);
+  assert.equal(frameOf(music).color, env.C.greyDark);
   device(env, 'touch');
   titleFrame(env);
-  assert.equal(env.frames[0].color, env.C.greyDark);
+  assert.equal(frameOf(sound).color, env.C.greyDark);
 });
 
 test('title: the device falls back to game.input.device without CB.Prompts, and to the keyboard with neither', () => {
@@ -431,11 +466,11 @@ test('title (pad): Y starts boss rush, X toggles --yolo; both need the modes unl
   tick(env, 1, padInput('x'));
   assert.equal(env.title.yolo, true);
   assert.deepEqual(env.sounds, ['uiSelect']);
-  assert.ok(box(titleFrame(env), 'X: [x] --yolo'));
+  assert.ok(box(titleFrame(env), 'X --yolo: ON'));
   assert.equal(env.visits.length, 0);
   tick(env, 1, padInput('x'));
   assert.equal(env.title.yolo, false);
-  assert.ok(box(titleFrame(env), 'X: [ ] --yolo'));
+  assert.ok(box(titleFrame(env), 'X --yolo: off'));
   tick(env, 1, padInput('y'));
   assert.deepEqual(env.visits, [['play', { runOpts: { bossRush: true, yolo: false } }]]);
   env.visits.length = 0;
@@ -453,7 +488,9 @@ test('title (pad): Y starts boss rush, X toggles --yolo; both need the modes unl
   assert.equal(locked.visits.length, 0);
   assert.equal(locked.title.yolo, false);
   assert.deepEqual(locked.sounds, []);
-  assert.ok(!locked.rec.texts().some((b) => /boss rush|yolo/.test(b.str)));
+  titleFrame(locked);
+  assert.ok(!locked.rec.texts().some((b) => /boss rush|yolo/.test(b.str)), 'the buttons are not there while locked');
+  assert.ok(locked.rec.texts().some((b) => b.str === 'B daily build'), 'the daily build is');
 });
 
 test('title (pad): LB wears the previous hat and RB (which arrives as compact) the next; Back and B are not hat buttons', () => {
@@ -517,13 +554,13 @@ test('title: a tap on a chip toggles that setting and does not start; a tap anyw
   for (const dev of ['kbm', 'touch']) {
     const env = setup(dev);
     enterTitle(env);
-    let p = chipAt(env, 'sound', 170);
+    let p = chipAt(env, 'sound', 160);
     tick(env, 1, tapInput(p.x, p.y));
     assert.equal(env.state.muted, true, dev + ' sound');
-    p = chipAt(env, 'music', 170);
+    p = chipAt(env, 'music', 160);
     tick(env, 1, tapInput(p.x, p.y));
     assert.equal(env.state.music, false, dev + ' music');
-    p = chipAt(env, 'calm', 170);
+    p = chipAt(env, 'calm', 160);
     tick(env, 1, tapInput(p.x, p.y));
     assert.equal(env.state.calm, true, dev + ' calm');
     assert.equal(env.visits.length, 0, 'no chip tap starts a run');
@@ -537,7 +574,7 @@ test('title: a tap on a chip toggles that setting and does not start; a tap anyw
 test('title: the gap between chips and the strip around them start the game, like any other tap', () => {
   const env = setup('touch');
   enterTitle(env);
-  tick(env, 1, tapInput(120, 173)); // the 4 px gap between sound and music
+  tick(env, 1, tapInput(121, 163)); // the 4 px gap between sound and music
   assert.equal(env.visits.length, 1);
   assert.equal(env.state.muted, false);
 });
@@ -545,7 +582,7 @@ test('title: the gap between chips and the strip around them start the game, lik
 test('title: a click or tap inside the lock window does nothing, chips included', () => {
   const env = setup('touch');
   enterTitle(env, { locked: true });
-  const p = chipAt(env, 'sound', 170);
+  const p = chipAt(env, 'sound', 160);
   tick(env, 5, tapInput(p.x, p.y));
   tick(env, 5, tapInput(160, 60));
   assert.equal(env.state.muted, false);
@@ -553,14 +590,21 @@ test('title: a click or tap inside the lock window does nothing, chips included'
   assert.deepEqual(env.sounds, []);
 });
 
-test('title: a tap on the hat row (when a hat is unlocked) wears the next hat; with no hat it starts the game', () => {
+test('title: a tap on the hat row (when a hat is unlocked) wears a hat: the left arrow the previous one, the rest of the row the next; with no hat it starts the game', () => {
   const env = setup('touch');
   enterTitle(env, { hats: ['loopcap', 'halo'], worn: 'loopcap' });
   const B = env.title.HAT_BOX;
-  assert.deepEqual(H.plain(B), { x: 90, y: 102, w: 140, h: 11 });
-  tick(env, 1, tapInput(B.x + 2, B.y + 2));
-  tick(env, 1, tapInput(B.x + B.w - 1, B.y + B.h - 1));
-  assert.deepEqual(env.unlocks.cycles, [1, 1], 'forward each time');
+  const L = env.title.HAT_LEFT;
+  const R = env.title.HAT_RIGHT;
+  assert.deepEqual(H.plain(B), { x: 76, y: 97, w: 168, h: 11 });
+  assert.deepEqual(H.plain(L), { x: 76, y: 97, w: 46, h: 11 });
+  assert.deepEqual(H.plain(R), { x: 122, y: 97, w: 122, h: 11 });
+  tick(env, 1, tapInput(L.x + 2, L.y + 2));
+  tick(env, 1, tapInput(L.x + L.w - 1, L.y + L.h - 1));
+  assert.deepEqual(env.unlocks.cycles, [-1, -1], 'the left part goes back');
+  tick(env, 1, tapInput(R.x + 2, R.y + 2));
+  tick(env, 1, tapInput(R.x + R.w - 1, R.y + R.h - 1));
+  assert.deepEqual(env.unlocks.cycles, [-1, -1, 1, 1], 'the right part (the name, the right arrow) goes forward');
   assert.equal(env.visits.length, 0);
   tick(env, 1, tapInput(B.x - 1, B.y + 2)); // just left of the box
   assert.deepEqual(env.visits.pop(), ['play', { runOpts: { yolo: false } }]);
@@ -568,12 +612,28 @@ test('title: a tap on the hat row (when a hat is unlocked) wears the next hat; w
   tick(env, 20);
   tick(env, 1, tapInput(B.x + 5, B.y + B.h)); // y is exclusive at the bottom edge
   assert.equal(env.visits.length, 1);
-  assert.deepEqual(env.unlocks.cycles, [1, 1]);
+  assert.deepEqual(env.unlocks.cycles, [-1, -1, 1, 1]);
 
   const bare = setup('touch');
   enterTitle(bare, { hats: [] });
   tick(bare, 1, tapInput(B.x + 5, B.y + 5));
   assert.equal(bare.visits.length, 1, 'no hats: the hat row is not a button');
+});
+
+test('title: the hat arrows and row sit between the chips and the START button in the hit order, and START itself is just "else"', () => {
+  const env = setup('touch');
+  enterTitle(env, { modes: true, hats: ['loopcap', 'halo'], worn: 'loopcap' });
+  // Nothing of the card is a dead zone: every spot on the card either does its control's job or starts the game.
+  const START = env.title.START_BOX;
+  tick(env, 1, tapInput(START.x + 3, START.y + 3));
+  assert.deepEqual(env.visits.pop(), ['play', { runOpts: { yolo: false } }], 'a tap on START starts');
+  assert.deepEqual(env.unlocks.cycles, []);
+  env.title.enter(env.game, {});
+  tick(env, 20);
+  const chip = chipAt(env, 'sound', 160);
+  tick(env, 1, tapInput(chip.x, chip.y));
+  assert.equal(env.state.muted, true, 'a chip first');
+  assert.equal(env.visits.length, 0);
 });
 
 test('title: taps reach the mode buttons: rush starts, yolo toggles, and the rest starts', () => {
@@ -593,7 +653,7 @@ test('title: Enter (a confirm with no tap) keeps its old behaviour: the pointer 
   const env = setup('kbm');
   enterTitle(env, { modes: true, hats: ['loopcap', 'halo'], worn: 'loopcap' });
   const [rush, yolo] = env.title.BUTTONS;
-  const chip = chipAt(env, 'sound', 170);
+  const chip = chipAt(env, 'sound', 160);
   tick(env, 1, H.makeInput({ confirm: true, aimX: chip.x, aimY: chip.y }));
   assert.deepEqual(env.visits.pop(), ['play', { runOpts: { yolo: false } }]);
   assert.equal(env.state.muted, false, 'Enter does not press a chip');
@@ -613,7 +673,7 @@ test('title: Enter (a confirm with no tap) keeps its old behaviour: the pointer 
 test('title: a mouse click with a pad connected (every pad edge false) is still a tap', () => {
   const env = setup('kbm');
   enterTitle(env);
-  const p = chipAt(env, 'music', 170);
+  const p = chipAt(env, 'music', 160);
   tick(env, 1, tapInput(p.x, p.y, { pad: Object.assign({}, PAD0) }));
   assert.equal(env.state.music, false);
   assert.equal(env.visits.length, 0);
@@ -657,7 +717,7 @@ test('title: starting a run on the touch device asks input for fullscreen on the
 test('title: a tap that only toggles a chip or the yolo box does not ask for fullscreen', () => {
   const env = setup('touch');
   enterTitle(env, { modes: true });
-  const p = chipAt(env, 'sound', 170);
+  const p = chipAt(env, 'sound', 160);
   tick(env, 1, tapInput(p.x, p.y));
   const yolo = env.title.BUTTONS[1];
   tick(env, 1, tapInput(yolo.x + 3, yolo.y + 3));
@@ -684,7 +744,7 @@ test('title: notify shows a gold toast in the footer row for 2 s', () => {
   const rec = titleFrame(env);
   const b = box(rec, 'controller connected');
   assert.ok(b);
-  assert.equal(b.y, 160);
+  assert.equal(b.y, 173);
   assert.ok(env.texts.some((t) => t[0] === 'controller connected' && t[1].color === env.C.gold));
   assert.ok(!box(rec, DISCLAIMER), 'it takes the footer row');
   assertLayout(rec, 'toast');
@@ -696,16 +756,27 @@ test('title: notify shows a gold toast in the footer row for 2 s', () => {
   assert.ok(box(later, DISCLAIMER));
 });
 
-test('title: the worst case per device (hats, modes, toast, all chips) stays on screen with disjoint text', () => {
+test('title: the worst case per device (hats, modes, daily done, yolo on, toast, all chips, the mouse over every control) stays on screen, apart and inside the card', () => {
   for (const dev of DEVICES) {
     const env = setup(dev);
     enterTitle(env, { modes: true, hats: ['loopcap', 'halo'], worn: 'halo' });
+    env.CB.Daily.record(env.CB.Daily.today(), { time: 80, deaths: 1 });
     env.title.notify('controller disconnected');
     env.title.yolo = true;
+    const T = env.title;
+    const mid = (b) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
+    const spots = [...T.BUTTONS.map(mid), mid(T.START_BOX), mid(T.HAT_LEFT), mid(T.HAT_RIGHT), { x: 5, y: 5 }];
     for (let i = 0; i < 200; i += 7) {
       tick(env, 7);
+      env.aim = spots[(i / 7) % spots.length];
       const rec = titleFrame(env, i / 60);
       assertLayout(rec, dev + ' t=' + i);
+      const card = env.frames.find((f) => f.x === T.CARD.x && f.w === T.CARD.w);
+      assert.ok(card && card.y + card.h === T.CARD.bottom, dev + ': the card');
+      for (const f of env.frames) assert.ok(f.x >= 0 && f.y >= 0 && f.x + f.w <= 320 && f.y + f.h <= 180, dev + ': frame on screen ' + JSON.stringify(f));
+      // Every button frame is inside the card and none touches the toast band or the card's bottom edge.
+      for (const f of env.frames.filter((x) => x !== card)) assert.ok(f.x > card.x && f.x + f.w < card.x + card.w && f.y > card.y && f.y + f.h < card.y + card.h, dev + ': frame inside the card ' + JSON.stringify(f));
+      if (i + 7 < 115) assert.ok(box(rec, 'controller disconnected'), dev + ': the toast shows while it is up (2 s)');
     }
   }
 });
@@ -976,7 +1047,7 @@ test('kbm: every screen reads the same with CB.Prompts as without it, and with a
   assert.deepEqual(grab(undef), withPrompts, 'undefined device');
   // And it is the text the game always showed.
   assert.ok(withPrompts.title.includes('Click to start'));
-  assert.ok(withPrompts.title.includes('hat: Loop cap (Q/E)'));
+  assert.ok(withPrompts.title.includes('Loop cap') && withPrompts.title.includes('Q') && withPrompts.title.includes('E'), 'the hat name and its Q / E hints');
   assert.ok(withPrompts.pause.includes('Esc: resume · Q: quit to title'));
   assert.ok(withPrompts.pauseArmed.includes('Press Q again to quit'));
   assert.ok(withPrompts.gameOver.includes('R / click: retry stage') || withPrompts.gameOver.includes('R / click: retry wave 2') || withPrompts.gameOver.includes('R / click: retry boss'));
@@ -993,5 +1064,11 @@ test('every touch and pad prompt this task draws fits the 312 px column in the r
     for (const t of [TITLE_TEXT[dev], PAUSE_TEXT[dev]]) {
       for (const k of ['start', 'l1', 'l2', 'line', 'armed', 'hat', 'rush', 'yolo']) if (t[k]) assert.ok(w(t[k]) <= 312, dev + ' ' + t[k] + ' ' + w(t[k]));
     }
+    // The title strings sit in a 250 px card: the legend and the hat row with its hints, and every button label in its 74 px box.
+    const t = TITLE_TEXT[dev];
+    for (const k of ['l1', 'l2']) assert.ok(w(t[k]) <= 240, dev + ' ' + t[k] + ' is ' + w(t[k]));
+    for (const k of ['rush', 'daily', 'yolo']) assert.ok(w(t[k]) + 8 <= 74, dev + ' ' + t[k] + ' fits its button');
+    assert.ok(w(t.daily + ' ✓') + 8 <= 74, dev + ' the ticked daily label fits its button');
+    assert.ok(w('--yolo: ON') + 8 <= 74 && w('X --yolo: ON') + 8 <= 74);
   }
 });

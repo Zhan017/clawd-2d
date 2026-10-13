@@ -5,7 +5,7 @@
   const isDevice = (d) => d === 'kbm' || d === 'pad' || d === 'touch';
 
   // Every string must fit the 312 px text column at scale 1 (tests/prompts.test.js measures them with CB.Font).
-  // The kbm column is the text the game has always shown; it never changes.
+  // The kbm column is the text the game has always shown, bar the title's controls legend: the sound / music / calm chips under it show M, N and V.
   const TABLE = {
     start: { kbm: 'Click to start', touch: 'Tap to start', pad: 'Press A to start' },
     again: { kbm: 'Click to play again', touch: 'Tap to play again', pad: 'Press A to play again' },
@@ -13,15 +13,16 @@
     quitDead: { kbm: 'Q: quit to title', touch: '[ quit to title ]', pad: 'Back: quit to title' },
     pauseLine: { kbm: 'Esc: resume · Q: quit to title', touch: 'Tap: resume', pad: 'Start: resume · Back: quit to title' },
     quitArm: { kbm: 'Press Q again to quit', touch: 'Tap quit again to quit', pad: 'Press Back again to quit' },
+    // The title's controls legend, two short lines under the buttons (the pause screen has its own, below).
     legend1: {
-      kbm: 'WASD move · Mouse aim · Click shoot · Space dash',
-      touch: 'Left thumb: move · Right thumb: aim + shoot',
-      pad: 'L-stick move · R-stick aim + shoot · A dash',
+      kbm: 'WASD move · Mouse aim · Click shoot',
+      touch: 'Left thumb move · Right thumb aim + shoot',
+      pad: 'L-stick move · R-stick aim + shoot',
     },
     legend2: {
-      kbm: 'E /compact · N music · M mute · V calm · Esc pause',
-      touch: 'DASH and /compact buttons · II pause',
-      pad: 'RB /compact · Start pause · RT shoot',
+      kbm: 'Space dash · E /compact · Esc pause',
+      touch: 'DASH and /c buttons · II pause',
+      pad: 'A dash · RB /compact · Start pause',
     },
     pauseLegend1: {
       kbm: 'WASD move · Mouse aim · Click shoot',

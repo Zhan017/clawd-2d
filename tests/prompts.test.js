@@ -9,7 +9,8 @@ const DEVICES = ['kbm', 'touch', 'pad'];
 const MAX_W = 312; // the text column the screens centre in (320 minus a 4 px margin each side)
 
 // The keyboard + mouse strings the game shipped with (title.js, screens.js pause, gameOver.js, victory.js, panic.js).
-// retryKey is the front of 'R / click: <label>' and hat the tail of 'hat: <name> (Q/E)'. These never change.
+// retryKey is the front of 'R / click: <label>'. legend1 and legend2 were redrawn with the title's menu card (the chips under them now show
+// M, N and V); the rest never changes. hat is still where the title reads its key hints: '(Q/E)' names the Q before and the E after the hat name.
 // The three share keys came later (the victory screen's result button and the toasts that answer it); SHARE_KEYS names them.
 const KBM = {
   start: 'Click to start',
@@ -18,8 +19,8 @@ const KBM = {
   quitDead: 'Q: quit to title',
   pauseLine: 'Esc: resume · Q: quit to title',
   quitArm: 'Press Q again to quit',
-  legend1: 'WASD move · Mouse aim · Click shoot · Space dash',
-  legend2: 'E /compact · N music · M mute · V calm · Esc pause',
+  legend1: 'WASD move · Mouse aim · Click shoot',
+  legend2: 'Space dash · E /compact · Esc pause',
   pauseLegend1: 'WASD move · Mouse aim · Click shoot',
   pauseLegend2: 'Space dash · E /compact (meter full)',
   hat: '(Q/E)',
@@ -38,8 +39,8 @@ const TOUCH = {
   quitDead: '[ quit to title ]',
   pauseLine: 'Tap: resume',
   quitArm: 'Tap quit again to quit',
-  legend1: 'Left thumb: move · Right thumb: aim + shoot',
-  legend2: 'DASH and /compact buttons · II pause',
+  legend1: 'Left thumb move · Right thumb aim + shoot',
+  legend2: 'DASH and /c buttons · II pause',
   pauseLegend1: 'Left thumb: move · Right thumb: aim + shoot',
   pauseLegend2: 'DASH · /compact (meter full)',
   hat: '(tap)',
@@ -56,8 +57,8 @@ const PAD = {
   quitDead: 'Back: quit to title',
   pauseLine: 'Start: resume · Back: quit to title',
   quitArm: 'Press Back again to quit',
-  legend1: 'L-stick move · R-stick aim + shoot · A dash',
-  legend2: 'RB /compact · Start pause · RT shoot',
+  legend1: 'L-stick move · R-stick aim + shoot',
+  legend2: 'A dash · RB /compact · Start pause',
   pauseLegend1: 'L-stick move · R-stick aim + shoot',
   pauseLegend2: 'A/LB dash · RB/B /compact (meter full)',
   hat: '(LB/RB)',
@@ -189,12 +190,29 @@ test('prompts: every string fits 312 px at scale 1 and uses only glyphs the font
   assert.ok(widest > 0);
 });
 
+test('prompts: the title legend is two short lines that fit its 250 px menu card on every device, and the keyboard one leaves M, N and V to the chips', () => {
+  const CB = load();
+  for (const d of DEVICES) {
+    for (const k of ['legend1', 'legend2']) assert.ok(CB.Font.measure(CB.Prompts.text(k, d), 1) <= 240, `${k}/${d} is ${CB.Font.measure(CB.Prompts.text(k, d), 1)} px`);
+  }
+  const kbm = CB.Prompts.text('legend1', 'kbm') + ' ' + CB.Prompts.text('legend2', 'kbm');
+  assert.doesNotMatch(kbm, /\b[MNV] (music|mute|calm|sound)/, 'the chips show those keys');
+  assert.match(kbm, /Space dash/);
+  assert.match(CB.Prompts.text('legend2', 'touch'), /\/c\b/, 'the phone button is labelled /c');
+  assert.match(CB.Prompts.text('legend2', 'pad'), /^A dash/);
+  // The pause screen's legend is untouched.
+  assert.equal(CB.Prompts.text('pauseLegend1', 'kbm'), 'WASD move · Mouse aim · Click shoot');
+  assert.equal(CB.Prompts.text('pauseLegend2', 'pad'), 'A/LB dash · RB/B /compact (meter full)');
+});
+
 test('prompts: the rows screens build around a prompt still fit (long hat name, game-over retry row)', () => {
   const CB = load();
-  // The title's hat row is 'hat: <name> ' + hat, and game over's retry row is retryKey + ': ' + label.
+  // The title's hat row is the key hints either side of '‹ <name> ›' (a 74 px name field and two 4 px chevrons), and game over's retry row is retryKey + ': ' + label.
+  const CARD_INNER = 250;
   for (const d of DEVICES) {
-    const hatRow = 'hat: Stack Overflow Bucket Hat ' + CB.Prompts.text('hat', d);
-    assert.ok(CB.Font.measure(hatRow, 1) <= MAX_W, `hat row on ${d}`);
+    const hints = CB.Prompts.text('hat', d).replace(/[()]/g, '').split('/');
+    const hintW = hints.length === 2 ? CB.Font.measure(hints[0], 1) + CB.Font.measure(hints[1], 1) + 2 * 4 : 0;
+    assert.ok(hintW + 74 + 2 * (5 + 4) <= CARD_INNER, `hat row on ${d}`);
   }
   const gameOverRow = (d) => CB.Prompts.text('retryKey', d) + ': retry wave 2';
   for (const d of DEVICES) assert.ok(CB.Font.measure(gameOverRow(d), 1) <= MAX_W, `game over row on ${d}`);

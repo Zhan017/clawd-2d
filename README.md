@@ -165,14 +165,14 @@ Picking a patch makes Clawd celebrate.
 
 ### Unlocks and modes
 
-- **Hats:** beating a boss earns its hat (Loop cap, Slime hat, Branch beanie, Shades). A full clear earns the Crown. Pick your hat on the title screen with Q/E.
+- **Hats:** beating a boss earns its hat (Loop cap, Slime hat, Branch beanie, Shades). A full clear earns the Crown. Pick your hat on the title screen with Q/E (or LB/RB), or click or tap the arrows either side of its name.
 - **Boss Rush:** after your first victory, play all four bosses back to back.
 - **`--yolo`:** a flag run with 3 base hearts, faster bullets and shorter mercy frames. Winning it earns a special hat.
 - **Secrets:** there are a couple for people who type the right things on the title screen.
 
 ### Daily build and sharing
 
-- **Daily build:** one seeded run per day (UTC), the same for everyone. It ships with a starting patch picked for the day, and everyone is offered the same patches, so you can compare runs with friends. The title's `[ daily build ]` button gets a ✓ once you've cleared today's build, and the game keeps your best result for each day.
+- **Daily build:** one seeded run per day (UTC), the same for everyone. It ships with a starting patch picked for the day, and everyone is offered the same patches, so you can compare runs with friends. The title's daily build button gets a ✓ once you've cleared today's build, and the game keeps your best result for each day.
 - **Share your run:** the victory screen has a `[ copy result ]` button (C on a keyboard, X on a controller). On a phone it opens the share sheet. The text looks like this:
 
   ```
@@ -190,6 +190,7 @@ Picking a patch makes Clawd celebrate.
 - **Three ways to play:** keyboard and mouse, a controller, or touch. Switch at any moment and every prompt switches with you ("Click to start", "Tap to start", "Press A to start").
 - **Stick aim assist:** with a stick or a thumb, the aim gently snaps onto a regular bug within 10° of where you're shooting. It never helps on bosses, so the Heisenbug is always a matter of where you point the stick. Mouse aim is never assisted.
 - **Toggles you can tap:** the title and pause screens have sound, music and calm toggles that work by click, tap or controller, so a phone needs no keyboard.
+- **A title menu you can read:** START, daily build, Boss Rush and `--yolo` are framed buttons on one card (hover a mode button, or tap `--yolo`, for a one-line description of it), with a short controls legend and the toggles underneath. A red double frame means `--yolo` is on.
 - **Controller extras:** rumble, a "controller connected" toast, and an automatic pause if the controller disconnects mid-fight.
 
 ### Comfort and robustness
