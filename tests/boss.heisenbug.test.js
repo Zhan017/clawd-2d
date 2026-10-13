@@ -1099,6 +1099,37 @@ test('heisenbug phase 3: every 14 damage the giant lunges with the same tell, an
   assert.equal(g2.data.lunge, null);
 });
 
+test('heisenbug phase 3: the giant\'s lunge crouch sinks it 2 px at an exact 2x scale, and the 1x moths still squash', () => {
+  const t = pair();
+  toPhase3(t);
+  const { CB, w, boss } = t;
+  const g = boss.body;
+  step(w, 1, aimAt(g));
+  hit(w, g, 14);
+  step(w, 2, aimAt(g));
+  assert.equal(g.data.lunge.stage, 'tell');
+  const sunk = spyRenderer();
+  CB.Enemies.heisenbug.draw(g, sunk, 1);
+  assert.equal(sunk.calls.filter((c) => c.name === 'squash').length, 0, 'no fractional squash on a 2x giant');
+  const gs = sprites(sunk).filter((s) => s.name.startsWith('heisenbug_') || s.name === 'heisenStone_0');
+  assert.ok(gs.length >= 1);
+  for (const s of gs) assert.equal(s.o.scale, 2, `${s.name} stays at scale 2`);
+  g.data.lunge = null;
+  const level = spyRenderer();
+  CB.Enemies.heisenbug.draw(g, level, 1);
+  assert.equal(sprites(sunk)[0].y - sprites(level)[0].y, 2, 'the crouch is a whole 2 px lower than standing');
+  // a 1x moth keeps the 1.2 x 0.78 crouch
+  const t1 = pair();
+  const m = t1.b;
+  m.data.lunge = { stage: 'tell', t: 0, sx: m.x, sy: m.y, tx: m.x + 40, ty: m.y };
+  const small = spyRenderer();
+  CB.Enemies.heisenbug.draw(m, small, 1);
+  const sq = small.calls.filter((c) => c.name === 'squash');
+  assert.equal(sq.length, 1);
+  assert.equal(sq[0].a[2], 1.2);
+  assert.equal(sq[0].a[3], 0.78);
+});
+
 test('heisenbug phase 3: at 26 strain the giant whitens for 0.25 s, novas 16 around a gap on Clawd, jumps 80 px, gets a 1.2 s shield and sleeps; strain cools 4/s asleep', () => {
   const t = pair();
   toPhase3(t);
@@ -1215,6 +1246,64 @@ test('heisenbug REPRODUCED: any killing blow goes through the beat, in any phase
   const pts = B.deathPoints(boss);
   assert.equal(pts.length, 7);
   for (const p of pts) assert.ok(finite(p.x) && finite(p.y));
+});
+
+test('heisenbug REPRODUCED: the beat clears the bullets and guards Clawd, so a spark in flight cannot take the won fight away', () => {
+  const t = pair({ god: false });
+  toPhase3(t);
+  const { w, boss } = t;
+  const g = boss.body;
+  const p = w.player;
+  const look = aimAt(g);
+  p.hearts = 1;
+  p.invuln = 0;
+  g.hp = 3;
+  step(w, 1, look);
+  assert.ok(p.hearts === 1 && !p.dead, 'Clawd is on her last heart');
+  // sparks and a nova still flying when the last bolt lands
+  for (let i = 0; i < 8; i++) w.fireEnemyBullet(p.x - 30, p.y - 10 + i * 3, 0, 75);
+  assert.ok(w.eBullets.length >= 8);
+  assert.equal(hit(w, g, 5), 5);
+  assert.equal(w.eBullets.length, 0, 'the blow clears every enemy bullet');
+  assert.ok(p.invuln >= 0.9, `${p.invuln} s of invulnerability covers the whole beat`);
+  // a bullet that somehow reaches her 0.3 s into the beat (the death window) still does nothing
+  step(w, 18, look);
+  w.fireEnemyBullet(p.x - 6, p.y, 0, 75);
+  let ticks = 0;
+  while (!boss.defeated && ticks++ < 120) step(w, 1, look);
+  assert.equal(boss.defeated, true);
+  assert.equal(p.dead, false, 'Clawd lives through the beat');
+  assert.equal(p.hearts, 1);
+  assert.equal(w.stats.wouldHits, 0);
+});
+
+test('heisenbug REPRODUCED: a death in the beat can no longer turn the won fight into GAME OVER', () => {
+  const CB = H.load();
+  const run = CB.createRun({ seed: 5, startStage: 3, god: false, skipWaves: true });
+  const bot = makeBot();
+  let g = 0;
+  while (run.state !== 'boss' && g++ < 1200) run.step(bot(run));
+  assert.equal(run.state, 'boss');
+  const w = run.world;
+  const boss = w.boss;
+  const p = w.player;
+  p.hearts = 1;
+  p.invuln = 0;
+  const neutral = H.makeInput({ aimX: 160, aimY: 40 });
+  w.fireEnemyBullet(p.x - 10, p.y, 0, 75); // right behind her, flying at her
+  boss.body.hp = 0.5;
+  w.damageEnemy(boss.body, 5);
+  assert.equal(w.eBullets.length, 0, 'the beat starts with a clear field');
+  assert.ok(p.invuln >= 0.9);
+  let ticks = 0;
+  while (run.state === 'boss' && ticks++ < 200) {
+    if (ticks === 10) w.fireEnemyBullet(p.x - 6, p.y, 0, 75); // and another one 0.17 s in
+    run.step(neutral);
+  }
+  assert.equal(run.state, 'bossDead');
+  assert.equal(run.deaths, 0);
+  assert.equal(boss.defeated, true);
+  assert.equal(p.dead, false);
 });
 
 test('heisenbug REPRODUCED: deathPoints is the body plus 6 points on a ring, before and after the end, for moth and giant', () => {

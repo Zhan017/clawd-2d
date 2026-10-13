@@ -168,7 +168,7 @@
   }
 
   // Cosine between the stick direction `u` and the line to bug `e`; -2 when the bug cannot be assisted: not hittable right now,
-  // a boss part (every boss body, segment, twin and decoy is `boss: true, regular: false`), out of range or outside the cone.
+  // a boss part (every boss body, segment, twin and moth is `boss: true, regular: false`), out of range or outside the cone.
   function assistCos(e, p, u) {
     if (!e || e.dead || !e.visible || !e.targetable || !e.regular || e.boss || e.invuln > 0) return -2;
     const vx = e.x - p.x;
@@ -180,7 +180,7 @@
   }
 
   // The bug a firing stick snaps onto, or null. (dx, dy) is the stick direction. The largest cosine wins; among cosines within
-  // ASSIST_TIE of it, the nearer bug. Bosses are never assisted, so the Heisenbug's decoys stay a puzzle.
+  // ASSIST_TIE of it, the nearer bug. Bosses are never assisted, so the Heisenbug's moths are never snapped to.
   function assistTarget(w, p, dx, dy) {
     const u = M.norm(dx, dy);
     if (u.x === 0 && u.y === 0) return null;

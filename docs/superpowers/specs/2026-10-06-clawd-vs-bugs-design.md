@@ -384,7 +384,7 @@ CB.Enemies[kind] = {
 }
 ```
 
-Boss parts (loop head and segments, the twins, decoys) are registered as `CB.Enemies` kinds inside their boss file.
+Boss parts (loop head and segments, the twins, the Heisenbug's moths) are registered as `CB.Enemies` kinds inside their boss file.
 
 **Boss module:**
 

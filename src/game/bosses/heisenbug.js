@@ -240,7 +240,8 @@
     else if (!merging && d.obs) look = 'stone';
     const frame = FLUTTER[Math.floor(tt / FRAME_T) % FLUTTER.length];
     const hover = look === 'wave' || look === 'awake' ? Math.round(Math.sin(tt * 4 + e.x)) : 0; // stone does not bob
-    const y = e.y + hover;
+    const tell = !!(d.lunge && d.lunge.stage === 'tell');
+    const y = e.y + hover + (tell && d.giant ? 2 : 0); // the giant crouches by sinking 2 px: a squash would break its exact 2x pixels
     const flash = e.hitFlash > 0;
     r.alpha(0.3 * a, () => r.rect(e.x - e.r, e.y + e.r - 1, 2 * e.r, 2, C.ink));
     const lunge = d.lunge;
@@ -273,7 +274,7 @@
         r.sprite('heisenStone_0', e.x, y, { alpha: a, scale: s, white: look === 'white' || flash });
       }
     };
-    if (lunge && lunge.stage === 'tell') r.squash(e.x, e.y + e.r, 1.2, 0.78, body); // the crouch before a lunge
+    if (tell && !d.giant) r.squash(e.x, e.y + e.r, 1.2, 0.78, body); // the crouch before a lunge
     else body();
 
     const ringR = e.r + 5;
@@ -408,6 +409,8 @@
     b.hp = FLOOR_HP;
     c.finish = { t: 0 };
     c.observing = false;
+    w.clearEnemyBullets(); // the same protection stageRunner gives every other boss, but that only lands once the body dies, 0.9 s from now
+    w.player.invuln = Math.max(w.player.invuln, FINISH_T + 0.2); // so a bullet in flight, or a death in the beat, cannot throw the won fight away
     for (const m of c.moths) {
       cancelLunge(m);
       m.data.over = 0;
