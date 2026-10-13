@@ -8,7 +8,7 @@ It runs in the browser on desktop (keyboard and mouse) and takes about 10 minute
 
 ## Play
 
-- **Web:** https://clawd-2d-explore-test.vercel.app (deployed from `main` on Vercel)
+- **Web:** https://clawd-2d.vercel.app (deployed from `main` on Vercel)
 - **Locally:** `npm run serve`, then open http://127.0.0.1:8137/. You can also double-click `index.html`.
 
 ## Controls
