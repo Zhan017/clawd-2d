@@ -75,6 +75,10 @@ npm run build
 
 This writes `dist/clawd-vs-bugs.html`: the page markup and styles plus every script inlined in order (one `<script>` per file, with `sourceURL` comments so stack traces name the real file). That is the file published as the claude.ai Artifact.
 
+## Deploying (Vercel)
+
+The repo deploys as a static site. `vercel.json` runs `node tools/build-site.mjs`, which copies `index.html` and the scripts it lists into `public/` (tests, docs and tools stay out), and serves `public/`. Pushing to `main` deploys production through the Vercel Git integration. To check the deploy output locally, run `npm run build:site`.
+
 ## How it's built
 
 - Plain JavaScript classic scripts on one global, `window.CB`, rendered with Canvas 2D on a 320×180 buffer scaled up with integer scaling.
