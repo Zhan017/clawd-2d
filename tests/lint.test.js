@@ -207,10 +207,10 @@ test('lint: the whole set at once reports nothing', () => {
   assert.deepEqual(all, []);
 });
 
-// ---- more ways to play: 49 scripts, in an order that lets input.js find its helpers -----------------------------------------------
+// ---- more ways to play (+ daily and share): 51 scripts, in an order that lets input.js find its helpers -----------------------------------------------
 
-test('lint: index.html lists 49 scripts, with prompts, gamepad and touch before input.js and haptics between input.js and audio.js', () => {
-  assert.equal(LIST.length, 49);
+test('lint: index.html lists 51 scripts, with prompts, gamepad and touch before input.js and haptics, daily and share between input.js and audio.js', () => {
+  assert.equal(LIST.length, 51);
   const at = (f) => {
     const i = LIST.indexOf(f);
     assert.ok(i >= 0, f + ' is listed');
@@ -218,8 +218,8 @@ test('lint: index.html lists 49 scripts, with prompts, gamepad and touch before 
   };
   const render = at('src/art/render.js');
   assert.deepEqual(
-    LIST.slice(render, render + 7),
-    ['src/art/render.js', 'src/core/prompts.js', 'src/core/gamepad.js', 'src/core/touch.js', 'src/core/input.js', 'src/core/haptics.js', 'src/core/audio.js'],
+    LIST.slice(render, render + 9),
+    ['src/art/render.js', 'src/core/prompts.js', 'src/core/gamepad.js', 'src/core/touch.js', 'src/core/input.js', 'src/core/haptics.js', 'src/core/daily.js', 'src/core/share.js', 'src/core/audio.js'],
     'the order the plan fixes'
   );
 });
