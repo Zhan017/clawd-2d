@@ -16,6 +16,25 @@
     '.kkkkkkk.',
   ]);
 
+  // 13x9 "RB" keycap for the controller: the same keycap as the E, with two 4x5 glyphs (R has the leg, B the closed bottom bowl).
+  CB.Art.defineSprite('keycap_rb', [
+    '.kkkkkkkkkkk.',
+    'kwwwwwwwwwwwk',
+    'kWdddWWdddWWk',
+    'kWdWWdWdWWdWk',
+    'kWdddWWdddWWk',
+    'kWdWdWWdWWdWk',
+    'kWdWWdWdddWWk',
+    'keeeeeeeeeeek',
+    '.kkkkkkkkkkk.',
+  ]);
+
+  // The device the prompts are written for: the controller shows RB, a phone shows nothing (its /compact button glows instead).
+  const promptDevice = () => {
+    const d = CB.Prompts && CB.Prompts.device;
+    return d === 'pad' || d === 'touch' ? d : 'kbm';
+  };
+
   // 1 px midpoint circle, clipped to the screen: the wave grows to 360 px, and r.ring would build a 721 px sprite per radius.
   function pixelRing(r, cx, cy, rad, color) {
     const put = (x, y) => {
@@ -139,15 +158,24 @@
       });
     },
 
-    // The "press E" keycap bobbing above Clawd while a cast is available; WorldDraw calls it right after Player.draw.
-    // Until the first cast ever it also spells out `/compact` in gold beside the key.
-    drawPrompt(w, r, t) {
+    // True while a cast is available: the meter is full, Clawd is up, no wave is out and the boss is not down.
+    ready(w) {
       const p = w.player;
       const c = w.context;
-      if (c.value < c.max || p.dead || w.compactWave || (w.boss && w.boss.defeated)) return;
+      return !(c.value < c.max || p.dead || w.compactWave || (w.boss && w.boss.defeated));
+    },
+
+    // The "press E" keycap bobbing above Clawd while a cast is available; WorldDraw calls it right after Player.draw.
+    // Until the first cast ever it also spells out `/compact` in gold beside the key. A controller gets an RB keycap; touch gets
+    // neither (the on-screen /compact button glows instead).
+    drawPrompt(w, r, t) {
+      if (!Compact.ready(w)) return;
+      const dev = promptDevice();
+      if (dev === 'touch') return;
+      const p = w.player;
       const y = p.y - 17 + Math.round(Math.sin(t * 4));
-      r.sprite('keycap_e', p.x, y);
-      if (!w.seenCompact) r.text('/compact', p.x + 7, y - 3, { color: CB.Pal.C.gold, shadow: CB.Pal.C.ink });
+      r.sprite(dev === 'pad' ? 'keycap_rb' : 'keycap_e', p.x, y);
+      if (!w.seenCompact) r.text('/compact', p.x + (dev === 'pad' ? 9 : 7), y - 3, { color: CB.Pal.C.gold, shadow: CB.Pal.C.ink });
     },
   };
   CB.Compact = Compact;

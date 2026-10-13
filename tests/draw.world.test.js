@@ -530,6 +530,33 @@ test('worldDraw: the /compact keycap shows above Clawd only while the meter is f
   assert.ok(order.indexOf('keycap_e') > order.findIndex((n) => n.startsWith('clawd')), 'right after Player.draw');
 });
 
+test('worldDraw: the /compact keycap follows the device: E for the keyboard, RB for a pad, none on a phone', () => {
+  const { CB, r } = setup({ extra: EXTRA });
+  const s = spy(r);
+  const run = CB.createRun({ seed: 2 });
+  const w = run.world;
+  w.context.value = w.context.max;
+  const caps = (device) => {
+    CB.Prompts = device === undefined ? undefined : { device };
+    s.clear();
+    CB.WorldDraw.draw(r, w, 1, {});
+    return s.of('sprite').map((c) => c.args[0]).filter((n) => n.startsWith('keycap_'));
+  };
+  assert.deepEqual(caps('kbm'), ['keycap_e']);
+  assert.deepEqual(caps(undefined), ['keycap_e'], 'without the prompts module it is the keyboard');
+  assert.deepEqual(caps('pad'), ['keycap_rb']);
+  assert.deepEqual(caps('touch'), [], 'the on-screen button glows instead');
+  const k = (() => {
+    CB.Prompts = { device: 'pad' };
+    s.clear();
+    CB.WorldDraw.draw(r, w, 1, {});
+    return s.of('sprite').find((c) => c.args[0] === 'keycap_rb');
+  })();
+  assert.ok(k.args[1] === w.player.x && k.args[2] < w.player.y - 10, 'the RB keycap hangs over Clawd like the E one');
+  const order = s.calls.filter((c) => c.fn === 'sprite').map((c) => c.args[0]);
+  assert.ok(order.indexOf('keycap_rb') > order.findIndex((n) => n.startsWith('clawd')), 'right after Player.draw');
+});
+
 test('worldDraw: the spawn telegraph blinks through CB.Comfort.blink at 12 Hz, and works without it', () => {
   const { CB, r } = setup();
   const s = spy(r);

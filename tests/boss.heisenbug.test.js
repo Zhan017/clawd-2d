@@ -974,3 +974,149 @@ test('heisenbug: the draw hooks never reach for the global scope beyond CB (no M
   assert.ok(!/Math\.random/.test(src.replace(/\/\/.*$/gm, '')));
   assert.ok(!/Date\.now/.test(src.replace(/\/\/.*$/gm, '')));
 });
+
+// ---- T4a: stick aim observes along a ray -------------------------------------------------------------------------------------
+// A stick has no pointer: its aim point is only 48 px out, so the body counts as watched when the forward ray from Clawd along the
+// stick passes within 14 px of it (ahead of her, never behind). The mouse keeps its 14 px point check.
+
+const stickDir = (dx, dy, over) => () => H.makeInput(Object.assign({ aimDirX: dx, aimDirY: dy, aimAssist: true, aimX: 5, aimY: 5 }, over || {}));
+const unit = (a, b) => {
+  const d = Math.hypot(b.x - a.x, b.y - a.y);
+  return { x: (b.x - a.x) / d, y: (b.y - a.y) / d };
+};
+// The body parked at (x, y), Clawd at (160, 126) with the whole fight otherwise idle (no jump due for 2.5 s at least).
+function parked(x, y) {
+  const s = start({ player: [160, 126] });
+  s.boss.body.x = x;
+  s.boss.body.y = y;
+  return s;
+}
+
+test('heisenbug stick: holding the stick on the body for 2.0 s makes it jump, like the mouse does', () => {
+  const { w, boss } = start();
+  const d = unit(w.player, boss.body);
+  let tp = -1;
+  for (let i = 0; i < 140 && tp < 0; i++) {
+    H.stepN(w, 1, stickDir(d.x, d.y));
+    if (w.events.some((e) => e.type === 'teleport')) tp = i + 1;
+  }
+  assert.ok(tp >= 119 && tp <= 123, `teleport tick ${tp}`);
+  assert.ok(Math.hypot(boss.body.x - w.player.x, boss.body.y - w.player.y) >= 80);
+  assert.equal(boss.observeT, 0);
+});
+
+test('heisenbug stick: the ray reaches the body from any distance, though the stick aim point is only 48 px out', () => {
+  const { w, boss } = parked(300, 126);
+  H.stepN(w, 30, stickDir(1, 0));
+  assert.equal(w.player.aimStick, true);
+  assert.ok(Math.hypot(w.player.aimX - boss.body.x, w.player.aimY - boss.body.y) > 90, 'the mouse rule would not see it');
+  assert.ok(boss.observeT > 0.45, `observeT ${boss.observeT}`);
+  assert.equal(boss.body.data.observeT, boss.observeT, 'the body draws its tell from it');
+});
+
+test('heisenbug stick: the ray has to pass within 14 px of the body (13.5 counts, 14.5 does not), on either side', () => {
+  for (const off of [13.5, -13.5]) {
+    const { w, boss } = parked(260, 126 + off);
+    H.stepN(w, 30, stickDir(1, 0));
+    assert.ok(boss.observeT > 0.45, `offset ${off}: ${boss.observeT}`);
+  }
+  for (const off of [14.5, -14.5, 40]) {
+    const { w, boss } = parked(260, 126 + off);
+    H.stepN(w, 30, stickDir(1, 0));
+    assert.equal(boss.observeT, 0, `offset ${off}`);
+  }
+  const diag = parked(160 + 100, 126 + 100);
+  const s = Math.SQRT1_2;
+  H.stepN(diag.w, 30, stickDir(s, s));
+  assert.ok(diag.boss.observeT > 0.45, 'a diagonal ray works the same');
+  const miss = parked(160 + 100, 126 + 100 + 14.5 * Math.SQRT2);
+  H.stepN(miss.w, 30, stickDir(s, s));
+  assert.equal(miss.boss.observeT, 0, '14.5 px off a diagonal ray');
+});
+
+test('heisenbug stick: a body behind Clawd, or exactly beside her, is not watched', () => {
+  const behind = parked(60, 126);
+  H.stepN(behind.w, 30, stickDir(1, 0));
+  assert.equal(behind.boss.observeT, 0, 'the line through her reaches it, the ray does not');
+  const beside = parked(160, 60);
+  H.stepN(beside.w, 30, stickDir(1, 0));
+  assert.equal(beside.boss.observeT, 0, 'level with her but 66 px off the ray');
+  const onTop = parked(160, 126);
+  H.stepN(onTop.w, 30, stickDir(1, 0));
+  assert.equal(onTop.boss.observeT, 0, 'dead level with Clawd: not ahead of her');
+});
+
+test('heisenbug stick: swinging the stick off the body resets the count; swinging back starts again', () => {
+  const { w, boss } = parked(260, 126);
+  H.stepN(w, 60, stickDir(1, 0));
+  assert.ok(boss.observeT > 0.9);
+  H.stepN(w, 1, stickDir(0, -1));
+  assert.equal(boss.observeT, 0);
+  H.stepN(w, 60, stickDir(1, 0));
+  assert.ok(boss.observeT > 0.9 && boss.observeT < 1.1);
+  assert.equal(w.events.filter((e) => e.type === 'teleport').length, 0);
+});
+
+test('heisenbug stick: a decoy on the ray is not the body, and the body is still watched through it', () => {
+  const off = parked(260, 60);
+  const decoy = off.w.spawnEnemy('heisenDecoy', 220, 126);
+  assert.ok(decoy);
+  H.stepN(off.w, 130, stickDir(1, 0));
+  assert.equal(off.boss.observeT, 0, 'aiming at a decoy counts for nothing');
+  assert.equal(off.w.events.filter((e) => e.type === 'teleport').length, 0);
+  const through = parked(280, 126);
+  through.w.spawnEnemy('heisenDecoy', 220, 126);
+  H.stepN(through.w, 30, stickDir(1, 0));
+  assert.ok(through.boss.observeT > 0.45, 'the ray reaches the real body behind it');
+});
+
+test('heisenbug stick: a faded body (blink) cannot be watched by the ray', () => {
+  const { w, boss } = parked(260, 126);
+  boss.blinkT = 0;
+  H.stepN(w, 12, stickDir(1, 0));
+  assert.equal(boss.body.targetable, false);
+  assert.equal(boss.observeT, 0);
+});
+
+test('heisenbug stick: the assist never snaps the aim onto the boss, its decoys or anything else that is a boss part', () => {
+  const { w, boss } = parked(230, 126 - 8); // about 6 degrees off a stick pointing right: inside the assist cone
+  w.spawnEnemy('heisenDecoy', 200, 126 + 3);
+  H.stepN(w, 1, stickDir(1, 0, { fire: true }));
+  const p = w.player;
+  assert.equal(p.aimStick, true);
+  assert.ok(Math.abs(p.aimX - (p.x + 48)) < 1e-9 && Math.abs(p.aimY - p.y) < 1e-9, `${p.aimX},${p.aimY}`);
+  assert.ok(boss.observeT > 0, 'but the ray still sees the body 8 px off it');
+});
+
+test('heisenbug stick: a mouse keeps the 14 px point rule -- the same direction with a mouse aim point does not watch', () => {
+  const { w, boss } = parked(260, 126);
+  // The stick's own aim point (48 px along the ray) as a mouse position: 52 px from the body, so a mouse does not see it.
+  H.stepN(w, 30, () => H.makeInput({ aimX: 208, aimY: 126 }));
+  assert.equal(w.player.aimStick, false);
+  assert.equal(boss.observeT, 0);
+  H.stepN(w, 30, () => H.makeInput({ aimX: 260 + 13.5, aimY: 126 }));
+  assert.ok(boss.observeT > 0.45, 'a mouse on the body still counts');
+  // Behind-Clawd points: a mouse on a body behind her counts (it is a point); a stick would not.
+  const back = parked(60, 126);
+  H.stepN(back.w, 30, () => H.makeInput({ aimX: 60, aimY: 126 }));
+  assert.ok(back.boss.observeT > 0.45, 'the point rule has no direction');
+});
+
+test('heisenbug stick: explicit null, zero and missing directions all use the mouse rule', () => {
+  for (const dir of [{ aimDirX: null, aimDirY: null }, { aimDirX: 0, aimDirY: 0 }, {}]) {
+    const { w, boss } = parked(260, 126);
+    H.stepN(w, 30, () => H.makeInput(Object.assign({ aimX: 100, aimY: 126, aimAssist: false }, dir)));
+    assert.equal(w.player.aimStick, false, JSON.stringify(dir));
+    assert.equal(boss.observeT, 0, `${JSON.stringify(dir)}: the point is 160 px from the body`);
+  }
+});
+
+test('heisenbug stick: changing from stick to mouse mid-count switches rules on the next tick', () => {
+  const { w, boss } = parked(260, 126);
+  H.stepN(w, 30, stickDir(1, 0));
+  assert.ok(boss.observeT > 0.45);
+  H.stepN(w, 1, () => H.makeInput({ aimX: 100, aimY: 126 }));
+  assert.equal(boss.observeT, 0, 'the mouse is far from the body');
+  H.stepN(w, 1, stickDir(1, 0));
+  assert.ok(boss.observeT > 0, 'and the stick sees it again');
+});

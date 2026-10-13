@@ -551,3 +551,133 @@ test('drawPrompt: runs against the real renderer headless in every condition', (
   w.compactWave = { x: 100, y: 90, r: 60, hits: [] };
   CB.Compact.draw(w, r);
 });
+
+// ---- T4a: the prompt per device -----------------------------------------------------------------
+
+test('keycap_rb: a 13x9 controller keycap built like the E one, with a readable R and B', () => {
+  const { CB } = setup();
+  const d = CB.Art.spriteDef('keycap_rb');
+  assert.ok(d, 'defined at load time');
+  assert.equal(d.w, 13);
+  assert.equal(d.h, 9);
+  const e = CB.Art.spriteDef('keycap_e');
+  assert.equal(d.h, e.h, 'the same height as the E keycap, so it sits at the same y');
+  const rows = d.rows;
+  for (let x = 0; x < 13; x++) {
+    for (const y of [0, 8]) assert.ok(rows[y][x] === 'k' || rows[y][x] === '.', `top/bottom edge ${x},${y}`);
+  }
+  for (let y = 1; y < 8; y++) assert.ok(rows[y][0] === 'k' && rows[y][12] === 'k', `side edge row ${y}`);
+  assert.equal(rows[1], 'k' + 'w'.repeat(11) + 'k', 'the lit top edge, like the E keycap');
+  assert.equal(rows[7], 'k' + 'e'.repeat(11) + 'k', 'the shaded bottom edge, like the E keycap');
+  // The dark glyph rows (2-6), cut into the two letters: R at columns 2-5 and B at columns 7-10.
+  const glyph = (c0) => rows.slice(2, 7).map((row) => row.slice(c0, c0 + 4).split('').map((c) => (c === 'd' ? '#' : '.')).join(''));
+  assert.deepEqual(glyph(2), ['###.', '#..#', '###.', '#.#.', '#..#'], 'R: a bowl and a diagonal leg');
+  assert.deepEqual(glyph(7), ['###.', '#..#', '###.', '#..#', '###.'], 'B: two closed bowls');
+  for (const y of [2, 3, 4, 5, 6]) assert.ok(rows[y][6] !== 'd', `the letters have a gap between them (row ${y})`);
+  const only = new Set(rows.join('').split(''));
+  for (const ch of only) assert.ok('.kwWde'.includes(ch), `uses the keycap palette only: ${ch}`);
+});
+
+test('drawPrompt: the keycap follows the device (kbm E, pad RB, touch none) and an unknown device is the keyboard', () => {
+  const { CB, w } = setup();
+  w.context.value = 45;
+  const names = (dev) => {
+    CB.Prompts = dev === undefined ? undefined : { device: dev };
+    const r = fakeR();
+    CB.Compact.drawPrompt(w, r, 0);
+    return r.calls.filter((c) => c.kind === 'sprite').map((c) => c.name);
+  };
+  assert.deepEqual(names(undefined), ['keycap_e'], 'no Prompts module: the keyboard keycap');
+  assert.deepEqual(names('kbm'), ['keycap_e']);
+  assert.deepEqual(names('pad'), ['keycap_rb']);
+  assert.deepEqual(names('touch'), []);
+  assert.deepEqual(names('gyro'), ['keycap_e'], 'junk is the keyboard');
+});
+
+test('drawPrompt: on a pad the RB keycap bobs like the E one and "/compact" sits clear of the wider key; touch shows no text either', () => {
+  const { CB, w } = setup();
+  w.context.value = 45;
+  const p = w.player;
+  CB.Prompts = { device: 'pad' };
+  let r = fakeR();
+  CB.Compact.drawPrompt(w, r, 0);
+  const key = r.calls.find((c) => c.kind === 'sprite');
+  assert.equal(key.x, p.x);
+  assert.equal(key.y, p.y - 17);
+  const label = r.calls.find((c) => c.kind === 'text');
+  assert.equal(label.str, '/compact');
+  assert.equal(label.o.color, CB.Pal.C.gold);
+  assert.ok(label.x >= p.x + 13 / 2, 'to the right of the 13 px keycap, not under it');
+  r = fakeR();
+  CB.Compact.drawPrompt(w, r, Math.PI / 8);
+  assert.equal(r.calls.find((c) => c.kind === 'sprite').y, p.y - 16);
+  w.seenCompact = true;
+  r = fakeR();
+  CB.Compact.drawPrompt(w, r, 0);
+  assert.equal(r.calls.filter((c) => c.kind === 'text').length, 0, 'once seen, the keycap stays on its own');
+  CB.Prompts = { device: 'touch' };
+  w.seenCompact = false;
+  r = fakeR();
+  CB.Compact.drawPrompt(w, r, 0);
+  assert.equal(r.calls.length, 0, 'touch: no keycap and no gold text, the button glows instead');
+});
+
+test('drawPrompt: the pad and touch prompts hide in the same conditions as the keyboard one', () => {
+  const { CB, w } = setup();
+  for (const dev of ['pad', 'touch']) {
+    CB.Prompts = { device: dev };
+    w.context.value = 44;
+    let r = fakeR();
+    CB.Compact.drawPrompt(w, r, 0);
+    assert.equal(r.calls.length, 0, `${dev}: meter not full`);
+    w.context.value = 45;
+    w.player.dead = true;
+    r = fakeR();
+    CB.Compact.drawPrompt(w, r, 0);
+    assert.equal(r.calls.length, 0, `${dev}: dead`);
+    w.player.dead = false;
+    w.compactWave = { x: 1, y: 1, r: 4, hits: [] };
+    r = fakeR();
+    CB.Compact.drawPrompt(w, r, 0);
+    assert.equal(r.calls.length, 0, `${dev}: wave out`);
+    w.compactWave = null;
+  }
+});
+
+test('Compact.ready: true only while a cast is available (full meter, alive, no wave out, boss not down)', () => {
+  const { CB, w } = setup();
+  assert.equal(CB.Compact.ready(w), false, 'empty meter');
+  w.context.value = 45;
+  assert.equal(CB.Compact.ready(w), true);
+  w.player.dead = true;
+  assert.equal(CB.Compact.ready(w), false, 'dead');
+  w.player.dead = false;
+  w.compactWave = { x: 1, y: 1, r: 4, hits: [] };
+  assert.equal(CB.Compact.ready(w), false, 'wave out');
+  w.compactWave = null;
+  w.boss = { defeated: true };
+  assert.equal(CB.Compact.ready(w), false, 'boss down');
+  w.boss = { defeated: false };
+  assert.equal(CB.Compact.ready(w), true, 'a live boss does not hide it');
+  const before = w.context.value;
+  CB.Compact.ready(w);
+  assert.equal(w.context.value, before, 'a pure query');
+});
+
+test('drawPrompt: with the real Prompts module the device switch is picked up at once', () => {
+  const CB = H.load([...FILES, 'src/core/prompts.js']);
+  addDummy(CB);
+  const w = CB.createWorld({ seed: 9 });
+  w.context.value = 45;
+  const first = (dev) => {
+    CB.Prompts.setDevice(dev);
+    const r = fakeR();
+    CB.Compact.drawPrompt(w, r, 0);
+    const s = r.calls.find((c) => c.kind === 'sprite');
+    return s ? s.name : null;
+  };
+  assert.equal(first('kbm'), 'keycap_e');
+  assert.equal(first('pad'), 'keycap_rb');
+  assert.equal(first('touch'), null);
+  assert.equal(first('kbm'), 'keycap_e');
+});

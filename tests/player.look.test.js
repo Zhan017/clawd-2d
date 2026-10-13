@@ -860,3 +860,37 @@ test('look: a seeded 1500-tick scramble of moves, shots, dashes, hits, cheers an
     for (const e of sprites(log)) assert.ok(CB.Art.hasSprite(e.a[0]), `tick ${i}: unknown sprite ${e.a[0]}`);
   }
 });
+
+// ---- T4a: Clawd's body language follows a stick aim just like a mouse aim ---------------------------------------------------
+
+test('look: a stick aim flips Clawd to face the stick, and a mouse aim still faces the pointer', () => {
+  const { w } = setup();
+  const p = w.player;
+  H.stepN(w, 1, () => H.makeInput({ aimDirX: -1, aimDirY: 0, aimAssist: true }));
+  assert.equal(p.facing, -1);
+  H.stepN(w, 1, () => H.makeInput({ aimDirX: 0.6, aimDirY: -0.8, aimAssist: true }));
+  assert.equal(p.facing, 1);
+  H.stepN(w, 1, () => H.makeInput({ aimX: p.x - 50, aimY: p.y }));
+  assert.equal(p.facing, -1, 'back to the pointer');
+});
+
+test('look: the idle timer ignores a stick aim like it ignores the mouse, and a firing stick resets it', () => {
+  const { w } = setup();
+  const p = w.player;
+  H.stepN(w, 30, (i) => H.makeInput({ aimDirX: Math.cos(i / 5), aimDirY: Math.sin(i / 5), aimAssist: true }));
+  assert.ok(Math.abs(p.idleT - 0.5) < 1e-9, `swinging the stick alone keeps the clock running: ${p.idleT}`);
+  H.stepN(w, 1, () => H.makeInput({ aimDirX: 1, aimDirY: 0, aimAssist: true, fire: true }));
+  assert.equal(p.idleT, 0);
+});
+
+test('look: a shot from a stick sets the recoil, and the drawn sprite is pushed against the stick direction', () => {
+  const { CB, w, r } = setup();
+  const p = w.player;
+  H.stepN(w, 1, () => H.makeInput({ aimDirX: 1, aimDirY: 0, aimAssist: true, fire: true }));
+  assert.ok(p.kick > 0.7);
+  const log = spy(r);
+  p.hurtT = 0;
+  CB.Player.draw(p, r, 0, {});
+  const x = bodyCall(log).a[1];
+  assert.ok(x < p.x, `aiming right pushes Clawd left (${x} vs ${p.x})`);
+});

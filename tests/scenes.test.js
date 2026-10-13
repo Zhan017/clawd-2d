@@ -170,16 +170,47 @@ test('play: extra sim ticks (debug speed) never repeat edge inputs', () => {
   const real = play.run.step;
   play.run.step = function (inp) { seen.push(inp); return real.call(this, inp); };
   const keys = ['KeyA'];
-  play.update(CB.DT, H.makeInput({ dash: true, compact: true, music: true, keys }));
+  const pad = { a: true, b: false, x: false, y: false, lb: false, rb: false, start: false, back: false };
+  play.update(CB.DT, H.makeInput({ dash: true, compact: true, music: true, keys, navX: 1, navY: -1, tap: true, pad }));
   assert.equal(seen.length, 3);
   assert.equal(seen[0].dash, true);
   assert.equal(seen[0].compact, true);
+  assert.equal(seen[0].navX, 1);
+  assert.equal(seen[0].tap, true);
+  assert.equal(seen[0].pad, pad);
   for (const i of [1, 2]) {
     assert.equal(seen[i].dash, false);
     assert.equal(seen[i].compact, false);
     assert.equal(seen[i].music, false);
     assert.deepEqual(H.plain(seen[i].keys), []);
+    // the device edges (T4a) are edges too: a nav press, a tap and the pad's button edges happen once, on the first tick
+    assert.equal(seen[i].navX, 0);
+    assert.equal(seen[i].navY, 0);
+    assert.equal(seen[i].tap, false);
+    assert.equal(seen[i].pad, null);
   }
+});
+
+test('play: a bare host input (peekAim only) is the keyboard and mouse: no touch mode call, no device, nothing breaks', () => {
+  const { CB, game } = setup();
+  const play = CB.Scenes.play;
+  assert.equal(game.input.device, undefined);
+  assert.equal(game.input.setTouchMode, undefined);
+  play.enter(game, { runOpts: { seed: 1 } });
+  assert.equal(play.device(), 'kbm');
+  assert.doesNotThrow(() => play.update(CB.DT, H.makeInput()));
+  assert.doesNotThrow(() => play.update(CB.DT, H.makeInput({ pause: true })));
+  assert.equal(play.paused, true);
+  assert.doesNotThrow(() => play.update(CB.DT, H.makeInput({ navX: 1, tap: true, confirm: true })), 'pause screen input without screens.js: a tap resumes');
+  assert.equal(play.paused, false);
+});
+
+test('play: notify queues a host toast with the standard 2.5 s', () => {
+  const { CB, game } = setup();
+  const play = CB.Scenes.play;
+  play.enter(game, { runOpts: { seed: 1 } });
+  play.notify('controller connected');
+  assert.deepEqual(H.plain(play.toasts), [{ text: 'controller connected', t: 2.5 }]);
 });
 
 function drawSetup() {

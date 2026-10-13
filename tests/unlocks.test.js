@@ -235,6 +235,24 @@ test('play: with a stubbed Unlocks (or none) the scene still runs; modes has its
   assert.doesNotThrow(() => play.update(CB.DT, H.makeInput()));
 });
 
+test('play: a host notification waits its turn behind an unlock toast, in the same queue and with the same clock', () => {
+  const { CB, play } = playSetup();
+  CB.Unlocks = { onEvents: () => ['crown'] };
+  CB.HATS = [{ id: 'crown', name: 'Crown' }];
+  play.update(CB.DT, H.makeInput());
+  CB.Unlocks = { onEvents: () => [] };
+  play.notify('controller connected');
+  assert.deepEqual(H.plain(play.toasts.map((t) => t.text)), ['NEW HAT: Crown', 'controller connected']);
+  assert.equal(play.toasts[1].t, 2.5, 'its clock has not started');
+  for (let k = 0; k < 160; k++) play.update(CB.DT, H.makeInput());
+  assert.deepEqual(H.plain(play.toasts.map((t) => t.text)), ['controller connected'], 'the hat toast ran out first');
+  assert.ok(play.toasts[0].t < 2.5 && play.toasts[0].t > 0.5, `now counting: ${play.toasts[0].t}`);
+  play.update(CB.DT, H.makeInput({ pause: true }));
+  const t0 = play.toasts[0].t;
+  for (let k = 0; k < 30; k++) play.update(CB.DT, H.makeInput());
+  assert.equal(play.toasts[0].t, t0, 'frozen while paused');
+});
+
 test('play.draw: the toast is gold text on a dark band at y 171, fading out; absent when there is no toast', () => {
   const { CB, play } = playSetup();
   CB.WorldDraw = { draw() {} };

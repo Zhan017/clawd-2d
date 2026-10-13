@@ -7,6 +7,11 @@
   const DASH_TIME = 0.15;
   const DASH_INVULN = 0.25;
   const HURT_INVULN = 1.0;
+  const AIM_R = 48; // stick aim: the aim point sits this far out along the stick direction
+  const ASSIST_DEG = 10; // stick aim assist: a bug this close to the stick direction...
+  const ASSIST_COS = Math.cos((ASSIST_DEG * Math.PI) / 180);
+  const ASSIST_RANGE = 140; // ...and this near Clawd pulls the aim onto itself
+  const ASSIST_TIE = 0.002; // directions this close in cosine count as equally well aimed, and the nearer bug wins
   const SPREAD_STEP = (12 * Math.PI) / 180;
   const EPS = 1e-9; // timers are decremented by 1/60 repeatedly; 0.2 - 12/60 is +5e-17, not 0
   const IDLE_T = 2.5; // idle seconds before the squint (past it) and the "Thinking..." bubble (from it)
@@ -162,9 +167,59 @@
     r.text(word, x + gw + 4, y, o);
   }
 
+  // Cosine between the stick direction `u` and the line to bug `e`; -2 when the bug cannot be assisted: not hittable right now,
+  // a boss part (every boss body, segment, twin and decoy is `boss: true, regular: false`), out of range or outside the cone.
+  function assistCos(e, p, u) {
+    if (!e || e.dead || !e.visible || !e.targetable || !e.regular || e.boss || e.invuln > 0) return -2;
+    const vx = e.x - p.x;
+    const vy = e.y - p.y;
+    const d = Math.hypot(vx, vy);
+    if (d > ASSIST_RANGE || d < 1e-6) return -2;
+    const c = (vx * u.x + vy * u.y) / d;
+    return c >= ASSIST_COS ? c : -2;
+  }
+
+  // The bug a firing stick snaps onto, or null. (dx, dy) is the stick direction. The largest cosine wins; among cosines within
+  // ASSIST_TIE of it, the nearer bug. Bosses are never assisted, so the Heisenbug's decoys stay a puzzle.
+  function assistTarget(w, p, dx, dy) {
+    const u = M.norm(dx, dy);
+    if (u.x === 0 && u.y === 0) return null;
+    const list = (w && w.enemies) || [];
+    let bestCos = -2;
+    for (const e of list) bestCos = Math.max(bestCos, assistCos(e, p, u));
+    if (bestCos < 0) return null;
+    let best = null;
+    let bestD = Infinity;
+    for (const e of list) {
+      if (assistCos(e, p, u) < bestCos - ASSIST_TIE) continue;
+      const d = M.dist(p.x, p.y, e.x, e.y);
+      if (d < bestD) {
+        bestD = d;
+        best = e;
+      }
+    }
+    return best;
+  }
+
+  // The aim point for a stick, or null when this input aims with the mouse. A stick aims by direction (a unit vector in
+  // input.aimDirX/aimDirY): 48 px out from Clawd, or onto an assist target while the stick fires. An idle stick is never
+  // assisted, so passing bugs do not pull the crosshair around.
+  function stickAim(p, w, input) {
+    const dx = input.aimDirX;
+    const dy = input.aimDirY;
+    if (!M.isFiniteNum(dx) || !M.isFiniteNum(dy)) return null;
+    const u = M.norm(dx, dy);
+    if (u.x === 0 && u.y === 0) return null;
+    if (input.aimAssist && input.fire) {
+      const t = assistTarget(w, p, u.x, u.y);
+      if (t) return { x: t.x, y: t.y };
+    }
+    return { x: p.x + u.x * AIM_R, y: p.y + u.y * AIM_R };
+  }
+
   CB.Player = {
-    SPEED, DASH_SPEED, DASH_TIME, DASH_INVULN, HURT_INVULN, HAT_DY,
-    expression, pose, drawHat,
+    SPEED, DASH_SPEED, DASH_TIME, DASH_INVULN, HURT_INVULN, HAT_DY, AIM_R, ASSIST_DEG, ASSIST_RANGE,
+    expression, pose, drawHat, assistTarget,
 
     create(w, patches) {
       const stats = CB.Patches.computeStats(patches || {});
@@ -174,7 +229,7 @@
       return {
         x: a.x + a.w / 2, y: a.y + a.h / 2 + 30, r: 5, vx: 0, vy: 0,
         hearts: stats.maxHearts, stats, facing: 1,
-        aimX: a.x + a.w / 2, aimY: a.y,
+        aimX: a.x + a.w / 2, aimY: a.y, aimStick: false, // aimStick: this tick's aim came from a stick direction, not the mouse
         fireCd: 0, dashCd: 0, dashT: 0, dashDX: 0, dashDY: 0,
         invuln: 0, dashInvulnT: 0, hurtT: 0, hurtInvuln: yolo ? 0.7 : HURT_INVULN, dead: false, slow: 1, moving: false, walkT: 0, t: 0, trail: [],
         beatT: 0.3, beatPulse: 0, lowWarned: false,
@@ -216,8 +271,10 @@
       const wantCompact = input.compact || w.compactBuffered; // an E pressed during hitstop is cast on the first live tick
       w.compactBuffered = false;
       if (wantCompact && CB.Compact) CB.Compact.cast(w);
-      p.aimX = input.aimX;
-      p.aimY = input.aimY;
+      const sa = stickAim(p, w, input);
+      p.aimStick = !!sa;
+      p.aimX = sa ? sa.x : input.aimX;
+      p.aimY = sa ? sa.y : input.aimY;
       p.facing = p.aimX >= p.x ? 1 : -1;
       const mv = M.norm(input.moveX || 0, input.moveY || 0);
 
@@ -257,6 +314,11 @@
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       M.clampToArena(p, w.arena);
+      if (sa) {
+        const sb = stickAim(p, w, input); // re-anchored on where Clawd ended up, so the shot goes exactly along the stick
+        p.aimX = sb.x;
+        p.aimY = sb.y;
+      }
 
       if (input.fire && p.fireCd <= EPS) {
         // Keep the sub-tick remainder (so 0.14 s really averages 8.4 ticks), but give no credit for idle time.

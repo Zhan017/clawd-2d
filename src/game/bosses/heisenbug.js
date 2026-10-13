@@ -13,7 +13,7 @@
   const SPAWN_GRACE = 0.5; // a new part does no contact damage for this long
   const CANDIDATES = [{ x: 160, y: 50 }, { x: 60, y: 96 }, { x: 260, y: 96 }];
 
-  const OBSERVE_R = 14; // the aim has to stay this close to the real body...
+  const OBSERVE_R = 14; // the aim (for a stick: the aim ray) has to stay this close to the real body...
   const OBSERVE_T = 2.0; // ...for this long, and it jumps
   const OBSERVE_FLASH = 1.0; // the body flashes white once at this mark
   const OBSERVE_RED = 1.5; // the eye over the ring turns red
@@ -234,11 +234,26 @@
     }
   }
 
-  // Watching it for 2 s makes it jump. The timer counts only while the aim is within 14 px of the real body and it can be shot.
+  // Is Clawd's aim on the real body? A mouse aim is a point: it has to be within 14 px. A stick aims by direction (its aim point
+  // is only 48 px out), so the forward ray from Clawd along it counts: the body ahead, and no more than 14 px off the ray.
+  // The direction is the one to the aim point, which is p + dir * 48 or an assist target; a stick never assists onto a boss.
+  function aimedAt(p, b) {
+    if (p.aimStick) {
+      const d = M.norm(p.aimX - p.x, p.aimY - p.y);
+      if (d.x !== 0 || d.y !== 0) {
+        const vx = b.x - p.x;
+        const vy = b.y - p.y;
+        return vx * d.x + vy * d.y > 0 && Math.abs(vx * d.y - vy * d.x) <= OBSERVE_R;
+      }
+    }
+    return M.dist(p.aimX, p.aimY, b.x, b.y) <= OBSERVE_R;
+  }
+
+  // Watching it for 2 s makes it jump. The timer counts only while the aim is on the real body (aimedAt) and it can be shot.
   function observe(c, w, dt) {
     const b = c.body;
     const p = w.player;
-    if (b.targetable && M.dist(p.aimX, p.aimY, b.x, b.y) <= OBSERVE_R) c.observeT += dt;
+    if (b.targetable && aimedAt(p, b)) c.observeT += dt;
     else c.observeT = 0;
     if (c.observeT >= OBSERVE_T - EPS) {
       const from = jump(c, w);
