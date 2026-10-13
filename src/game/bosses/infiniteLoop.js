@@ -5,7 +5,7 @@
   const EPS = 1e-9; // timers are decremented by 1/60 repeatedly; 3 - 180/60 is not exactly 0
   const CX = 160;
   const CY = 96;
-  const MAX_HP = 150;
+  const MAX_HP = 120;
   const PHASE2_HP = 0.5 * MAX_HP; // phase 2 begins strictly below this
   const SEGMENTS = 8;
   const MIN_SEGMENTS = 4; // shedding stops here

@@ -135,7 +135,7 @@ Every boss has a **2.5 s warning card** before the fight: flashing `⚠ WARNING`
 - **Tagline:** `while (true) { bite(); }`
 - **Body:** a centipede of 1 head (r = 8) and 8 segments (r = 5). Segments follow the head's recorded path with 10 px of path length between them, so they always lie on the circle.
 - **Damage rules:**
-  - Only the head takes damage (HP 150).
+  - Only the head takes damage (HP 120; 150 before the 2026-10-13 cut).
   - Segments are `solid`: they absorb player bolts (Pierce passes through them).
   - Head and segments deal contact damage.
 - **Phase 1 (100–50%):**
@@ -150,12 +150,12 @@ Every boss has a **2.5 s warning card** before the fight: flashing `⚠ WARNING`
 **Boss 2 — Memory Leak** (`memoryLeakBoss`)
 - **Tagline:** `heap: 99% used`
 - **Body:**
-  - A giant green slime with HP 340.
+  - A giant green slime with HP 260 (340 before the 2026-10-13 cut).
   - Its `size` runs from 1.0 to 2.0, and its radius is `14 × size`.
   - It drifts toward the player at `18 / size` px/s.
 - **Leak mechanic:**
-  - If it has taken no damage for 1.5 s, it regenerates 4 HP/s (never above max) and grows 0.10 size/s (cap 2.0).
-  - Each point of damage shrinks size by 0.004 (floor 1.0).
+  - If it has taken no damage for 1.5 s, it regenerates 3 HP/s (never above max) and grows 0.10 size/s (cap 2.0).
+  - Each point of damage shrinks size by 0.0052 (floor 1.0).
 - **Lob attack:**
   - Every 2.5 s it lobs 2 blobs (3 in phase 2).
   - Each blob flies in an arc for 1.0 s to a point within 24 px of the player (uniform over the disc).
@@ -166,7 +166,7 @@ Every boss has a **2.5 s warning card** before the fight: flashing `⚠ WARNING`
 
 **Boss 3 — Merge Conflict** (`mergeConflict`)
 - **Tagline:** `<<<<<<< HEAD`
-- **Body:** twin beetles, **HEAD** (blue) and **incoming** (green), r = 8, HP 130 each. The combined bar shows the sum (max 260). Each twin also has its own 24×3 HP bar with a notch at 17 HP (the "finish zone").
+- **Body:** twin beetles, **HEAD** (blue) and **incoming** (green), r = 8, HP 105 each (130 before the 2026-10-13 cut). The combined bar shows the sum (max 210). Each twin also has its own 24×3 HP bar with a notch at 17 HP (the "finish zone").
 - **Movement:**
   - HEAD moves toward random waypoints in the arena at 50 px/s.
   - Incoming always sits at the point reflection of HEAD through the arena centre.
@@ -174,7 +174,7 @@ Every boss has a **2.5 s warning card** before the fight: flashing `⚠ WARNING`
 - **Attacks** run on a 2.8 s cycle, alternating between the two:
   - **Crossfire:** both fire aimed 3-bullet bursts (0.12 s apart).
   - **Conflict line:** a thin line between the twins flashes for 0.8 s (telegraph). Then it becomes a beam for 0.5 s that damages the player if the player's circle touches the segment.
-- **Phase 2** (combined HP < 130) adds a **charge** to the rotation: both dash at the player at 160 px/s for 0.5 s after a 0.4 s shake telegraph. A twin within 40 px of the player skips the charge.
+- **Phase 2** (combined HP < 105, half the total) adds a **charge** to the rotation: both dash at the player at 160 px/s for 0.5 s after a 0.4 s shake telegraph. A twin within 40 px of the player skips the charge.
 - **Resolve rule:**
   - Whenever exactly one twin is dead, a banner "FINISH <side>!" appears with a 6.0 s countdown.
   - If the other twin dies before the countdown ends, the boss is defeated.
@@ -183,7 +183,7 @@ Every boss has a **2.5 s warning card** before the fight: flashing `⚠ WARNING`
 
 **Boss 4 — The Heisenbug** (`heisenbug`)
 - **Tagline:** `works on my machine`
-- **Body:** a glitchy moth with chromatic-offset rendering, r = 9, HP 240.
+- **Body:** a glitchy moth with chromatic-offset rendering, r = 9, HP 190 (240 before the 2026-10-13 cut).
 - **Observation rule (all phases):**
   - If the aim point stays within 14 px of the real Heisenbug continuously for 2.0 s, it is "observed".
   - **Tell:** an observer ring of 16 dots around the real body fills as the timer runs, the chromatic offset grows from 1 to 3 px, and it flashes white at 1.0 s.

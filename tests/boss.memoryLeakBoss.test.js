@@ -25,10 +25,10 @@ function countFires(w) {
   return box;
 }
 
-test('memoryLeakBoss: 340 HP, spawns at the farthest candidate, radius tracks size', () => {
+test('memoryLeakBoss: 260 HP, spawns at the farthest candidate, radius tracks size', () => {
   const { w, boss } = start();
-  assert.equal(boss.maxHp, 340);
-  assert.equal(boss.body.hp, 340);
+  assert.equal(boss.maxHp, 260);
+  assert.equal(boss.body.hp, 260);
   assert.ok(Math.hypot(boss.body.x - w.player.x, boss.body.y - w.player.y) > 80);
   boss.size = 1.5;
   H.stepN(w, 1, idle);
@@ -36,13 +36,13 @@ test('memoryLeakBoss: 340 HP, spawns at the farthest candidate, radius tracks si
   assert.equal(boss.radius, boss.body.r, 'the controller exposes the radius too (Fx places the phase quip with it)');
 });
 
-test('memoryLeakBoss: regenerates 4 HP/s and grows 0.10/s after 1.5 s without damage', () => {
+test('memoryLeakBoss: regenerates 3 HP/s and grows 0.10/s after 1.5 s without damage', () => {
   const { w, boss } = start();
   w.damageEnemy(boss.body, 40);
   const hp0 = boss.body.hp;
   H.stepN(w, 3.5 * 60, idle);
   const gained = boss.body.hp - hp0;
-  assert.ok(gained > 7 && gained < 9, `gained ${gained}`);
+  assert.ok(gained > 5 && gained < 7, `gained ${gained}`);
   assert.ok(boss.size > 1.15 && boss.size < 1.25, `size ${boss.size}`);
 });
 
@@ -50,7 +50,7 @@ test('memoryLeakBoss: damage shrinks size with a floor of 1.0', () => {
   const { w, boss } = start();
   boss.size = 1.5;
   w.damageEnemy(boss.body, 50);
-  assert.ok(Math.abs(boss.size - 1.3) < 1e-9);
+  assert.ok(Math.abs(boss.size - 1.24) < 1e-9);
   w.damageEnemy(boss.body, 100);
   assert.equal(boss.size, 1);
 });
@@ -70,29 +70,29 @@ test('memoryLeakBoss: splits below 66% and 33%, each exactly once', () => {
   w.damageEnemy(boss.body, 120);
   H.stepN(w, 1, idle);
   assert.equal(alive(w, 'memoryLeak').length, 3);
-  boss.body.hp = 300;
+  boss.body.hp = 230;
   H.stepN(w, 1, idle);
   w.damageEnemy(boss.body, 50);
   H.stepN(w, 1, idle);
   assert.equal(alive(w, 'memoryLeak').length, 3, 'no second 66% split');
-  w.damageEnemy(boss.body, 140);
+  w.damageEnemy(boss.body, 100);
   H.stepN(w, 1, idle);
   assert.equal(alive(w, 'memoryLeak').length, 6);
 });
 
 test('memoryLeakBoss: phase 2 strictly below 50% latches and adds an 8-bullet ring every 4 s', () => {
   let { w, boss } = start();
-  w.damageEnemy(boss.body, 170);
+  w.damageEnemy(boss.body, 130);
   H.stepN(w, 1, idle);
   assert.equal(boss.phase, 1, 'exactly 50% is still phase 1');
   ({ w, boss } = start());
-  w.damageEnemy(boss.body, 171);
+  w.damageEnemy(boss.body, 131);
   H.stepN(w, 1, idle);
   assert.equal(boss.phase, 2);
   const c = countFires(w);
   H.stepN(w, 4.1 * 60, idle);
   assert.ok(c.n >= 8, `bullets ${c.n}`);
-  boss.body.hp = 330;
+  boss.body.hp = 250;
   H.stepN(w, 1, idle);
   assert.equal(boss.phase, 2, 'phases never revert');
 });
@@ -171,7 +171,7 @@ test('memoryLeakBoss: a hit resets the idle clock, and nothing regenerates befor
   const { w, boss } = start();
   w.damageEnemy(boss.body, 40);
   H.stepN(w, 1.4 * 60, idle);
-  assert.equal(boss.body.hp, 300, 'no regen yet');
+  assert.equal(boss.body.hp, 220, 'no regen yet');
   assert.equal(boss.size, 1);
   boss.idleT = 3;
   w.damageEnemy(boss.body, 1);
@@ -181,13 +181,13 @@ test('memoryLeakBoss: a hit resets the idle clock, and nothing regenerates befor
 test('memoryLeakBoss: regeneration stops at max HP and growth stops at size 2', () => {
   const { w, boss } = start();
   boss.idleT = 5;
-  boss.body.hp = 339.9;
+  boss.body.hp = 259.9;
   boss.size = 1.99;
   H.stepN(w, 60, idle);
-  assert.equal(boss.body.hp, 340);
+  assert.equal(boss.body.hp, 260);
   assert.equal(boss.size, 2);
   assert.equal(boss.body.r, 28);
-  assert.equal(boss.hp, 340);
+  assert.equal(boss.hp, 260);
 });
 
 test('memoryLeakBoss: the controller HP mirrors the body every tick', () => {
@@ -204,18 +204,18 @@ test('memoryLeakBoss: a hit still works on a body that has no controller', () =>
   const w = CB.createWorld({ seed: 3, god: true });
   const lone = w.spawnEnemy('leakBoss', 100, 100);
   assert.equal(w.damageEnemy(lone, 10), 10);
-  assert.equal(lone.hp, 330);
+  assert.equal(lone.hp, 250);
 });
 
-test('memoryLeakBoss: player bolts shrink it by 0.004 per point of damage', () => {
+test('memoryLeakBoss: player bolts shrink it by 0.0052 per point of damage', () => {
   const { w, boss } = start();
   boss.size = 1.6;
   const before = boss.size;
   const b = w.firePlayerBolt(boss.body.x, boss.body.y, 0);
   b.dmg = 5;
   H.stepN(w, 1, idle);
-  assert.equal(boss.body.hp, 335);
-  assert.ok(Math.abs(boss.size - (before - 0.02)) < 1e-6, `size ${boss.size}`);
+  assert.equal(boss.body.hp, 255);
+  assert.ok(Math.abs(boss.size - (before - 0.026)) < 1e-6, `size ${boss.size}`);
 });
 
 // ---- movement -------------------------------------------------------------------------------------------------------------------
@@ -351,7 +351,7 @@ test('memoryLeakBoss: lob targets stay on the floor when Clawd hugs a corner', (
 
 test('memoryLeakBoss: phase 2 lobs 3 blobs per volley and the lob clock keeps running', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.body, 200);
+  w.damageEnemy(boss.body, 150);
   H.stepN(w, 1, idle);
   assert.equal(boss.phase, 2);
   H.stepN(w, 2.5 * 60, idle);
@@ -390,7 +390,7 @@ test('memoryLeakBoss: a split is three big, non-elite memoryLeaks 20 px from the
 
 test('memoryLeakBoss: the two splits land at different angles', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.body, 250); // 90 HP: below both thresholds in one go
+  w.damageEnemy(boss.body, 180); // 80 HP: below both thresholds in one go
   H.stepN(w, 1, idle);
   const kids = alive(w, 'memoryLeak');
   assert.equal(kids.length, 6);
@@ -405,9 +405,9 @@ test('memoryLeakBoss: regenerating back over a threshold never splits again', ()
   assert.equal(boss.split66, true);
   boss.idleT = 10;
   H.stepN(w, 60 * 40, idle);
-  assert.ok(boss.body.hp > 224.4, 'regenerated past 66%');
+  assert.ok(boss.body.hp > 171.6, 'regenerated past 66%');
   for (const k of alive(w, 'memoryLeak')) k.dead = true;
-  w.damageEnemy(boss.body, 150);
+  w.damageEnemy(boss.body, 100);
   H.stepN(w, 1, idle);
   assert.equal(alive(w, 'memoryLeak').length, 0, 'the 66% split does not repeat');
   assert.equal(boss.split33, false);
@@ -417,7 +417,7 @@ test('memoryLeakBoss: regenerating back over a threshold never splits again', ()
 
 test('memoryLeakBoss: the phase change emits bossPhase, shakes, and gives the body 0.5 s of invulnerability', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.body, 180);
+  w.damageEnemy(boss.body, 150);
   H.stepN(w, 1, idle);
   assert.equal(boss.phase, 2);
   const ev = w.events.filter((e) => e.type === 'bossPhase');
@@ -440,7 +440,7 @@ test('memoryLeakBoss: the controller itself calls addShake(4) on the phase chang
   const shakes = [];
   const addShake = w.addShake;
   w.addShake = (amount) => { shakes.push(amount); return addShake(amount); };
-  w.damageEnemy(boss.body, 180);
+  w.damageEnemy(boss.body, 150);
   boss.update(w, 1 / 60); // straight to the controller: the world's Fx would shake on bossPhase as well
   assert.equal(boss.phase, 2);
   assert.deepEqual(shakes, [4]);
@@ -448,7 +448,7 @@ test('memoryLeakBoss: the controller itself calls addShake(4) on the phase chang
 
 test('memoryLeakBoss: the ring is 8 bullets at speed 70, evenly spaced, announced with one enemyShoot', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.body, 180);
+  w.damageEnemy(boss.body, 150);
   H.stepN(w, 1, idle);
   assert.equal(w.eBullets.length, 0, 'no ring on phase entry: the first comes a full period later');
   let guard = 0;
@@ -469,7 +469,7 @@ test('memoryLeakBoss: the ring is 8 bullets at speed 70, evenly spaced, announce
 
 test('memoryLeakBoss: successive rings are turned half a step so the gaps move', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.body, 180);
+  w.damageEnemy(boss.body, 150);
   H.stepN(w, 1, idle);
   const firstAngle = () => {
     let g = 0;
@@ -544,9 +544,9 @@ test('memoryLeakBoss: the finale data fits the diff card', () => {
 test('memoryLeakBoss: every event over a long fight carries a finite x and y, and no entity goes NaN', () => {
   const { CB, w, boss } = start({ seed: 4 });
   H.stepN(w, 5 * 60, idle);
-  w.damageEnemy(boss.body, 190); // phase 2 and the 66% split
+  w.damageEnemy(boss.body, 150); // phase 2 and the 66% split
   H.stepN(w, 12 * 60, idle);
-  w.damageEnemy(boss.body, 90); // the 33% split
+  w.damageEnemy(boss.body, 60); // the 33% split
   H.stepN(w, 12 * 60, idle);
   assert.ok(w.events.some((e) => e.type === 'lob'));
   assert.ok(w.events.some((e) => e.type === 'splat'));
@@ -563,7 +563,7 @@ test('memoryLeakBoss: a bolt storm kills it cleanly and the world stays healthy'
   while (!boss.defeated && guard++ < 60 * 120) H.stepN(w, 1, fire);
   assert.equal(boss.defeated, true, 'killable with the base kit');
   assert.ok(w.stats.damageDealt > 0);
-  assert.equal(boss.maxHp, 340);
+  assert.equal(boss.maxHp, 260);
 });
 
 // ---- sprites and drawing --------------------------------------------------------------------------------------------------------
@@ -814,12 +814,12 @@ test('memoryLeakBoss: the 66% and 33% splits are strict, so exactly on the thres
   assert.equal(alive(w, 'memoryLeak').length, 6);
 });
 
-test('memoryLeakBoss: swells by exactly 0.10 size/s and heals 4 HP/s once idle for 1.5 s', () => {
+test('memoryLeakBoss: swells by exactly 0.10 size/s and heals 3 HP/s once idle for 1.5 s', () => {
   const { w, boss } = start();
   boss.body.hp = 200;
   H.stepN(w, 1.5 * 60 + 60, idle); // 1.5 s of grace, then one second of leak
   assert.ok(boss.size > 1.09 && boss.size < 1.11, `size ${boss.size}`);
-  assert.ok(boss.body.hp > 203 && boss.body.hp < 205, `hp ${boss.body.hp}`);
+  assert.ok(boss.body.hp > 202 && boss.body.hp < 204, `hp ${boss.body.hp}`);
 });
 
 test('memoryLeakBoss: lob targets are uniform over the 24 px disc around Clawd (area-uniform, not radius-uniform)', () => {

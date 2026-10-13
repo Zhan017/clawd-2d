@@ -6,11 +6,11 @@
   const EPS = 1e-9; // timers are sums of 1/60 steps: 2.8 - 168/60 is +1e-15, not 0
   const CX = 160; // the arena centre the twins mirror through
   const CY = 96;
-  const TWIN_HP = 130;
+  const TWIN_HP = 105;
   const MAX_HP = 2 * TWIN_HP;
   const REVIVE_HP = 20;
   const FINISH_HP = 17; // the notch on the mini HP bar: a twin at or below this is in the finish zone
-  const PHASE2_HP = 130; // combined hp strictly below this starts phase 2
+  const PHASE2_HP = TWIN_HP; // combined hp strictly below this (half the total) starts phase 2
   const PHASE_INVULN = 0.5;
   const GRACE = 0.5; // contact-free spawn time for every twin
   const WANDER_SPEED = 50;

@@ -32,8 +32,8 @@ test('infiniteLoop: one head and 8 solid untargetable r5 segments, all with spaw
     assert.equal(s.regular, false);
     assert.ok(s.noContactT >= 0.45);
   }
-  assert.equal(boss.maxHp, 150);
-  assert.equal(boss.hp, 150);
+  assert.equal(boss.maxHp, 120);
+  assert.equal(boss.hp, 120);
 });
 
 test('infiniteLoop: the head is a targetable r8 boss part with contact, drawn above the segments', () => {
@@ -41,7 +41,7 @@ test('infiniteLoop: the head is a targetable r8 boss part with contact, drawn ab
   const h = boss.head;
   assert.equal(h.kind, 'loopHead');
   assert.equal(h.r, 8);
-  assert.equal(h.hp, 150);
+  assert.equal(h.hp, 120);
   assert.equal(h.targetable, true);
   assert.equal(h.solid, false);
   assert.equal(h.contact, true);
@@ -104,16 +104,16 @@ test('infiniteLoop: segments absorb bolts; damage only lands on the head', () =>
   assert.equal(w.damageEnemy(seg, 10), 0);
   w.damageEnemy(boss.head, 10);
   H.stepN(w, 1, idle);
-  assert.equal(boss.hp, 140);
+  assert.equal(boss.hp, 110);
 });
 
-test('infiniteLoop: exactly 75 HP is still phase 1; below 75 is phase 2', () => {
+test('infiniteLoop: exactly 60 HP is still phase 1; below 60 is phase 2', () => {
   let { w, boss } = start();
-  w.damageEnemy(boss.head, 75);
+  w.damageEnemy(boss.head, 60);
   H.stepN(w, 1, idle);
   assert.equal(boss.phase, 1);
   ({ w, boss } = start());
-  w.damageEnemy(boss.head, 76);
+  w.damageEnemy(boss.head, 61);
   H.stepN(w, 1, idle);
   assert.equal(boss.phase, 2);
   assert.ok(w.events.some((e) => e.type === 'bossPhase'));
@@ -180,10 +180,10 @@ test('infiniteLoop: phases latch and never revert, and the change fires once', (
   const { w, boss } = start();
   w.damageEnemy(boss.head, 80);
   H.stepN(w, 1, idle);
-  boss.head.hp = 150;
+  boss.head.hp = 120;
   H.stepN(w, 120, idle);
   assert.equal(boss.phase, 2);
-  assert.equal(boss.hp, 150);
+  assert.equal(boss.hp, 120);
   assert.equal(w.events.filter((e) => e.type === 'bossPhase').length, 1);
 });
 

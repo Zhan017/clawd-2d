@@ -5,9 +5,9 @@
   const TAU = Math.PI * 2;
   const EPS = 1e-9; // timers are sums of 1/60 steps: 2.0 s can land on 1.9999999999999991
 
-  const MAX_HP = 240;
-  const PHASE2_HP = 144; // 60% of 240. A phase begins strictly below its threshold and never reverts.
-  const PHASE3_HP = 60; // 25%
+  const MAX_HP = 190;
+  const PHASE2_HP = Math.round(0.6 * MAX_HP); // 114. A phase begins strictly below its threshold and never reverts.
+  const PHASE3_HP = Math.round(0.25 * MAX_HP); // 48
   const PHASE_INVULN = 0.5;
   const BODY_R = 9;
   const SPAWN_GRACE = 0.5; // a new part does no contact damage for this long

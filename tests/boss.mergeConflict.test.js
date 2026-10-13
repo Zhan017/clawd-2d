@@ -59,17 +59,17 @@ function fakeRenderer() {
 
 // ---- the plan's tests (rev 3 additions marked) ----------------------------------------------------------------------------
 
-test('mergeConflict: two twins of 130 HP, combined 260, at least 40 px from centre', () => {
+test('mergeConflict: two twins of 105 HP, combined 210, at least 40 px from centre', () => {
   const { w, boss } = start();
   const t = twins(w);
   assert.equal(t.length, 2);
   assert.deepEqual(t.map((e) => e.data.side).sort(), ['head', 'incoming']);
   for (const e of t) {
-    assert.equal(e.hp, 130);
+    assert.equal(e.hp, 105);
     assert.ok(Math.hypot(e.x - 160, e.y - 96) >= 40);
   }
-  assert.equal(boss.maxHp, 260);
-  assert.equal(boss.hp, 260);
+  assert.equal(boss.maxHp, 210);
+  assert.equal(boss.hp, 210);
 });
 
 test('mergeConflict: incoming mirrors HEAD through the arena centre', () => {
@@ -81,7 +81,7 @@ test('mergeConflict: incoming mirrors HEAD through the arena centre', () => {
 
 test('mergeConflict: a missed 6 s window revives the dead twin at 20 HP, far from the player', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.head, 130);
+  w.damageEnemy(boss.head, 105);
   H.stepN(w, 1, idle);
   assert.ok(boss.resolveT > 5.9 && boss.resolveT <= 6.0, `resolveT ${boss.resolveT}`);
   assert.equal(boss.deadSide, 'head');
@@ -100,9 +100,9 @@ test('mergeConflict: a missed 6 s window revives the dead twin at 20 HP, far fro
 
 test('mergeConflict: killing the second twin inside the window defeats the boss', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.head, 130);
+  w.damageEnemy(boss.head, 105);
   H.stepN(w, 5 * 60, idle);
-  w.damageEnemy(boss.incoming, 130);
+  w.damageEnemy(boss.incoming, 105);
   H.stepN(w, 1, idle);
   assert.equal(boss.defeated, true);
   assert.equal(boss.resolveT, null);
@@ -110,8 +110,8 @@ test('mergeConflict: killing the second twin inside the window defeats the boss'
 
 test('mergeConflict: both twins dying in the same tick defeats the boss', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.head, 130);
-  w.damageEnemy(boss.incoming, 130);
+  w.damageEnemy(boss.head, 105);
+  w.damageEnemy(boss.incoming, 105);
   H.stepN(w, 1, idle);
   assert.equal(boss.defeated, true);
 });
@@ -133,15 +133,15 @@ test('mergeConflict: the conflict-line beam hurts a player standing on it, only 
   assert.ok(w.events.some((e) => e.type === 'beam'));
 });
 
-test('mergeConflict: phase 2 strictly below 130 combined HP', () => {
+test('mergeConflict: phase 2 strictly below 105 combined HP', () => {
   let { w, boss } = start();
-  w.damageEnemy(boss.head, 65);
-  w.damageEnemy(boss.incoming, 65);
+  w.damageEnemy(boss.head, 52);
+  w.damageEnemy(boss.incoming, 53);
   H.stepN(w, 1, idle);
   assert.equal(boss.phase, 1);
   ({ w, boss } = start());
-  w.damageEnemy(boss.head, 70);
-  w.damageEnemy(boss.incoming, 61);
+  w.damageEnemy(boss.head, 53);
+  w.damageEnemy(boss.incoming, 53);
   H.stepN(w, 1, idle);
   assert.equal(boss.phase, 2);
   assert.ok(w.events.some((e) => e.type === 'bossPhase'));
@@ -258,7 +258,7 @@ test('mergeConflict: the first attack comes one full 2.8 s period after spawn; c
 
 test('mergeConflict: crossfire from a lone twin is one 3-bullet burst', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.head, 130);
+  w.damageEnemy(boss.head, 105);
   H.stepN(w, 1, idle);
   const fires = recordFires(w);
   boss.startAttack('crossfire');
@@ -274,8 +274,8 @@ test('mergeConflict: the rotation is crossfire, line in phase 1 and crossfire, l
     untilIdle(w, boss, 200);
   }
   assert.deepEqual(seen, ['crossfire', 'line', 'crossfire', 'line']);
-  w.damageEnemy(boss.head, 70);
-  w.damageEnemy(boss.incoming, 61);
+  w.damageEnemy(boss.head, 53);
+  w.damageEnemy(boss.incoming, 53);
   H.stepN(w, 1, idle);
   assert.equal(boss.phase, 2);
   boss.attackIdx = 0;
@@ -291,7 +291,7 @@ test('mergeConflict: the rotation is crossfire, line in phase 1 and crossfire, l
 
 test('mergeConflict: the line needs both twins and falls back to crossfire; a death mid-line cancels the beam', () => {
   let { w, boss } = start();
-  w.damageEnemy(boss.incoming, 130);
+  w.damageEnemy(boss.incoming, 105);
   H.stepN(w, 1, idle);
   boss.startAttack('line');
   assert.equal(boss.attack.kind, 'crossfire');
@@ -306,7 +306,7 @@ test('mergeConflict: the line needs both twins and falls back to crossfire; a de
   w.player.y = 96;
   boss.startAttack('line');
   H.stepN(w, 20, idle);
-  w.damageEnemy(boss.head, 130);
+  w.damageEnemy(boss.head, 105);
   H.stepN(w, 60, idle);
   assert.equal(boss.attack === null || boss.attack.kind !== 'line', true, 'the line ended with its twin');
   assert.equal(w.player.hearts, 6, 'no beam without both twins');
@@ -421,7 +421,7 @@ test('mergeConflict: HEAD wanders at 50 px/s and both twins publish their veloci
 
 test('mergeConflict: with HEAD dead, incoming wanders on its own waypoints at 50 px/s', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.head, 130);
+  w.damageEnemy(boss.head, 105);
   H.stepN(w, 2, idle);
   const start0 = { x: boss.incoming.x, y: boss.incoming.y };
   H.stepN(w, 60, idle);
@@ -433,8 +433,8 @@ test('mergeConflict: with HEAD dead, incoming wanders on its own waypoints at 50
 
 test('mergeConflict: a phase change emits bossPhase, shakes, and makes each living twin invulnerable for 0.5 s; phases latch', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.head, 70);
-  w.damageEnemy(boss.incoming, 61);
+  w.damageEnemy(boss.head, 53);
+  w.damageEnemy(boss.incoming, 53);
   boss.update(w, 1 / 60); // directly: world.step would already have decayed the shake by 1/3 within the same tick
   const ev = w.events.filter((e) => e.type === 'bossPhase');
   assert.equal(ev.length, 1);
@@ -447,8 +447,8 @@ test('mergeConflict: a phase change emits bossPhase, shakes, and makes each livi
   assert.equal(w.damageEnemy(boss.head, 5), 0);
   H.stepN(w, 6, idle);
   assert.ok(w.damageEnemy(boss.head, 5) > 0, 'vulnerable again after 0.5 s');
-  boss.head.hp = 130;
-  boss.incoming.hp = 130;
+  boss.head.hp = 105;
+  boss.incoming.hp = 105;
   H.stepN(w, 1, idle);
   assert.equal(boss.phase, 2, 'phases never revert');
   assert.equal(w.events.filter((e) => e.type === 'bossPhase').length, 1);
@@ -457,8 +457,8 @@ test('mergeConflict: a phase change emits bossPhase, shakes, and makes each livi
 test('mergeConflict: the first attack after a phase change waits a full period', () => {
   const { w, boss } = start();
   boss.attackT = 0.1; // an attack was nearly due
-  w.damageEnemy(boss.head, 70);
-  w.damageEnemy(boss.incoming, 61);
+  w.damageEnemy(boss.head, 53);
+  w.damageEnemy(boss.incoming, 53);
   const fires = recordFires(w);
   H.stepN(w, 120, idle); // 2 s
   assert.equal(fires.n, 0);
@@ -470,19 +470,19 @@ test('mergeConflict: hp is the sum of the living twins, x/y their midpoint', () 
   w.damageEnemy(boss.head, 50);
   w.damageEnemy(boss.incoming, 30);
   H.stepN(w, 1, idle);
-  assert.equal(boss.hp, 80 + 100);
+  assert.equal(boss.hp, 55 + 75);
   assert.ok(Math.abs(boss.x - (boss.head.x + boss.incoming.x) / 2) < 1e-9);
   assert.ok(Math.abs(boss.y - (boss.head.y + boss.incoming.y) / 2) < 1e-9);
   w.damageEnemy(boss.head, 999);
   H.stepN(w, 1, idle);
-  assert.equal(boss.hp, 100, 'a dead twin counts for 0');
+  assert.equal(boss.hp, 75, 'a dead twin counts for 0');
   assert.ok(Math.abs(boss.x - boss.incoming.x) < 1e-9, 'x/y follow the lone survivor');
   assert.ok(Math.abs(boss.y - boss.incoming.y) < 1e-9);
 });
 
 test('mergeConflict: FINISH banner event is at the arena centre and names the twin to finish', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.head, 130);
+  w.damageEnemy(boss.head, 105);
   H.stepN(w, 1, idle);
   const t = w.events.filter((e) => e.type === 'text' && /FINISH/.test(e.text));
   assert.equal(t.length, 1);
@@ -494,15 +494,15 @@ test('mergeConflict: FINISH banner event is at the arena centre and names the tw
   assert.equal(w.events.filter((e) => e.type === 'text' && /FINISH/.test(e.text)).length, 1, 'once per window');
 });
 
-test('mergeConflict: the revive spot is the farthest candidate (>= 70 px), the text reads merge failed, and it keeps maxHp 130', () => {
+test('mergeConflict: the revive spot is the farthest candidate (>= 70 px), the text reads merge failed, and it keeps maxHp 105', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.incoming, 130);
+  w.damageEnemy(boss.incoming, 105);
   H.stepN(w, 1, idle);
   H.stepN(w, 6.3 * 60, idle);
   const inc = boss.incoming;
   assert.equal(inc.dead, false);
   assert.equal(inc.hp, 20);
-  assert.equal(inc.maxHp, 130);
+  assert.equal(inc.maxHp, 105);
   assert.equal(inc.data.side, 'incoming');
   assert.equal(inc.boss, true);
   assert.equal(inc.regular, false);
@@ -512,12 +512,12 @@ test('mergeConflict: the revive spot is the farthest candidate (>= 70 px), the t
   assert.ok([[60, 50], [260, 50], [160, 150]].some((c) => c[0] === rv.x && c[1] === rv.y), 'one of the three candidates');
   const msg = w.events.find((e) => e.type === 'text' && e.text === 'merge failed');
   assert.ok(msg && Number.isFinite(msg.x) && Number.isFinite(msg.y));
-  assert.equal(boss.hp, 150);
+  assert.equal(boss.hp, 105 + 20);
 });
 
 test('mergeConflict: a revive that cannot spawn (entity cap) is retried on the next tick', () => {
   const { CB, w, boss } = start();
-  w.damageEnemy(boss.head, 130);
+  w.damageEnemy(boss.head, 105);
   H.stepN(w, 1, idle);
   const real = w.spawnEnemy;
   w.spawnEnemy = () => null;
@@ -539,10 +539,10 @@ test('mergeConflict: a revive that cannot spawn (entity cap) is retried on the n
 
 test('mergeConflict: defeat clears the overlay state and leaves finite positions', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.head, 130);
+  w.damageEnemy(boss.head, 105);
   H.stepN(w, 5, idle);
   boss.startAttack('crossfire');
-  w.damageEnemy(boss.incoming, 130);
+  w.damageEnemy(boss.incoming, 105);
   H.stepN(w, 1, idle);
   assert.equal(boss.defeated, true);
   assert.equal(boss.hp, 0);
@@ -559,8 +559,8 @@ test('mergeConflict: every event over a long fight carries a finite x and y', ()
   const { w, boss } = start();
   const move = (i) => H.makeInput({ aimX: 160 + 100 * Math.cos(i / 40), aimY: 96 + 60 * Math.sin(i / 40), moveX: Math.cos(i / 90), moveY: Math.sin(i / 70), fire: true });
   H.stepN(w, 12 * 60, move); // two crossfire, two lines
-  w.damageEnemy(boss.head, 70);
-  w.damageEnemy(boss.incoming, 61); // phase 2: charge joins
+  w.damageEnemy(boss.head, 53);
+  w.damageEnemy(boss.incoming, 53); // phase 2: charge joins
   H.stepN(w, 12 * 60, move);
   w.damageEnemy(boss.head, 999); // finish window
   H.stepN(w, 7 * 60, move); // ... missed: revive
@@ -591,7 +591,7 @@ test('mergeConflict: twins draw a 24x3 HP bar 4 px above the sprite, with a whit
   const { CB, w, boss } = start();
   const def = CB.Art.spriteDef('conflictHead_0');
   const top = Math.round(boss.head.y - def.h / 2);
-  boss.head.hp = 65; // half
+  boss.head.hp = 52.5; // half
   const r = fakeRenderer();
   CB.Enemies.conflictTwin.draw(boss.head, r, 1);
   const rects = r.calls.filter((c) => c.name === 'rect').map((c) => c.a);
@@ -607,7 +607,7 @@ test('mergeConflict: twins draw a 24x3 HP bar 4 px above the sprite, with a whit
   assert.equal(fill[2], 12, 'half of 24 px');
   const notch = rects.find((a) => a[2] === 1 && a[3] === 3 && a[4] === CB.Pal.C.white);
   assert.ok(notch, 'notch');
-  assert.equal(notch[0], bx + Math.round((24 * 17) / 130));
+  assert.equal(notch[0], bx + Math.round((24 * 17) / 105));
   assert.equal(notch[1], by);
   // the incoming twin fills green
   const ri = fakeRenderer();
@@ -674,7 +674,7 @@ test('mergeConflict: overlay draws the telegraph line, the beam and the FINISH b
   assert.ok(lines.some((c) => c.a[4] === CB.Pal.C.white), 'bright core');
   // FINISH banner
   boss.attack = null;
-  w.damageEnemy(boss.head, 130);
+  w.damageEnemy(boss.head, 105);
   H.stepN(w, 3, idle);
   rec.clear();
   r.calls.length = 0;
@@ -692,7 +692,7 @@ test('mergeConflict: overlay draws the telegraph line, the beam and the FINISH b
 test('mergeConflict: drawing without a clock never hands the renderer a NaN', () => {
   const { CB, w, boss } = start();
   const r = fakeRenderer();
-  w.damageEnemy(boss.head, 130);
+  w.damageEnemy(boss.head, 105);
   H.stepN(w, 3, idle);
   boss.draw(r); // the finish banner, arrow and countdown bar
   boss.startAttack('crossfire');

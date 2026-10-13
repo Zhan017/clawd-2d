@@ -8746,3 +8746,23 @@ Gate re-check after the change (`node --test tests/sim.test.js`, god mode, base 
 | 3 | 0 | about 50 s |
 | 4 | 0 | 64–69 s |
 
+**Boss health cut (orchestrator, 2026-10-13, user request: "bosses take too much time"):**
+
+| File | Old | New |
+|---|---|---|
+| `infiniteLoop.js` `MAX_HP` | 150 | 120 (phase 2 below 60) |
+| `memoryLeakBoss.js` `MAX_HP` / `HEAL_RATE` / `SHRINK_PER_HP` | 340 / 4 HP/s / 0.004 | 260 / 3 HP/s / 0.0052 (heal and shrink scaled so it heals the same share of its health a second and a full kill shrinks it as much as before) |
+| `mergeConflict.js` `TWIN_HP` / `PHASE2_HP` | 130 / 130 | 105 / `TWIN_HP` (half the total). `REVIVE_HP` 20 and `FINISH_HP` 17 are unchanged, because they are tied to the 6 s finish window, not to the total. |
+| `heisenbug.js` `MAX_HP` / phase thresholds | 240 / 144, 60 | 190 / `round(0.6 × MAX)` = 114, `round(0.25 × MAX)` = 48 |
+
+Boss fight length, bot in god mode, waves skipped, 6 seeds, mean seconds before → after:
+
+| Boss | Zero-latency, base kit | Delayed bot (0.25 s), base kit | Zero-latency, rapid + spread |
+|---|---|---|---|
+| Infinite Loop | 35.9 → 29.1 | 66.2 → 49.9 | 15.1 → 12.6 |
+| Memory Leak | 69.4 → 50.5 | 69.6 → 52.2 | 19.3 → 15.4 |
+| Merge Conflict | 46.0 → 37.3 | 58.2 → 46.6 | 24.2 → 18.8 |
+| Heisenbug | 70.7 → 54.1 | 80.8 → 64.2 | 52.6 → 40.1 |
+
+Would-be hits per fight stayed in the same range, so the fights are shorter, not harder.
+

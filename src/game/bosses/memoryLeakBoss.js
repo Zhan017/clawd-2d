@@ -4,12 +4,12 @@
   const M = CB.M;
   const C = CB.Pal.C;
   const EPS = 1e-9; // timers are decremented by 1/60 repeatedly: 150 steps leave 2.5 as 3.9e-15, and 90 leave 1.5 as 1.4999999999999996
-  const MAX_HP = 340;
+  const MAX_HP = 260;
   const BODY_R = 14; // the hitbox radius at size 1; it is BODY_R * size
   const MAX_SIZE = 2;
-  const SHRINK_PER_HP = 0.004; // size lost per point of damage
+  const SHRINK_PER_HP = 0.0052; // size lost per point of damage (a full kill shrinks it as much as it did at 340 HP)
   const LEAK_AFTER = 1.5; // seconds without a hit before it heals and swells
-  const HEAL_RATE = 4; // HP per second
+  const HEAL_RATE = 3; // HP per second (about 1.2% of its health a second, as at 340 HP)
   const GROW_RATE = 0.1; // size per second
   const DRIFT = 18; // px/s toward Clawd at size 1, divided by size
   const FACE_DEADZONE = 4; // px: the slime turns to face Clawd only past this, so a near-vertical approach does not flip it

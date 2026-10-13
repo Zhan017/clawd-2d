@@ -32,15 +32,15 @@ function countFires(w) {
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
-// Phase 2 in one call: 97 damage, one tick. Phase 3 follows with 90 more once the 0.5 s phase invulnerability is over.
+// Phase 2 in one call: 77 damage, one tick. Phase 3 follows with 70 more once the 0.5 s phase invulnerability is over.
 function toPhase2(w) {
-  w.damageEnemy(w.boss.body, 97);
+  w.damageEnemy(w.boss.body, 77);
   H.stepN(w, 1, aimAway);
 }
 function toPhase3(w) {
   toPhase2(w);
   H.stepN(w, 40, aimAway);
-  w.damageEnemy(w.boss.body, 90);
+  w.damageEnemy(w.boss.body, 70);
   H.stepN(w, 1, aimAway);
 }
 
@@ -62,10 +62,10 @@ const sprites = (r) => r.calls.filter((c) => c.name === 'sprite').map((c) => ({ 
 
 // ---- the plan's tests (rev 3 additions marked) ------------------------------------------------------------------------------
 
-test('heisenbug: 240 HP, spawns away from the player', () => {
+test('heisenbug: 190 HP, spawns away from the player', () => {
   const { w, boss } = start();
-  assert.equal(boss.maxHp, 240);
-  assert.equal(boss.hp, 240);
+  assert.equal(boss.maxHp, 190);
+  assert.equal(boss.hp, 190);
   assert.ok(Math.hypot(boss.body.x - w.player.x, boss.body.y - w.player.y) > 70);
 });
 
@@ -101,20 +101,20 @@ test('heisenbug: untargetable while fading during a blink', () => {
   assert.equal(boss.body.targetable, true);
 });
 
-test('heisenbug: thresholds are strict (144 → phase 1, 143 → phase 2)', () => {
+test('heisenbug: thresholds are strict (114 → phase 1, 113 → phase 2)', () => {
   let { w, boss } = start();
-  w.damageEnemy(boss.body, 96);
+  w.damageEnemy(boss.body, 76);
   H.stepN(w, 1, aimAway);
   assert.equal(boss.phase, 1);
   ({ w, boss } = start());
-  w.damageEnemy(boss.body, 97);
+  w.damageEnemy(boss.body, 77);
   H.stepN(w, 1, aimAway);
   assert.equal(boss.phase, 2);
 });
 
 test('heisenbug: phase 2 places 2 one-HP decoys per blink that pop with 404', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.body, 97);
+  w.damageEnemy(boss.body, 77);
   H.stepN(w, 1, aimAway);
   boss.blinkT = 0;
   H.stepN(w, 45, aimAway);
@@ -127,12 +127,12 @@ test('heisenbug: phase 2 places 2 one-HP decoys per blink that pop with 404', ()
 
 test('heisenbug: phase 3 removes decoys, spirals ~8 bullets/s and keeps at most 4 nullPointers', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.body, 97);
+  w.damageEnemy(boss.body, 77);
   H.stepN(w, 1, aimAway);
   boss.blinkT = 0;
   H.stepN(w, 45, aimAway);
   assert.equal(alive(w, 'heisenDecoy').length, 2);
-  w.damageEnemy(boss.body, 90);
+  w.damageEnemy(boss.body, 70);
   H.stepN(w, 1, aimAway);
   assert.equal(boss.phase, 3);
   assert.equal(alive(w, 'heisenDecoy').length, 0);
@@ -150,7 +150,7 @@ test('heisenbug: phase 3 removes decoys, spirals ~8 bullets/s and keeps at most 
 
 test('heisenbug: defeat clears decoys; finale data; tinted sprites exist', () => {
   const { CB, w, boss } = start();
-  w.damageEnemy(boss.body, 97);
+  w.damageEnemy(boss.body, 77);
   H.stepN(w, 1, aimAway);
   boss.blinkT = 0;
   H.stepN(w, 45, aimAway);
@@ -199,7 +199,7 @@ test('heisenbug: parts are boss, not regular, r 9, with spawn contact grace', ()
   assert.equal(boss.body.boss, true);
   assert.equal(boss.body.regular, false);
   assert.ok(boss.body.noContactT >= 0.45);
-  assert.equal(boss.body.hp, 240);
+  assert.equal(boss.body.hp, 190);
   toPhase2(w);
   boss.blinkT = 0;
   let first = null;
@@ -236,7 +236,7 @@ test('heisenbug: the controller mirrors the body (x, y, hp) every tick', () => {
   const { w, boss } = start();
   w.damageEnemy(boss.body, 30);
   H.stepN(w, 1, aimAway);
-  assert.equal(boss.hp, 210);
+  assert.equal(boss.hp, 160);
   assert.equal(boss.x, boss.body.x);
   assert.equal(boss.y, boss.body.y);
 });
@@ -438,7 +438,7 @@ test('heisenbug: the real one is watched only on its own spot, not on a decoy', 
 
 test('heisenbug: a phase change emits bossPhase with finite x, y, shakes the screen and shields the body for 0.5 s', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.body, 97);
+  w.damageEnemy(boss.body, 77);
   w.shake = 0;
   boss.update(w, 1 / 60); // straight into the controller: World.step decays the shake in the same tick
   assert.ok(w.shake >= 4, `shake ${w.shake}`);
@@ -454,7 +454,7 @@ test('heisenbug: a phase change emits bossPhase with finite x, y, shakes the scr
 
 test('heisenbug: one hit across both thresholds applies 1 → 2 → 3 in order', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.body, 200); // 240 → 40, below 144 and below 60
+  w.damageEnemy(boss.body, 150); // 190 → 40, below 114 and below 48
   H.stepN(w, 1, aimAway);
   assert.equal(boss.phase, 3);
   const ev = w.events.filter((e) => e.type === 'bossPhase');
@@ -464,28 +464,28 @@ test('heisenbug: one hit across both thresholds applies 1 → 2 → 3 in order',
 
 test('heisenbug: phases latch even if HP comes back', () => {
   const { w, boss } = start();
-  w.damageEnemy(boss.body, 97);
+  w.damageEnemy(boss.body, 77);
   H.stepN(w, 1, aimAway);
-  boss.body.hp = 240;
+  boss.body.hp = 190;
   H.stepN(w, 5, aimAway);
   assert.equal(boss.phase, 2);
   assert.equal(w.events.filter((e) => e.type === 'bossPhase').length, 1, 'fires once');
-  boss.body.hp = 59;
+  boss.body.hp = 47;
   H.stepN(w, 1, aimAway);
   assert.equal(boss.phase, 3);
-  boss.body.hp = 240;
+  boss.body.hp = 190;
   H.stepN(w, 5, aimAway);
   assert.equal(boss.phase, 3);
   assert.equal(w.events.filter((e) => e.type === 'bossPhase').length, 2);
 });
 
-test('heisenbug: phase 3 is strictly below 60 HP', () => {
+test('heisenbug: phase 3 is strictly below 48 HP', () => {
   let { w, boss } = start();
-  boss.body.hp = 60;
+  boss.body.hp = 48;
   H.stepN(w, 1, aimAway);
   assert.equal(boss.phase, 2);
   ({ w, boss } = start());
-  boss.body.hp = 59.5;
+  boss.body.hp = 47.5;
   H.stepN(w, 1, aimAway);
   assert.equal(boss.phase, 3);
 });
@@ -661,12 +661,12 @@ test('heisenbug: every event over a long fight carries finite x, y (rule 11)', (
     check();
   };
   run(8 * 60, aimAt(boss)); // observation teleports and a blink
-  hit(97);
+  hit(77);
   run(12 * 60, aimAway); // phase 2: decoys, rings
   const d = alive(w, 'heisenDecoy')[0];
   if (d) w.damageEnemy(d, 1);
   check();
-  hit(90);
+  hit(70);
   run(20 * 60, aimAway); // phase 3: spiral, summons
   hit(999);
   run(2, aimAway);
@@ -697,7 +697,7 @@ test('heisenbug: the body publishes velocity as dx/dt on the tick it jumps and s
 test('heisenbug: same seed and inputs give the same fight', () => {
   const run = () => {
     const { w, boss } = start({ seed: 5 });
-    w.damageEnemy(boss.body, 97);
+    w.damageEnemy(boss.body, 77);
     const trace = [];
     for (let i = 0; i < 600; i++) {
       H.stepN(w, 1, aimAway);
