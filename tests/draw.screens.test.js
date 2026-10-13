@@ -5,7 +5,8 @@ const test = require('node:test');
 const assert = require('node:assert');
 const H = require('./harness');
 
-const SCREEN_FILES = ['src/scenes/screens.js', 'src/scenes/patchPick.js', 'src/scenes/gameOver.js', 'src/scenes/victory.js', 'src/scenes/panic.js'];
+// prompts.js is loaded so every kbm string pinned below is the one CB.Prompts hands out (menus.devices.test.js covers touch, pad and no Prompts at all).
+const SCREEN_FILES = ['src/core/prompts.js', 'src/scenes/screens.js', 'src/scenes/patchPick.js', 'src/scenes/gameOver.js', 'src/scenes/victory.js', 'src/scenes/panic.js'];
 const BASE = [...H.GAME_BASE, 'src/art/font.js', 'src/art/render.js', 'src/game/stages.js', 'src/game/waves.js', 'src/game/stageRunner.js'];
 const ENEMIES = ['syntaxError', 'nullPointer', 'raceCondition', 'memoryLeak', 'offByOne'].map((k) => 'src/game/enemies/' + k + '.js');
 const BOSSES = ['infiniteLoop', 'memoryLeakBoss', 'mergeConflict', 'heisenbug'].map((k) => 'src/game/bosses/' + k + '.js');
@@ -78,6 +79,7 @@ const overlapsOf = (list) => {
 };
 const outsideOf = (list) => list.filter((b) => b.x < 0 || b.y < 0 || b.x + b.w > 320 || b.y + b.h > 180).map((b) => b.str || b.name);
 const centreX = (b) => b.x + b.w / 2;
+const inBox = (b, hit) => b.x >= hit.x && b.x + b.w <= hit.x + hit.w && b.y >= hit.y && b.y + b.h <= hit.y + hit.h;
 
 // Every box on screen and no two text boxes sharing pixels.
 function assertLayout(rec, label) {
@@ -569,13 +571,26 @@ test('pause: the Rev 3 layout table, with every patch owned', () => {
   assert.equal(T('Esc: resume · Q: quit to title').y, 34);
   assert.equal(T('WASD move · Mouse aim · Click shoot').y, 48);
   assert.equal(T('Space dash · E /compact (meter full)').y, 57);
-  assert.equal(T('M sound: on · N music: on · V calm: off').y, 66);
+  // The status line is now three chips, each its own text on row 66 and centred in its fixed box (x 45 / 123 / 201, 74 wide).
+  [['M sound: on', 45], ['N music: on', 123], ['V calm: off', 201]].forEach(([s, x]) => {
+    assert.equal(T(s).y, 66, s);
+    assert.ok(Math.abs(centreX(T(s)) - (x + 37)) <= 1, s + ' is centred in its chip');
+  });
+  assert.equal(CB.Screens.pause.CHIPS_Y, 66);
   assert.equal(T('patches').y, 82);
   const lines = ['Spread Shot ×2', 'Rapid Fire ×1', 'Pierce ×2', 'Heavy Bolts ×1', 'Extra Heart ×2', 'Quick Dash ×1', 'Ricochet ×1'];
   lines.forEach((s, i) => assert.equal(T(s).y, 91 + 9 * i, s));
+  // The new quit button sits between the seventh patch line (ends at 152) and the footer (160), and its hit box holds the text.
+  const quit = T('[ quit to title ]');
+  assert.equal(quit.y, 152);
+  assert.ok(Math.abs(centreX(quit) - 160) <= 1);
+  assert.deepEqual(H.plain(CB.Screens.pause.QUIT_BOX), { x: 110, y: 150, w: 100, h: 10 });
+  assert.ok(inBox(quit, CB.Screens.pause.QUIT_BOX), 'the box holds the text');
+  assert.ok(T('Ricochet ×1').y + T('Ricochet ×1').h <= quit.y, 'the seventh patch line clears the quit button');
   assert.equal(T(DISCLAIMER).y, 160);
   assert.ok(Math.abs(centreX(T(DISCLAIMER)) - 160) <= 1);
   for (const s of lines) assert.ok(T(s).y + T(s).h < 160, s + ' clears the footer');
+  assert.ok(quit.y + quit.h <= T(DISCLAIMER).y, 'the quit button clears the footer');
   assertLayout(rec, 'pause worst case');
   // The dim.
   assert.ok(env.log.rect.some((a) => a[0] === 0 && a[1] === 0 && a[2] === 320 && a[3] === 180 && a[4] === C.ink), 'full-screen ink');
@@ -601,19 +616,20 @@ test('pause: Press Q again to quit replaces the hint in gold while the quit is a
   assertLayout(rec, 'pause');
 });
 
-test('pause: sound, music and calm parts show only for the modules that exist, in their current state', () => {
+test('pause: sound, music and calm chips show only for the modules that exist, in their current state', () => {
   const env = setup({ stub: true });
   const { CB } = env;
   const run = mkRun(CB, { state: 'wave' });
+  // Was one status line ("M sound: off · N music: off · V calm: on"); each part is now its own chip, and a missing module's chip keeps its place.
   const status = () => strs(draw(env, 'pause', run, 0)).filter((s) => /sound|music|calm/.test(s));
   CB.Audio = undefined;
   CB.Music = undefined;
   CB.Comfort = undefined;
-  assert.deepEqual(status(), [], 'no modules, no line');
+  assert.deepEqual(status(), [], 'no modules, no chips');
   pauseStubs(CB, { muted: true, music: false, calm: true });
-  assert.deepEqual(status(), ['M sound: off · N music: off · V calm: on']);
+  assert.deepEqual(status(), ['M sound: off', 'N music: off', 'V calm: on']);
   CB.Music = {}; // present but without the method
-  assert.deepEqual(status(), ['M sound: off · V calm: on']);
+  assert.deepEqual(status(), ['M sound: off', 'V calm: on']);
   CB.Audio = { play() {} };
   assert.deepEqual(status(), ['V calm: on']);
   CB.Comfort = {};
@@ -622,6 +638,7 @@ test('pause: sound, music and calm parts show only for the modules that exist, i
   assert.deepEqual(status(), ['M sound: on']);
   const rec = draw(env, 'pause', run, 0);
   assert.equal(box(rec, 'M sound: on').y, 66);
+  assert.equal(overlapsOf(rec.texts()).length, 0);
 });
 
 test('pause: no patches yet, and the disclaimer is always sent to r.text', () => {
@@ -779,6 +796,8 @@ test('gameOver: the crash text, path, deaths, a dead quip, and hints only after 
   rec = draw(env, 'gameOver', run, 0.7);
   assert.equal(box(rec, 'R / click: retry stage').y, 124);
   assert.equal(box(rec, 'Q: quit to title').y, 136);
+  assert.deepEqual(H.plain(CB.Screens.gameOver.QUIT_BOX), { x: 100, y: 133, w: 120, h: 11 });
+  assert.ok(inBox(box(rec, 'Q: quit to title'), CB.Screens.gameOver.QUIT_BOX), 'the tap box holds the quit line');
   assertLayout(rec, 'gameOver');
   // The quip moves with the death count and the stage.
   const run2 = mkRun(CB, { stageIndex: 2, state: 'dead', deaths: 4 });

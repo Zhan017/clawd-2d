@@ -1,22 +1,23 @@
-// Title scene: dimmed arena, wavy logo, Clawd zapping wandering bugs, start and mode buttons, hat, music and calm keys, typed secrets.
+// Title scene: dimmed arena, wavy logo, Clawd zapping wandering bugs, start and mode buttons, hat, sound / music / calm chips, typed secrets.
+// Prompts follow the device in use (keyboard + mouse, touch or pad); a click or tap and the pad's buttons all work here.
 (function (CB) {
   'use strict';
   const C = CB.Pal.C;
-  const START_LOCK = 0.3; // seconds before a click or Enter starts anything
+  const START_LOCK = 0.3; // seconds before a click, tap, Enter or pad button starts anything
   const DIM = 0.55;
   const TOAST_FADE = 0.4;
   const TOAST_SECRET_T = 2.0;
+  const TOAST_NOTIFY_T = 2.0; // "controller connected" and friends
   const TOAST_CALM_T = 1.5;
   const MUSIC_UNDO_WINDOW = 1.5; // seconds: the N of "ultrathink" toggles the music, the K that finishes the code puts it back
   const SPARK_FIRST = 1.0; // seconds after entering to Clawd's first spark, then SPARK_EVERY
   const SPARK_EVERY = 2.0;
   const SPARK_SPEED = 150;
   const SPARK_TWINKLE_HZ = 20; // colour swaps a second; calm mode caps it through Comfort.blink
-  const SMALL_RECHECK = 0.5; // seconds between small-screen checks while drawing
   const TITLE_STAGE = Object.freeze({ id: 'title', palette: 'src' });
 
-  // Top of each 7 px text cell (the Rev 3 layout table).
-  const Y = { clawd: 4, vs: 27, bugs: 36, note: 96, hat: 105, start: 114, modes: 124, keys1: 138, keys2: 147, footer: 160, status: 170 };
+  // Top of each 7 px text cell (the Rev 3 layout table). `status` is the text row of the sound / music / calm chips.
+  const Y = { clawd: 4, vs: 27, bugs: 36, hat: 105, start: 114, modes: 124, keys1: 138, keys2: 147, footer: 160, status: 170 };
   const CLAWD = { x: 160, y: 82, scale: 2 };
   const HAT_DY_FALLBACK = -7; // per scale: where an ordinary hat is centred above Clawd's centre (Player.HAT_DY says the same)
   const LOGO_GAP = 1; // extra logo letter spacing, in logo pixels (3 screen px each), on top of the font's own gap
@@ -26,6 +27,7 @@
     Object.freeze({ id: 'rush', x: 76, y: 121, w: 68, h: 13 }),
     Object.freeze({ id: 'yolo', x: 190, y: 121, w: 60, h: 13 }),
   ]);
+  const HAT_BOX = Object.freeze({ x: 90, y: 102, w: 140, h: 11 }); // a tap on the hat row (only there when a hat is unlocked) wears the next hat
   const SECRETS = {
     konami: { id: 'halo', text: 'cheat codes are just undocumented features' },
     ultrathink: { id: 'rainbow', text: '✻ ultrathink enabled' },
@@ -84,19 +86,25 @@
     const def = Array.isArray(CB.HATS) ? CB.HATS.find((h) => h.id === id) : null;
     return def ? def.name : id;
   }
-  function isSmallScreen() {
-    try {
-      if (typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches) return true;
-    } catch (e) {
-      // no media queries here: judge by the window width alone
-    }
-    return typeof window.innerWidth === 'number' && window.innerWidth < 480;
+  const isDevice = (d) => d === 'kbm' || d === 'pad' || d === 'touch';
+  // The device in use: CB.Prompts keeps it, the game's input is the fallback; no module, no input or an unknown value reads as keyboard + mouse.
+  function deviceOf(game) {
+    const p = CB.Prompts && CB.Prompts.device;
+    if (isDevice(p)) return p;
+    const i = game && game.input && game.input.device;
+    return isDevice(i) ? i : 'kbm';
+  }
+  // CB.Screens.toggles lives in screens.js, which not every test loads.
+  function chips() {
+    const T = CB.Screens && CB.Screens.toggles;
+    return T && typeof T.hit === 'function' && typeof T.apply === 'function' && typeof T.draw === 'function' ? T : null;
   }
 
   const inside = (b, x, y) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
 
   CB.Scenes.title = {
     BUTTONS,
+    HAT_BOX,
     game: null,
     t: 0, // scene time (drawing uses the game clock it is given)
     yolo: false,
@@ -112,8 +120,6 @@
     aimX: 0,
     aimY: 0,
     musicToggledAt: -Infinity,
-    small: false,
-    smallAt: -Infinity,
 
     enter(game) {
       this.game = game;
@@ -131,7 +137,6 @@
       this.aimX = 0;
       this.aimY = 0;
       this.musicToggledAt = -Infinity;
-      this.smallAt = -Infinity;
       this.bugs = BUGS.map((def) => {
         const b = { def, x: 0, y: 0, tx: 0, ty: 0, wait: 0, speed: 0, face: 1, flash: 0, kx: 0 };
         b.x = this.rng.range(def.cell.x0, def.cell.x1);
@@ -151,6 +156,21 @@
 
     setToast(text, t) {
       this.toast = { text, t };
+    },
+
+    // Messages from the page ("controller connected").
+    notify(text) {
+      this.setToast(text, TOAST_NOTIFY_T);
+    },
+
+    device() {
+      return deviceOf(this.game);
+    },
+
+    // The prompt for `key` on the current device; `kbm` shows when CB.Prompts is not loaded.
+    say(key, kbm) {
+      const P = CB.Prompts;
+      return (P && typeof P.text === 'function' && P.text(key, this.device())) || kbm;
     },
 
     // A typed secret: a fresh unlock chimes and toasts. Finishing "ultrathink" puts back the music toggle its own N press just made.
@@ -180,10 +200,13 @@
 
     start(runOpts) {
       sfx('uiSelect');
+      // A phone goes fullscreen (and landscape) on the next finger lift: a touch press alone is not a user activation.
+      const input = this.game && this.game.input;
+      if (this.device() === 'touch' && input && typeof input.requestFullscreenOnRelease === 'function') input.requestFullscreenOnRelease();
       this.game.go('play', { runOpts });
     },
 
-    // Enter or a click, past the input lock. Returns true when it started a run.
+    // Enter, or a click or tap that missed the chips and the hat row, past the input lock. Returns true when it started a run.
     confirm(x, y) {
       if (modesOn()) {
         if (inside(BUTTONS[0], x, y)) {
@@ -198,6 +221,21 @@
       }
       this.start({ yolo: this.yolo });
       return true;
+    },
+
+    // A mouse click or a touch tap at (x, y), past the input lock: a chip, the hat row, a mode button, else start. True when it started a run.
+    tapAt(x, y) {
+      const T = chips();
+      const id = T ? T.hit(x, y, Y.status) : null;
+      if (id) {
+        T.apply(id);
+        return false;
+      }
+      if (hatIds().length > 0 && inside(HAT_BOX, x, y) && CB.Unlocks && typeof CB.Unlocks.cycleHat === 'function') {
+        this.cycleHat(1);
+        return false;
+      }
+      return this.confirm(x, y);
     },
 
     update(dt, input) {
@@ -228,12 +266,42 @@
         }
         if (calm) this.toggleCalm();
       }
-      // Hats are Q and E only: the arrows and A/D are how the secret codes are typed.
-      if ((inp.quit || inp.compact) && hatIds().length > 0 && CB.Unlocks && typeof CB.Unlocks.cycleHat === 'function') {
-        if (inp.quit) this.cycleHat(-1);
-        if (inp.compact) this.cycleHat(1);
+      const pad = inp.pad || null;
+      const edge = (k) => !!(pad && pad[k]);
+      const open = this.t >= START_LOCK - 1e-6;
+      // Hats are Q and E (the arrows and A/D are how the secret codes are typed) and the pad's LB and RB. The pad's Back and B raise the
+      // quit and compact edges too, but they are not hat buttons; the pad edges wait out the input lock like every other title edge.
+      const hatBack = (inp.quit && !edge('back')) || (edge('lb') && open);
+      const hatNext = inp.compact && !edge('b') && (open || !edge('rb'));
+      if ((hatBack || hatNext) && hatIds().length > 0 && CB.Unlocks && typeof CB.Unlocks.cycleHat === 'function') {
+        if (hatBack) this.cycleHat(-1);
+        if (hatNext) this.cycleHat(1);
       }
-      if (inp.confirm && this.t >= START_LOCK - 1e-6 && this.confirm(this.aimX, this.aimY)) return;
+      if (!open) {
+        this.animate(dt);
+        return;
+      }
+      // Pad: A starts (its confirm edge is not also read as a click at the old pointer spot), Y boss rush, X --yolo.
+      if (pad) {
+        if (pad.a) {
+          this.start({ yolo: this.yolo });
+          return;
+        }
+        if (modesOn()) {
+          if (pad.y) {
+            this.start({ bossRush: true, yolo: this.yolo });
+            return;
+          }
+          if (pad.x) {
+            this.yolo = !this.yolo;
+            sfx('uiSelect');
+          }
+        }
+      }
+      // A click or tap hits the chips, the hat row and the mode buttons; Enter (a confirm with no pointer press) reads the pointer's last spot as it always has.
+      if (inp.tap) {
+        if (this.tapAt(this.aimX, this.aimY)) return;
+      } else if (inp.confirm && this.confirm(this.aimX, this.aimY)) return;
       this.animate(dt);
     },
 
@@ -327,7 +395,8 @@
       this.drawClawd(r, t);
       this.drawLogo(r, t);
       this.drawText(r, t, aim);
-      if (CB.Screens.hud && typeof CB.Screens.hud.cursor === 'function') CB.Screens.hud.cursor(r, aim.x, aim.y, 'pointer', t);
+      // Only a mouse has a pointer worth drawing; a finger or a pad does not.
+      if (this.device() === 'kbm' && CB.Screens.hud && typeof CB.Screens.hud.cursor === 'function') CB.Screens.hud.cursor(r, aim.x, aim.y, 'pointer', t);
     },
 
     drawBugs(r, t) {
@@ -394,28 +463,26 @@
 
     drawText(r, t, aim) {
       const mid = CB.W / 2;
-      if (t - this.smallAt >= SMALL_RECHECK || t < this.smallAt) {
-        this.small = isSmallScreen();
-        this.smallAt = t;
-      }
-      if (this.small) r.text('Best on desktop with keyboard + mouse', mid, Y.note, { color: C.gold, align: 'center' });
+      const dev = this.device();
+      const mouse = dev === 'kbm'; // only a mouse has a pointer to hover with
 
       if (hatIds().length > 0) {
         const id = wornHat();
-        r.text('hat: ' + (id ? hatName(id) : 'none') + ' (Q/E)', mid, Y.hat, { color: C.pale, align: 'center' });
+        r.text('hat: ' + (id ? hatName(id) : 'none') + ' ' + this.say('hat', '(Q/E)'), mid, Y.hat, { color: C.pale, align: 'center' });
       }
 
       // 0.6 s on, 0.3 s off
-      if (t % 0.9 < 0.6) r.text('Click to start', mid, Y.start, { color: C.white, shadow: C.ink, align: 'center' });
+      if (t % 0.9 < 0.6) r.text(this.say('start', 'Click to start'), mid, Y.start, { color: C.white, shadow: C.ink, align: 'center' });
 
       if (modesOn()) {
-        const hover = (b) => inside(b, aim.x, aim.y);
-        r.text('[ boss rush ]', MODE_X.rush, Y.modes, { color: hover(BUTTONS[0]) ? C.white : C.pale, align: 'center' });
-        r.text(this.yolo ? '[x] --yolo' : '[ ] --yolo', MODE_X.yolo, Y.modes, { color: this.yolo ? C.red : hover(BUTTONS[1]) ? C.white : C.pale, align: 'center' });
+        const hover = (b) => mouse && inside(b, aim.x, aim.y);
+        const pad = dev === 'pad'; // the pad has no pointer: its buttons are named on the labels
+        r.text(pad ? 'Y: boss rush' : '[ boss rush ]', MODE_X.rush, Y.modes, { color: hover(BUTTONS[0]) ? C.white : C.pale, align: 'center' });
+        r.text((pad ? 'X: ' : '') + (this.yolo ? '[x] --yolo' : '[ ] --yolo'), MODE_X.yolo, Y.modes, { color: this.yolo ? C.red : hover(BUTTONS[1]) ? C.white : C.pale, align: 'center' });
       }
 
-      r.text('WASD move · Mouse aim · Click shoot · Space dash', mid, Y.keys1, { color: C.pale, align: 'center' });
-      r.text('E /compact · N music · M mute · V calm · Esc pause', mid, Y.keys2, { color: C.pale, align: 'center' });
+      r.text(this.say('legend1', 'WASD move · Mouse aim · Click shoot · Space dash'), mid, Y.keys1, { color: C.pale, align: 'center' });
+      r.text(this.say('legend2', 'E /compact · N music · M mute · V calm · Esc pause'), mid, Y.keys2, { color: C.pale, align: 'center' });
 
       // A toast takes the footer row while it is up.
       if (this.toast) {
@@ -426,10 +493,9 @@
         r.text('Fan game. Not affiliated with Anthropic.', mid, Y.footer, { color: C.grey, align: 'center' });
       }
 
-      const status = [];
-      if (CB.Audio && typeof CB.Audio.isMuted === 'function') status.push('M sound: ' + (CB.Audio.isMuted() ? 'off' : 'on'));
-      if (CB.Music && typeof CB.Music.isEnabled === 'function') status.push('N music: ' + (CB.Music.isEnabled() ? 'on' : 'off'));
-      if (status.length) r.text(status.join(' · '), mid, Y.status, { color: C.greyDark, align: 'center' });
+      // The sound / music / calm chips, over the toast band's last rows when a toast is up.
+      const T = chips();
+      if (T) T.draw(r, Y.status, -1, mouse ? aim : null);
     },
   };
 })(window.CB);

@@ -12,6 +12,19 @@
   const MSG_Y = 40;
   const LINE_H = 9;
 
+  // "Press R to reload" (a tap on a phone). Prompts is a game module that may be what failed, so anything odd gives the keyboard text.
+  function reloadText() {
+    const fallback = 'Press R to reload';
+    try {
+      const P = CB.Prompts;
+      const d = P && P.device;
+      const s = P && typeof P.text === 'function' ? P.text('reload', d === 'touch' || d === 'pad' ? d : 'kbm') : '';
+      return typeof s === 'string' && s ? s : fallback;
+    } catch (e) {
+      return fallback;
+    }
+  }
+
   // err.message, or the error itself as text. A hostile error (a getter that throws) still gives a line.
   function messageOf(err) {
     try {
@@ -60,7 +73,7 @@
     lines.forEach((l, i) => r.text(l, X, MSG_Y + LINE_H * i, { color: TEXT }));
     const frame = stackFrame(err);
     if (frame) r.text(cut(frame, WIDTH), X, MSG_Y + LINE_H * lines.length + 5, { color: GREY });
-    r.text('Press R to reload', X, 160, { color: TEXT });
+    r.text(reloadText(), X, 160, { color: TEXT });
   }
 
   // The fallback when the font or the text cache is what broke: the 2D context's own text, in a system monospace font.
@@ -76,7 +89,7 @@
     g.fillStyle = TEXT;
     const msg = messageOf(err);
     for (let i = 0; i < MAX_LINES && i * 48 < msg.length; i++) g.fillText(msg.slice(i * 48, i * 48 + 48), X, MSG_Y + 11 * i);
-    g.fillText('Press R to reload', X, 160);
+    g.fillText(reloadText(), X, 160);
   }
 
   CB.Screens.panic = {

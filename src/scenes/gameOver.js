@@ -7,16 +7,25 @@
   const DIM_T = 0.25; // the dim fades in over this long
   const JITTER_T = 0.3; // the heading shakes sideways for its first 0.3 s (not in calm mode)
   const RETRY_LABEL = { boss: 'retry boss', wave2: 'retry wave 2', stage: 'retry stage' };
+  const QUIT_Y = 136;
+  const QUIT_BOX = Object.freeze({ x: 100, y: 133, w: 120, h: 11 }); // a tap here leaves for the title; the quit line (every device) sits inside it
 
   const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
   const lockT = () => (CB.RUN_T && typeof CB.RUN_T.inputLock === 'number' ? CB.RUN_T.inputLock : 0.6);
   const calm = () => !!(CB.Comfort && typeof CB.Comfort.calm === 'function' && CB.Comfort.calm());
 
+  // The prompt for `key` on the current device (a missing CB.Prompts or an unknown device reads as keyboard + mouse); `kbm` shows without CB.Prompts.
+  function say(key, kbm) {
+    const P = CB.Prompts;
+    const d = P && P.device;
+    return (P && typeof P.text === 'function' && P.text(key, d === 'touch' || d === 'pad' ? d : 'kbm')) || kbm;
+  }
+
   // Where a retry lands: the run's checkpoint, or (for a run that only knows diedInBoss) the boss or the stage.
   function retryHint(run) {
     const cp = run.checkpoint || (run.diedInBoss ? 'boss' : 'stage');
-    return 'R / click: ' + (RETRY_LABEL[cp] || RETRY_LABEL.stage);
+    return say('retryKey', 'R / click') + ': ' + (RETRY_LABEL[cp] || RETRY_LABEL.stage);
   }
 
   // Read as dead[(deaths * 3 + stageIndex) % n]; nothing when Quips has no such list.
@@ -39,9 +48,9 @@
     if (quip) r.text(quip, W / 2, 114, { color: C.grey, shadow: C.ink, align: 'center' });
     if (st >= lockT()) {
       r.text(retryHint(run), W / 2, 124, { color: C.white, shadow: C.ink, align: 'center' });
-      r.text('Q: quit to title', W / 2, 136, { color: C.pale, shadow: C.ink, align: 'center' });
+      r.text(say('quitDead', 'Q: quit to title'), W / 2, QUIT_Y, { color: C.pale, shadow: C.ink, align: 'center' });
     }
   }
 
-  CB.Screens.gameOver = { draw };
+  CB.Screens.gameOver = { QUIT_BOX, draw };
 })(window.CB);

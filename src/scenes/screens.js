@@ -1,4 +1,5 @@
-// Overlay cards drawn over the world by run state: stage intro, wave banner, boss warning, the BUG FIXED diff card and the pause screen.
+// Overlay cards drawn over the world by run state: stage intro, wave banner, boss warning, the BUG FIXED diff card and the pause screen,
+// plus the sound / music / calm chips the title and the pause screen share.
 (function (CB) {
   'use strict';
   const C = CB.Pal.C;
@@ -213,16 +214,101 @@
     if (st >= TL.diffStart + step * n + TL.passDelay) r.text('✓ 1 test passing', x, passY, { color: C.green });
   }
 
+  // ---- device prompts -----------------------------------------------------------------------------------------------------
+
+  // The device Clawd is being played on. A missing CB.Prompts or an unknown value reads as the keyboard and mouse.
+  function deviceOf() {
+    const d = CB.Prompts && CB.Prompts.device;
+    return d === 'touch' || d === 'pad' ? d : 'kbm';
+  }
+
+  // The prompt for `key` on the current device; `kbm` is what shows when CB.Prompts is not loaded.
+  function say(key, kbm) {
+    const P = CB.Prompts;
+    return (P && typeof P.text === 'function' && P.text(key, deviceOf())) || kbm;
+  }
+
+  // ---- sound / music / calm chips -----------------------------------------------------------------------------------------
+
+  // Three tappable chips in a fixed row, shared by the title and the pause screen: phones have no M, N or V keys.
+  // A chip shows only when its module can report its state; the others keep their places.
+  const CHIP = Object.freeze({ w: 74, h: 11, gap: 4, dy: 2 }); // the box starts 2 px above its text row
+  const CHIP_X0 = Math.round((W - (3 * CHIP.w + 2 * CHIP.gap)) / 2); // 45
+  const TOGGLE_IDS = Object.freeze(['sound', 'music', 'calm']);
+  const TOGGLE = {
+    sound: {
+      key: 'M',
+      has: () => !!(CB.Audio && typeof CB.Audio.isMuted === 'function'),
+      on: () => !CB.Audio.isMuted(),
+      flip: () => (CB.Audio && typeof CB.Audio.toggleMute === 'function' ? !CB.Audio.toggleMute() : null), // toggleMute returns the muted flag
+    },
+    music: {
+      key: 'N',
+      has: () => !!(CB.Music && typeof CB.Music.isEnabled === 'function'),
+      on: () => !!CB.Music.isEnabled(),
+      flip: () => (CB.Music && typeof CB.Music.toggle === 'function' ? !!CB.Music.toggle() : null),
+    },
+    calm: {
+      key: 'V',
+      has: () => !!(CB.Comfort && typeof CB.Comfort.calm === 'function'),
+      on: () => !!CB.Comfort.calm(),
+      flip: () => (CB.Comfort && typeof CB.Comfort.toggle === 'function' ? !!CB.Comfort.toggle() : null),
+    },
+  };
+  const hasChip = (id) => Object.prototype.hasOwnProperty.call(TOGGLE, id) && TOGGLE[id].has();
+
+  const toggles = {
+    IDS: TOGGLE_IDS,
+
+    // The chips that exist, with y0 the text row they sit on.
+    boxes(y0) {
+      const out = [];
+      TOGGLE_IDS.forEach((id, i) => {
+        if (hasChip(id)) out.push({ id, x: CHIP_X0 + i * (CHIP.w + CHIP.gap), y: num(y0, 0) - CHIP.dy, w: CHIP.w, h: CHIP.h });
+      });
+      return out;
+    },
+
+    // The chip under (x, y), or null.
+    hit(x, y, y0) {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      for (const b of toggles.boxes(y0)) if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) return b.id;
+      return null;
+    },
+
+    // "M sound: on" with a keyboard, "sound: on" without one; '' for a chip that is not there.
+    label(id) {
+      if (!hasChip(id)) return '';
+      return (deviceOf() === 'kbm' ? TOGGLE[id].key + ' ' : '') + id + ': ' + (TOGGLE[id].on() ? 'on' : 'off');
+    },
+
+    // Flips the setting, chimes, and returns the new on-state (the current one when the module cannot flip).
+    apply(id) {
+      if (!hasChip(id)) return false;
+      const next = TOGGLE[id].flip();
+      if (next === null) return TOGGLE[id].on();
+      if (CB.Audio && typeof CB.Audio.play === 'function') CB.Audio.play('uiSelect');
+      return next;
+    },
+
+    // Dim frames; the chip at focusIndex (an index into IDS: the pad's focus, -1 for none) or under `aim` (the mouse) is bright.
+    draw(r, y0, focusIndex, aim) {
+      const under = aim && Number.isFinite(aim.x) && Number.isFinite(aim.y) ? toggles.hit(aim.x, aim.y, y0) : null;
+      const focus = Number.isInteger(focusIndex) ? TOGGLE_IDS[focusIndex] : null;
+      for (const b of toggles.boxes(y0)) {
+        const lit = b.id === focus || b.id === under;
+        r.alpha(0.6, () => r.rect(b.x, b.y, b.w, b.h, C.ink));
+        r.frame(b.x, b.y, b.w, b.h, lit ? C.gold : C.greyDark);
+        r.text(toggles.label(b.id), b.x + b.w / 2, b.y + CHIP.dy, { color: lit ? C.white : C.grey, align: 'center' });
+      }
+    },
+  };
+
   // ---- pause --------------------------------------------------------------------------------------------------------------
 
-  // "M sound: on · N music: on · V calm: off", leaving out whatever module is not there.
-  function statusLine() {
-    const parts = [];
-    if (CB.Audio && typeof CB.Audio.isMuted === 'function') parts.push('M sound: ' + (CB.Audio.isMuted() ? 'off' : 'on'));
-    if (CB.Music && typeof CB.Music.isEnabled === 'function') parts.push('N music: ' + (CB.Music.isEnabled() ? 'on' : 'off'));
-    if (CB.Comfort && typeof CB.Comfort.calm === 'function') parts.push('V calm: ' + (CB.Comfort.calm() ? 'on' : 'off'));
-    return parts.join(' · ');
-  }
+  const CHIPS_Y = 66; // text row of the chips
+  const QUIT_Y = 152; // the 7th patch line ends at 152 and the disclaimer starts at 160
+  const QUIT_BOX = Object.freeze({ x: 110, y: 150, w: 100, h: 10 });
 
   // "Name ×n" for each owned patch, in the catalogue's order.
   function patchLines(run) {
@@ -237,19 +323,23 @@
     return out;
   }
 
+  // ui (all optional): quitArmT (> 0 while the first quit is armed), pauseNav + pauseFocus (the pad's chip focus), aimX/aimY (the mouse, for hover).
   function drawPause(r, run, t, ui) {
+    const armed = !!(ui && num(ui.quitArmT, 0) > 0);
+    const aim = ui && deviceOf() === 'kbm' && Number.isFinite(ui.aimX) && Number.isFinite(ui.aimY) ? { x: ui.aimX, y: ui.aimY } : null;
     r.alpha(0.75, () => r.rect(0, 0, W, H, C.ink));
     r.text('PAUSED', W / 2, 14, { scale: 2, color: C.white, shadow: C.ink, align: 'center' });
-    if (ui && num(ui.quitArmT, 0) > 0) r.text('Press Q again to quit', W / 2, 34, { color: C.gold, align: 'center' });
-    else r.text('Esc: resume · Q: quit to title', W / 2, 34, { color: C.pale, align: 'center' });
-    r.text('WASD move · Mouse aim · Click shoot', W / 2, 48, { color: C.pale, align: 'center' });
-    r.text('Space dash · E /compact (meter full)', W / 2, 57, { color: C.pale, align: 'center' });
-    const status = statusLine();
-    if (status) r.text(status, W / 2, 66, { color: C.grey, align: 'center' });
+    if (armed) r.text(say('quitArm', 'Press Q again to quit'), W / 2, 34, { color: C.gold, align: 'center' });
+    else r.text(say('pauseLine', 'Esc: resume · Q: quit to title'), W / 2, 34, { color: C.pale, align: 'center' });
+    r.text(say('pauseLegend1', 'WASD move · Mouse aim · Click shoot'), W / 2, 48, { color: C.pale, align: 'center' });
+    r.text(say('pauseLegend2', 'Space dash · E /compact (meter full)'), W / 2, 57, { color: C.pale, align: 'center' });
+    toggles.draw(r, CHIPS_Y, ui && ui.pauseNav ? ui.pauseFocus : -1, aim);
     r.text('patches', W / 2, 82, { color: C.gold, align: 'center' });
     const lines = patchLines(run);
     if (!lines.length) r.text('none yet', W / 2, 91, { color: C.grey, align: 'center' });
     lines.forEach((l, i) => r.text(l, W / 2, 91 + 9 * i, { color: C.pale, align: 'center' }));
+    const over = aim && aim.x >= QUIT_BOX.x && aim.x < QUIT_BOX.x + QUIT_BOX.w && aim.y >= QUIT_BOX.y && aim.y < QUIT_BOX.y + QUIT_BOX.h;
+    r.text('[ quit to title ]', W / 2, QUIT_Y, { color: armed ? C.gold : over ? C.white : C.pale, align: 'center' });
     r.text(DISCLAIMER, W / 2, 160, { color: C.grey, align: 'center' });
   }
 
@@ -257,5 +347,6 @@
   CB.Screens.waveBanner = { draw: drawWaveBanner };
   CB.Screens.bossWarn = { draw: drawBossWarn };
   CB.Screens.bossDead = { TIMELINE, draw: drawBossDead };
-  CB.Screens.pause = { draw: drawPause };
+  CB.Screens.toggles = toggles;
+  CB.Screens.pause = { CHIPS_Y, QUIT_BOX, draw: drawPause };
 })(window.CB);

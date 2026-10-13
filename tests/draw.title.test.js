@@ -40,7 +40,9 @@ test('title: confirm is ignored during the first 0.3 s', () => {
 
 const ENEMIES = ['syntaxError', 'nullPointer', 'raceCondition', 'memoryLeak'].map((k) => 'src/game/enemies/' + k + '.js');
 const BASE = [...H.GAME_BASE, 'src/art/font.js', 'src/art/render.js'];
-const FILES = [...BASE, 'src/scenes/title.js'];
+// prompts.js and screens.js (the sound / music / calm chips) are loaded so the kbm strings pinned below come from CB.Prompts;
+// menus.devices.test.js covers touch, pad, and the scene without either module.
+const FILES = [...BASE, 'src/core/prompts.js', 'src/scenes/screens.js', 'src/scenes/title.js'];
 const KONAMI = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'KeyB', 'KeyA'];
 const ULTRA = ['KeyU', 'KeyL', 'KeyT', 'KeyR', 'KeyA', 'KeyT', 'KeyH', 'KeyI', 'KeyN', 'KeyK'];
 const HAT_NAMES = [
@@ -443,8 +445,13 @@ test('title: base layout puts every line at its Rev 3 row', () => {
   assert.equal(row('WASD move · Mouse aim · Click shoot · Space dash').y, 138);
   assert.equal(row('E /compact · N music · M mute · V calm · Esc pause').y, 147);
   assert.equal(row('Fan game. Not affiliated with Anthropic.').y, 160);
-  assert.equal(row('M sound: on · N music: on').y, 170);
-  for (const s of ['vs', 'Click to start', 'WASD move · Mouse aim · Click shoot · Space dash', 'Fan game. Not affiliated with Anthropic.', 'M sound: on · N music: on']) {
+  // The status row is the sound / music / calm chips now (was one centred line); calm has no module in this test, so it has no chip.
+  assert.equal(row('M sound: on').y, 170);
+  assert.equal(row('N music: on').y, 170);
+  assert.ok(!rec.texts().some((b) => b.str.startsWith('V calm')));
+  assert.ok(Math.abs(row('M sound: on').x + row('M sound: on').w / 2 - (45 + 37)) <= 1, 'sound is centred in the first chip');
+  assert.ok(Math.abs(row('N music: on').x + row('N music: on').w / 2 - (123 + 37)) <= 1, 'music is centred in the second chip');
+  for (const s of ['vs', 'Click to start', 'WASD move · Mouse aim · Click shoot · Space dash', 'Fan game. Not affiliated with Anthropic.']) {
     const b = row(s);
     assert.ok(Math.abs(b.x + b.w / 2 - 160) <= 1, s + ' is centred');
   }
@@ -470,7 +477,8 @@ test('title: base layout puts every line at its Rev 3 row', () => {
   assert.equal(clawdBox.x, 144);
   assert.equal(clawdBox.y, 70);
   assert.ok(!rec.texts().some((b) => b.str.startsWith('hat:')), 'no hats, no hat row');
-  assert.ok(!rec.texts().some((b) => b.str.startsWith('Best on desktop')), 'desktop, no note');
+  assert.ok(!rec.texts().some((b) => b.str.startsWith('Best on desktop')), 'no small-screen note');
+  assert.ok(!rec.texts().some((b) => b.y === 96), 'its row 96 is empty');
   assert.deepEqual(rec.outside(), []);
   assert.deepEqual(rec.overlaps(), []);
 });
@@ -488,7 +496,7 @@ test('title: Click to start blinks 0.6 s on, 0.3 s off', () => {
   assert.equal(on(1.55), false);
 });
 
-test('title: the small-screen note shows (gold, row 96) on a coarse pointer or a narrow window', () => {
+test('title: the small-screen note is gone: a coarse pointer or a narrow window shows nothing extra', () => {
   for (const how of ['coarse', 'narrow']) {
     const env = setup({
       prep: (e) => {
@@ -498,17 +506,12 @@ test('title: the small-screen note shows (gold, row 96) on a coarse pointer or a
     });
     unlocked(env);
     const rec = frame(env);
-    const note = textOf(rec, 'Best on desktop with keyboard + mouse');
-    assert.ok(note, how);
-    assert.equal(note.y, 96);
-    assert.ok(Math.abs(note.x + note.w / 2 - 160) <= 1);
+    assert.ok(!hasText(rec, 'Best on desktop with keyboard + mouse'), how);
+    assert.ok(!rec.texts().some((b) => b.y === 96), how + ': row 96 stays empty');
   }
-  const wide = setup();
-  unlocked(wide);
-  assert.ok(!hasText(frame(wide), 'Best on desktop with keyboard + mouse'));
 });
 
-test('title: a matchMedia that throws or is missing is treated as a desktop', () => {
+test('title: a matchMedia that throws or is missing is fine', () => {
   for (const mm of [() => { throw new Error('no'); }, undefined]) {
     const env = setup({ prep: (e) => { e.sandbox.matchMedia = mm; } });
     unlocked(env);
@@ -517,22 +520,33 @@ test('title: a matchMedia that throws or is missing is treated as a desktop', ()
   }
 });
 
-test('title: status shows sound and music state and leaves out a missing module', () => {
+test('title: the chips show sound and music state and leave out a missing module', () => {
+  // Was one centred status line ("M sound: on · N music: off"); each part is its own chip now and a missing module's chip is left out.
   const env = setup({ prep: (e) => { e.CB.Music = { stop() {}, isEnabled: () => false }; } });
   unlocked(env);
-  assert.ok(hasText(frame(env), 'M sound: on · N music: off'));
+  const rec = frame(env);
+  assert.ok(hasText(rec, 'M sound: on') && hasText(rec, 'N music: off'));
   env.CB.Audio.isMuted = () => true;
-  assert.ok(hasText(frame(env), 'M sound: off · N music: off'));
+  assert.ok(hasText(frame(env), 'M sound: off') && hasText(frame(env), 'N music: off'));
   delete env.CB.Audio.isMuted;
   assert.ok(hasText(frame(env), 'N music: off'));
   assert.ok(!frame(env).texts().some((b) => b.str.includes('sound')));
   delete env.CB.Music.isEnabled;
-  assert.ok(!frame(env).texts().some((b) => b.y === 170), 'no status row when both modules are missing');
+  assert.ok(!frame(env).texts().some((b) => b.y === 170), 'no status row when no module can report');
 });
 
-test('title: worst-case layout (hats, modes, small-screen note, toast, long status) stays on screen with disjoint text', () => {
+test('title: without screens.js there are no chips and nothing breaks', () => {
+  const env = setup({ files: [...BASE, 'src/core/prompts.js', 'src/scenes/title.js'], prep: (e) => { e.CB.Music = { stop() {}, isEnabled: () => false }; } });
+  unlocked(env);
+  assert.ok(!env.CB.Screens.toggles);
+  assert.ok(!frame(env).texts().some((b) => b.y === 170));
+  assert.doesNotThrow(() => run(env, 1, H.makeInput({ confirm: true, tap: true, aimX: 60, aimY: 171 })));
+  assert.equal(env.visits.length, 1, 'a tap where the chips would be just starts the game');
+});
+
+test('title: worst-case layout (hats, modes, toast, all three chips) stays on screen with disjoint text', () => {
   const env = setup({
-    files: [...BASE, ...ENEMIES, 'src/scenes/title.js'],
+    files: [...BASE, ...ENEMIES, 'src/core/prompts.js', 'src/scenes/screens.js', 'src/scenes/title.js'],
     prep: (e) => {
       e.sandbox.innerWidth = 400;
       e.CB.Music = { stop() {}, toggle() {}, isEnabled: () => false };
@@ -559,7 +573,8 @@ test('title: worst-case layout (hats, modes, small-screen note, toast, long stat
     if (i === 20) assert.ok(rec.sprites().some((b) => b.name === 'hat_testbeanie'));
   }
   assert.ok(sparks > 0, 'the spark flew at some point');
-  for (const must of ['Click to start', '[ boss rush ]', 'hat: Branch beanie (Q/E)', 'Best on desktop with keyboard + mouse', 'M sound: off · N music: off']) assert.ok(seen.has(must), must);
+  for (const must of ['Click to start', '[ boss rush ]', 'hat: Branch beanie (Q/E)', 'M sound: off', 'N music: off', 'V calm: off']) assert.ok(seen.has(must), must);
+  assert.ok(!seen.has('Best on desktop with keyboard + mouse'));
   assert.deepEqual(s.cycles, []);
   // The disclaimer comes back once the toast is gone.
   assert.ok(seen.has('Fan game. Not affiliated with Anthropic.'));
@@ -568,7 +583,7 @@ test('title: worst-case layout (hats, modes, small-screen note, toast, long stat
 test('title: the real font keeps every line inside 320 px with room to spare', () => {
   const env = setup();
   const w = (s) => env.r.measure(s, 1);
-  for (const s of ['WASD move · Mouse aim · Click shoot · Space dash', 'E /compact · N music · M mute · V calm · Esc pause', 'Fan game. Not affiliated with Anthropic.', 'Best on desktop with keyboard + mouse']) {
+  for (const s of ['WASD move · Mouse aim · Click shoot · Space dash', 'E /compact · N music · M mute · V calm · Esc pause', 'Fan game. Not affiliated with Anthropic.']) {
     assert.ok(w(s) <= 300, s + ' is ' + w(s));
   }
 });

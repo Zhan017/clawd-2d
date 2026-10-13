@@ -166,7 +166,15 @@
     }
   }
 
-  function drawCard(r, run, i, id, st, hover, pal) {
+  // The key hint at the foot of card i: [n] with a keyboard, "tap" on a phone, and [A] on the focused card only while the pad is navigating.
+  function hintFor(i, hover, nav) {
+    const d = CB.Prompts && CB.Prompts.device;
+    if (d === 'touch') return 'tap';
+    if (d === 'pad') return hover && nav ? '[A]' : '';
+    return '[' + (i + 1) + ']';
+  }
+
+  function drawCard(r, run, i, id, st, hover, pal, nav) {
     const def = CB.Patches && CB.Patches.DEFS && CB.Patches.DEFS[id];
     const start = CARD_STEP * i;
     if (!def || st < start) return;
@@ -190,7 +198,8 @@
     const desc = wrap(def.desc, c.w - 2 * PAD).slice(0, room);
     desc.forEach((l, j) => r.text(l, cx, y + DESC_DY + LINE_H * (name.length - 1) + LINE_H * j, { color: C.pale, align: 'center' }));
     drawPips(r, cx, y + PIP_DY, (run.patches && run.patches[id]) | 0, def.max);
-    r.text('[' + (i + 1) + ']', cx, y + HINT_DY, { color: hover ? C.white : C.grey, align: 'center' });
+    const hint = hintFor(i, hover, nav);
+    if (hint) r.text(hint, cx, y + HINT_DY, { color: hover ? C.white : C.grey, align: 'center' });
   }
 
   function draw(r, run, t, ui) {
@@ -201,8 +210,9 @@
     if (st < lock) r.text('…', W / 2, 34, { color: C.grey, align: 'center' }); // the input lock: clicks do nothing yet
     const offer = Array.isArray(run.offer) ? run.offer : [];
     const hover = ui && Number.isInteger(ui.hover) && st >= lock ? ui.hover : -1; // no highlight while a click would be ignored
+    const nav = !!(ui && ui.nav); // the pad (or the arrow keys) moved the focus: show [A] on the focused card
     const pal = stagePalette(run);
-    for (let i = 0; i < CARDS.length && i < offer.length; i++) drawCard(r, run, i, offer[i], st, hover === i, pal);
+    for (let i = 0; i < CARDS.length && i < offer.length; i++) drawCard(r, run, i, offer[i], st, hover === i, pal, nav);
   }
 
   CB.Screens.patchPick = { CARDS, cardAt, draw };

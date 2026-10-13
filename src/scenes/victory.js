@@ -5,7 +5,7 @@
   const W = CB.W;
   const H = CB.H;
   const DISCLAIMER = 'Fan game. Not affiliated with Anthropic.';
-  const CLICK_AT = 1.5; // "Click to play again" shows strictly after this (play.js accepts the click then)
+  const CLICK_AT = 1.5; // the play-again prompt shows strictly after this (play.js accepts the click, tap or A then)
   const KINDS = ['syntaxError', 'nullPointer', 'raceCondition', 'memoryLeak', 'offByOne']; // tally order
   const CELL_STEP = 56; // px between tally cells
   // A worn hat reaches up into the quip line above Clawd, so with one Clawd stands 6 px lower and hops a little less.
@@ -19,6 +19,13 @@
   const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
   const calm = () => !!(CB.Comfort && typeof CB.Comfort.calm === 'function' && CB.Comfort.calm());
+
+  // The prompt for `key` on the current device (a missing CB.Prompts or an unknown device reads as keyboard + mouse); `kbm` shows without CB.Prompts.
+  function say(key, kbm) {
+    const P = CB.Prompts;
+    const d = P && P.device;
+    return (P && typeof P.text === 'function' && P.text(key, d === 'touch' || d === 'pad' ? d : 'kbm')) || kbm;
+  }
 
   // "mm:ss", minutes padded to two digits.
   function formatTime(seconds) {
@@ -125,7 +132,7 @@
       r.alpha(show(1.1 + 0.1 * i), () => r.text(line, LOG_X, 115 + 9 * i, { color: C.grey }));
     });
     r.alpha(show(0.5), () => r.text(DISCLAIMER, W / 2, 152, { color: C.grey, align: 'center' }));
-    if (st > CLICK_AT && Math.floor(st * 2) % 2 === 0) r.text('Click to play again', W / 2, 160, { color: C.white, shadow: C.ink, align: 'center' });
+    if (st > CLICK_AT && Math.floor(st * 2) % 2 === 0) r.text(say('again', 'Click to play again'), W / 2, 160, { color: C.white, shadow: C.ink, align: 'center' });
     if (st > 0.3) drawConfetti(r, st);
   }
 
