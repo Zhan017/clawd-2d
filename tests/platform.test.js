@@ -206,6 +206,83 @@ test('input: the pointer leaving the canvas releases fire and held keys; dispose
   for (const t of ['mousedown', 'contextmenu']) assert.equal((canvas.handlers[t] || []).length, 0, t);
 });
 
+// ---- more ways to play: the bare environment (only ns, math and input loaded; a window with no navigator; a canvas with no pointer capture) ----
+
+test('input: in a bare environment sample() still carries every new field at its idle value', () => {
+  const { input } = makeInput();
+  const s = input.sample();
+  assert.equal(s.device, 'kbm');
+  assert.strictEqual(s.aimDirX, null);
+  assert.strictEqual(s.aimDirY, null);
+  assert.strictEqual(s.aimAssist, false);
+  assert.strictEqual(s.navX, 0);
+  assert.strictEqual(s.navY, 0);
+  assert.strictEqual(s.tap, false);
+  assert.strictEqual(s.pad, null);
+  assert.equal(input.device, 'kbm');
+  assert.strictEqual(input.touchView(), null);
+  assert.equal(input.rumble(1, 1, 100, 30), false);
+  assert.doesNotThrow(() => {
+    input.setTouchMode('sticks');
+    input.requestFullscreenOnRelease();
+    input.releaseAll();
+  });
+});
+
+test('input: touch pointer events do nothing without the touch module, and the mouse path is untouched by them', () => {
+  const { win, canvas, input } = makeInput();
+  assert.doesNotThrow(() => {
+    canvas.fire('pointerdown', { pointerType: 'touch', pointerId: 1, clientX: 400, clientY: 200 });
+    win.fire('pointermove', { pointerType: 'touch', pointerId: 1, clientX: 404, clientY: 200 });
+    win.fire('pointerup', { pointerType: 'touch', pointerId: 1 });
+    win.fire('pointercancel', { pointerType: 'touch', pointerId: 1 });
+  });
+  const s = input.sample();
+  assert.equal(s.device, 'kbm');
+  assert.equal(s.confirm, false);
+  canvas.fire('mousedown', { button: 0, clientX: 400, clientY: 200, timeStamp: 5 });
+  assert.equal(input.sample().confirm, true, 'a touch that was never handled opens no compat window for the mouse');
+});
+
+test('input: arrow and WASD keydowns give nav edges without disturbing movement', () => {
+  const { win, input } = makeInput();
+  win.fire('keydown', { code: 'ArrowLeft' });
+  win.fire('keydown', { code: 'KeyS' });
+  let s = input.sample();
+  assert.equal(s.navX, -1);
+  assert.equal(s.navY, 1);
+  assert.equal(s.moveX, -1);
+  assert.equal(s.moveY, 1);
+  s = input.sample();
+  assert.equal(s.navX, 0);
+  assert.equal(s.navY, 0);
+  assert.equal(s.moveX, -1, 'still held');
+});
+
+test('input: a left press is a tap at the pointer, a right press and Enter are not', () => {
+  const { win, canvas, input } = makeInput();
+  canvas.fire('mousedown', { button: 0, clientX: 400, clientY: 200 });
+  let s = input.sample();
+  assert.equal(s.tap, true);
+  assert.equal(s.aimX, 100);
+  canvas.fire('mousedown', { button: 2, clientX: 0, clientY: 0 });
+  assert.equal(input.sample().tap, false);
+  win.fire('keydown', { code: 'Enter' });
+  s = input.sample();
+  assert.equal(s.confirm, true);
+  assert.equal(s.tap, false);
+});
+
+test('input: dispose removes every listener on the window and the canvas, the pointer ones included', () => {
+  const { win, canvas, input } = makeInput();
+  const live = (t) => Object.keys(t.handlers).filter((k) => t.handlers[k].length > 0).sort();
+  assert.deepEqual(live(win), ['blur', 'keydown', 'keyup', 'mousemove', 'mouseup', 'pointercancel', 'pointermove', 'pointerup']);
+  assert.deepEqual(live(canvas), ['contextmenu', 'mousedown', 'mouseleave', 'pointerdown']);
+  input.dispose();
+  assert.deepEqual(live(win), []);
+  assert.deepEqual(live(canvas), []);
+});
+
 const vm = require('vm');
 
 test('harness: load(files, { localStorage }) installs the given storage in the sandbox', () => {

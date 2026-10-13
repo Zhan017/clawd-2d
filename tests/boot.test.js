@@ -10,7 +10,7 @@ const H = require('./harness');
 
 const LIBS = [
   'src/core/ns.js', 'src/core/math.js', 'src/core/rng.js', 'src/art/palette.js', 'src/art/sprites.js', 'src/art/render.js',
-  'src/core/input.js', 'src/core/loop.js',
+  'src/core/prompts.js', 'src/core/gamepad.js', 'src/core/touch.js', 'src/core/input.js', 'src/core/loop.js',
   'src/game/world.js', 'src/game/projectiles.js', 'src/game/patches.js', 'src/game/player.js', 'src/game/fx.js',
   'src/game/stages.js', 'src/game/waves.js', 'src/game/stageRunner.js', 'src/scenes/play.js',
 ];
@@ -43,6 +43,7 @@ function bootEnv(o) {
   };
   sandbox.location = Object.assign({ protocol: 'http:', hostname: 'localhost', hash: '', reload() { env.reloads++; } }, opt.loc || {});
   if (opt.claude) sandbox.claude = opt.claude;
+  if (opt.coarse) sandbox.matchMedia = (q) => ({ matches: q === '(pointer: coarse)' }); // a phone: coarse pointer, no fine one
 
   const ctx = new Proxy({ canvas: null, imageSmoothingEnabled: false, globalAlpha: 1 }, {
     get: (t, p) => (p in t ? t[p] : (...a) => { calls.push([String(p), ...a]); }),
@@ -64,9 +65,9 @@ function bootEnv(o) {
   doc.addEventListener = () => {};
   doc.body = { appendChild: (el) => appended.push(el), classList: { add() {}, remove() {} } };
 
-  const probe = { toggles: 0, inputs: [], draws: 0, panic: [], panicThrows: false, updateThrows: null, musicToggles: 0 };
+  const probe = { toggles: 0, inputs: [], draws: 0, panic: [], panicThrows: false, updateThrows: null, musicToggles: 0, inits: 0, notes: [], blurs: 0 };
   env.probe = probe;
-  CB.Audio = { init() {}, toggleMute() { probe.toggles++; }, play() {}, handleEvents() {} };
+  CB.Audio = { init() { probe.inits++; }, toggleMute() { probe.toggles++; }, play() {}, handleEvents() {} };
   CB.Music = { toggle() { probe.musicToggles++; } };
   CB.Scenes.title = {
     enter() { order.push('title.enter'); },
@@ -75,6 +76,8 @@ function bootEnv(o) {
       if (probe.updateThrows) throw probe.updateThrows;
     },
     draw() { order.push('draw'); probe.draws++; },
+    onBlur() { probe.blurs++; },
+    notify(text) { probe.notes.push(text); },
   };
   CB.Screens.panic = {
     draw(r, e) {
@@ -394,4 +397,180 @@ test('hot snapshot round trip: what one session saves, the next boots into', () 
   assert.equal(run.deaths, 2);
   assert.deepEqual(H.plain(run.patches), { dash: 1 });
   assert.deepEqual(H.plain(run.squashed), { memoryLeak: 4 });
+});
+
+// ---- more ways to play: touch unlock, notify, controller events, the portrait pause, touch-aware crash text ----------------------
+
+const lastInput = (env) => env.probe.inputs[env.probe.inputs.length - 1];
+
+test('boot: touchend unlocks audio beside pointerdown and keydown (a touch pointerdown is not a user activation)', () => {
+  const env = bootEnv();
+  env.runMain();
+  assert.equal(env.winOn.touchend.length, 1);
+  const n = env.probe.inits;
+  env.fire('pointerdown', {});
+  env.fire('keydown', { code: 'KeyW' });
+  assert.equal(env.probe.inits, n + 2);
+  env.fire('touchend', {});
+  assert.equal(env.probe.inits, n + 3);
+});
+
+test('boot: game.notify reaches the scene when it can toast, and does nothing when it cannot', () => {
+  const env = bootEnv();
+  env.runMain();
+  const { CB } = env;
+  CB.game.notify('hello');
+  assert.deepEqual(env.probe.notes, ['hello']);
+  delete CB.Scenes.title.notify;
+  assert.doesNotThrow(() => CB.game.notify('nobody is listening'));
+  CB.Scenes.title.notify = 'not a function';
+  assert.doesNotThrow(() => CB.game.notify('still nobody'));
+  CB.game.scene = null;
+  assert.doesNotThrow(() => CB.game.notify('no scene at all'));
+});
+
+test('boot: a controller connecting unlocks audio and says so; one disconnecting says so and pauses like a window blur', () => {
+  const env = bootEnv();
+  env.runMain();
+  env.fire('keydown', { code: 'KeyW' }); // walking
+  env.frame(20);
+  assert.equal(lastInput(env).moveY, -1);
+  const n = env.probe.inits;
+  env.fire('gamepadconnected', { gamepad: { id: 'pad' } });
+  assert.equal(env.probe.inits, n + 1, 'a connect counts as the gesture it came with');
+  assert.deepEqual(env.probe.notes, ['controller connected']);
+  assert.equal(env.probe.blurs, 0);
+  env.fire('gamepaddisconnected', { gamepad: { id: 'pad' } });
+  assert.deepEqual(env.probe.notes, ['controller connected', 'controller disconnected']);
+  assert.equal(env.probe.blurs, 1, 'the scene is told, so a fight pauses');
+  env.frame(20);
+  assert.equal(lastInput(env).moveY, 0, 'and the input was released: Clawd is not left walking');
+});
+
+test('boot: a pad plugged into the real input drives the scene, unlocks audio on its first press and switches the prompts', () => {
+  const env = bootEnv();
+  const pad = { id: 'x', index: 0, connected: true, mapping: 'standard', axes: [0, 0, 0, 0], buttons: [] };
+  for (let i = 0; i < 17; i++) pad.buttons.push({ pressed: false, touched: false, value: 0 });
+  env.sandbox.navigator.getGamepads = () => [pad, null, null, null];
+  env.runMain();
+  const { CB } = env;
+  assert.equal(CB.Prompts.text('start'), 'Click to start');
+  env.frame(20);
+  assert.equal(lastInput(env).device, 'kbm');
+  assert.strictEqual(lastInput(env).pad.a, false);
+  const n = env.probe.inits;
+  pad.buttons[0] = { pressed: true, touched: true, value: 1 };
+  env.frame(20);
+  assert.equal(lastInput(env).device, 'pad');
+  assert.equal(lastInput(env).pad.a, true);
+  assert.equal(lastInput(env).confirm, true);
+  assert.equal(env.probe.inits, n + 1, 'the press unlocked audio');
+  assert.equal(CB.Prompts.text('start'), 'Press A to start');
+  env.frame(20);
+  assert.equal(lastInput(env).confirm, false, 'held: no second edge');
+});
+
+test('boot: a touch on the canvas reaches the scene as a tap on the touch device', () => {
+  const env = bootEnv();
+  env.runMain();
+  const ev = { pointerType: 'touch', pointerId: 4, clientX: 150, clientY: 75, preventDefault() { this.prevented = true; } };
+  env.fireCanvas('pointerdown', ev);
+  assert.equal(ev.prevented, true);
+  env.frame(20);
+  assert.equal(lastInput(env).device, 'touch');
+  assert.equal(lastInput(env).tap, true);
+  assert.equal(lastInput(env).confirm, true);
+  assert.equal(env.CB.Prompts.text('start'), 'Tap to start');
+});
+
+test('boot: in portrait on touch every resize and orientationchange pauses again; landscape, a keyboard or no touch leave it alone', () => {
+  const env = bootEnv({ coarse: true });
+  env.runMain();
+  assert.equal(env.CB.game.input.device, 'touch', 'a phone starts on touch');
+  assert.equal(env.winOn.orientationchange.length, 1);
+  env.sandbox.innerWidth = 844;
+  env.sandbox.innerHeight = 390;
+  env.fire('resize', {});
+  env.fire('orientationchange', {});
+  assert.equal(env.probe.blurs, 0, 'landscape');
+  env.sandbox.innerWidth = 390;
+  env.sandbox.innerHeight = 844;
+  const n0 = env.order.length;
+  env.fire('resize', {});
+  assert.equal(env.probe.blurs, 1);
+  assert.ok(env.order.slice(n0).includes('resize'), 'the renderer still resizes');
+  env.fire('resize', {});
+  assert.equal(env.probe.blurs, 2, 'every time, so a resume under the rotate overlay is pausing again at once');
+  env.fire('orientationchange', {});
+  assert.equal(env.probe.blurs, 3);
+  env.fire('keydown', { code: 'KeyW' });
+  env.fire('resize', {});
+  assert.equal(env.probe.blurs, 3, 'once the keyboard is the device a tall window is just a tall window');
+
+  const desktop = bootEnv();
+  desktop.runMain();
+  desktop.sandbox.innerWidth = 390;
+  desktop.sandbox.innerHeight = 844;
+  desktop.fire('resize', {});
+  desktop.fire('orientationchange', {});
+  assert.equal(desktop.probe.blurs, 0);
+});
+
+test('boot: every scene change puts the touch input back in menu mode', () => {
+  const env = bootEnv({ coarse: true });
+  env.runMain();
+  const { CB } = env;
+  CB.game.input.setTouchMode('sticks');
+  assert.equal(CB.game.input.touchView().mode, 'sticks');
+  CB.game.go('title');
+  assert.equal(CB.game.input.touchView().mode, 'menu', 'a title reached from a fight can be tapped');
+});
+
+test('boot: after a crash a canvas pointerdown reloads too (the touch handler swallows the compatibility mousedown)', () => {
+  const env = bootEnv();
+  env.runMain();
+  env.fire('error', { error: env.err('boom'), message: 'boom' });
+  assert.equal(env.reloads, 0);
+  env.fireCanvas('pointerdown', { pointerType: 'touch', pointerId: 1, clientX: 5, clientY: 5 });
+  assert.equal(env.reloads, 1);
+  env.fireCanvas('mousedown', { button: 0, clientX: 5, clientY: 5 });
+  assert.equal(env.reloads, 2, 'and the mouse still does');
+});
+
+test('boot: the raw crash text follows the device: "Tap to reload" on a phone, "Press R to reload" otherwise (page <pre> and canvas fallback)', () => {
+  const pre = (device) => {
+    const env = bootEnv({ rendererThrows: true });
+    env.CB.Prompts.setDevice(device);
+    assert.throws(() => env.runMain());
+    env.fire('error', { error: env.err('no canvas'), message: 'x' });
+    return env.appended[0].innerHTML;
+  };
+  assert.ok(pre('touch').includes('Tap to reload'));
+  assert.ok(!pre('touch').includes('Press R'));
+  assert.ok(pre('pad').includes('Press R to reload'), 'R is still the key on a pad');
+  assert.ok(pre('kbm').includes('Press R to reload'));
+
+  const fallback = (device) => {
+    const env = bootEnv();
+    env.runMain();
+    env.CB.Prompts.setDevice(device);
+    env.probe.panicThrows = true;
+    env.fire('error', { error: env.err('original failure'), message: 'x' });
+    return env.calls.filter((c) => c[0] === 'fillText').map((c) => c[1]);
+  };
+  assert.ok(fallback('touch').includes('Tap to reload'));
+  assert.ok(fallback('kbm').includes('Press R to reload'));
+});
+
+test('boot: the crash text falls back to "Press R to reload" when CB.Prompts is not there', () => {
+  const env = bootEnv({ rendererThrows: true });
+  delete env.CB.Prompts;
+  assert.throws(() => env.runMain());
+  env.fire('error', { error: env.err('x'), message: 'x' });
+  assert.ok(env.appended[0].innerHTML.includes('Press R to reload'));
+  const env2 = bootEnv({ rendererThrows: true });
+  env2.CB.Prompts.text = () => '';
+  assert.throws(() => env2.runMain());
+  env2.fire('error', { error: env2.err('x'), message: 'x' });
+  assert.ok(env2.appended[0].innerHTML.includes('Press R to reload'), 'an empty string is no text');
 });

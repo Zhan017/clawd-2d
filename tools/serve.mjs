@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Zero-dependency static server for local play and QA: `npm run serve` (default port 8137).
 // python3 -m http.server has a listen backlog of 5, which resets connections when index.html
-// requests its ~45 scripts at once; Node's default backlog (511) does not.
+// requests its ~49 scripts at once; Node's default backlog (511) does not.
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, sep } from 'node:path';

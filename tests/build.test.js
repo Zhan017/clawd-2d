@@ -173,3 +173,72 @@ test('build: the built page runs in a vm sandbox and defines the game', async ()
   assert.ok(Number.isFinite(run.world.player.x) && Number.isFinite(run.world.player.y));
   assert.ok(run.time > 0);
 });
+
+// ---- more ways to play: touch-friendly page (no selection or callouts, a rotate overlay, home-screen metas) -------------------------
+
+const INDEX = fs.readFileSync(path.join(H.ROOT, 'index.html'), 'utf8');
+const headOf = (html) => (html.match(/<head>([\s\S]*?)<\/head>/) || [])[1] || '';
+
+test('build: the page stops text selection, the iOS callout, the tap highlight and overscroll', async () => {
+  const { out } = await buildOnce();
+  const rules = rulesOf(styleOf(out));
+  const page = rules.filter((r) => r.selectors.includes('html') && r.selectors.includes('body'));
+  assert.equal(page.length, 1, 'one rule for html and body');
+  const body = page[0].body;
+  assert.match(body, /(?:^|[;\s])user-select\s*:\s*none/);
+  assert.match(body, /-webkit-user-select\s*:\s*none/);
+  assert.match(body, /-webkit-touch-callout\s*:\s*none/);
+  assert.match(body, /-webkit-tap-highlight-color\s*:\s*transparent/);
+  assert.match(body, /overscroll-behavior\s*:\s*none/);
+  assert.match(body, /overflow\s*:\s*hidden/, 'still no scrolling');
+});
+
+test('build: the #game rule stays one rule and keeps crisp pixels and touch-action: none', async () => {
+  const { out } = await buildOnce();
+  const css = styleOf(out);
+  assert.equal((css.match(/#game\s*\{/g) || []).length, 1, 'one #game rule');
+  assert.match(css, /#game\s*\{[^}]*touch-action:\s*none/);
+  assert.match(css, /#game\s*\{[^}]*image-rendering:[^;}]*pixelated/);
+});
+
+test('build: the #rotate overlay is in the Artifact page, hidden by default, full-screen over the canvas and clickable in portrait on touch', async () => {
+  const { out } = await buildOnce();
+  const page = pageWithoutScripts(out);
+  assert.match(page, /<div id="rotate">↻ Rotate your phone to play<\/div>/);
+  assert.ok(page.indexOf('<canvas id="game"') < page.indexOf('id="rotate"'), 'after the canvas, so it paints on top');
+  const css = styleOf(out);
+  const base = rulesOf(css).filter((r) => r.selectors.includes('#rotate'));
+  assert.ok(base.length >= 1, 'a #rotate rule');
+  const baseCss = base[0].body;
+  assert.match(baseCss, /display\s*:\s*none/, 'hidden unless the media query says otherwise');
+  assert.match(baseCss, /position\s*:\s*fixed/);
+  assert.match(baseCss, /inset\s*:\s*0/, 'full screen');
+  assert.match(baseCss, /z-index\s*:\s*\d+/, 'above the canvas');
+  assert.match(baseCss, /place-items\s*:\s*center/, 'centred text');
+  assert.match(baseCss, /text-align\s*:\s*center/);
+  assert.match(baseCss, /background\s*:\s*var\(--bg\)/, 'the page background');
+  assert.match(baseCss, /pointer-events\s*:\s*auto/, 'a portrait tap must not reach the canvas under it');
+  assert.doesNotMatch(baseCss, /pointer-events\s*:\s*none/);
+  const media = css.match(/@media\s*\(orientation:\s*portrait\)\s*and\s*\(pointer:\s*coarse\)\s*\{\s*#rotate\s*\{([^}]*)\}\s*\}/);
+  assert.ok(media, 'shown only in portrait on a coarse pointer');
+  assert.match(media[1], /display\s*:\s*grid/);
+  assert.equal((css.match(/@media/g) || []).length, 1, 'that is the only media query');
+});
+
+test('build: index.html carries the theme-color and home-screen metas in its head, and its <style> has no attributes', () => {
+  const head = headOf(INDEX);
+  assert.match(head, /<meta name="theme-color" content="#0B0B10">/);
+  assert.match(head, /<meta name="mobile-web-app-capable" content="yes">/);
+  assert.match(head, /<meta name="apple-mobile-web-app-capable" content="yes">/);
+  assert.match(head, /<meta name="viewport" content="[^"]*viewport-fit=cover/, 'the viewport meta is unchanged');
+  const styleTags = INDEX.match(/<style\b[^>]*>/g) || [];
+  assert.deepEqual(styleTags, ['<style>'], 'build-artifact.mjs matches a bare <style>');
+});
+
+test('build: the rotate overlay needs no script, no https and no colour-scheme query (the Artifact rules still hold)', async () => {
+  const { out } = await buildOnce();
+  const rotate = (pageWithoutScripts(out).match(/<div id="rotate">[\s\S]*?<\/div>/) || [''])[0];
+  assert.ok(rotate.length > 0);
+  assert.doesNotMatch(rotate, /<script|https?:|\bon\w+\s*=/i);
+  assert.doesNotMatch(out, /prefers-color-scheme/i);
+});

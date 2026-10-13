@@ -206,3 +206,36 @@ test('lint: the whole set at once reports nothing', () => {
   for (const f of LIST.filter(exists)) all.push(...problems(f, read(f)));
   assert.deepEqual(all, []);
 });
+
+// ---- more ways to play: 49 scripts, in an order that lets input.js find its helpers -----------------------------------------------
+
+test('lint: index.html lists 49 scripts, with prompts, gamepad and touch before input.js and haptics between input.js and audio.js', () => {
+  assert.equal(LIST.length, 49);
+  const at = (f) => {
+    const i = LIST.indexOf(f);
+    assert.ok(i >= 0, f + ' is listed');
+    return i;
+  };
+  const render = at('src/art/render.js');
+  assert.deepEqual(
+    LIST.slice(render, render + 7),
+    ['src/art/render.js', 'src/core/prompts.js', 'src/core/gamepad.js', 'src/core/touch.js', 'src/core/input.js', 'src/core/haptics.js', 'src/core/audio.js'],
+    'the order the plan fixes'
+  );
+});
+
+test('lint: input.js and main.js never read a clock or a random source (input timing is event.timeStamp)', () => {
+  for (const f of ['src/core/input.js', 'src/main.js']) {
+    const code = stripComments(read(f));
+    assert.doesNotMatch(code, /\bMath\s*\.\s*random\b/, f + ': Math.random');
+    assert.doesNotMatch(code, /\bDate\s*\.\s*now\b/, f + ': Date.now');
+    assert.doesNotMatch(code, /\bperformance\s*\.\s*now\b/, f + ': performance.now');
+  }
+});
+
+test('lint: input.js reaches the platform only through the window it was given (a fake window has to be enough)', () => {
+  const code = stripComments(read('src/core/input.js'));
+  // `win.navigator`, `win.document`, `win.screen` are fine; a bare `navigator.`, `document.` or `screen.` would bypass the test window.
+  assert.doesNotMatch(code, /(?<![.\w$])(?:navigator|document|screen|localStorage)\s*\./, 'a free platform global');
+  assert.doesNotMatch(code, /(?<![.\w$])(?:addEventListener|removeEventListener|getGamepads|matchMedia)\s*\(/, 'a free platform function');
+});

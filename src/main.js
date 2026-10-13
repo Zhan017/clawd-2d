@@ -73,12 +73,18 @@
     return out.slice(0, maxLines);
   }
 
+  // "Press R to reload" on a keyboard, "Tap to reload" on a phone. Prompts is optional here: the crash may be a load-time failure.
+  function reloadText() {
+    const t = CB.Prompts && typeof CB.Prompts.text === 'function' ? CB.Prompts.text('reload') : '';
+    return t || 'Press R to reload';
+  }
+
   // No renderer to draw with: put the panic text in the page itself.
   function showPre(e) {
     try {
       const pre = document.createElement('pre');
       pre.style.cssText = 'position:fixed;inset:0;margin:0;padding:16px;z-index:2147483647;overflow:auto;white-space:pre-wrap;background:#000;color:#FF6B6B;font:14px/1.4 monospace;cursor:pointer';
-      pre.innerHTML = 'KERNEL PANIC\n\n' + esc(String(e.message).slice(0, 600)) + '\n\nPress R to reload';
+      pre.innerHTML = 'KERNEL PANIC\n\n' + esc(String(e.message).slice(0, 600)) + '\n\n' + reloadText();
       if (pre.addEventListener) pre.addEventListener('mousedown', () => location.reload());
       (document.body || document.documentElement).appendChild(pre);
     } catch (e3) {
@@ -98,7 +104,7 @@
       ctx.fillText('KERNEL PANIC', 16, 32);
       const lines = wrapLines(e.message, Math.max(20, Math.floor((canvas.width - 32) / 10)), 10);
       for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], 16, 56 + i * 20);
-      ctx.fillText('Press R to reload', 16, 56 + (lines.length + 1) * 20);
+      ctx.fillText(reloadText(), 16, 56 + (lines.length + 1) * 20);
     } catch (e2) {
       showPre(e);
     }
@@ -139,7 +145,10 @@
     window.addEventListener('keydown', (ev) => {
       if (ev.code === 'KeyR') location.reload();
     });
-    if (canvas && canvas.addEventListener) canvas.addEventListener('mousedown', () => location.reload());
+    if (canvas && canvas.addEventListener) {
+      canvas.addEventListener('mousedown', () => location.reload());
+      canvas.addEventListener('pointerdown', () => location.reload()); // the touch handler's preventDefault swallows the compatibility mousedown
+    }
   }
 
   function installCrashHandlers() {
@@ -190,7 +199,10 @@
     canvas = document.getElementById('game');
     r = CB.createRenderer(canvas);
     r.resize();
-    window.addEventListener('resize', () => r.resize());
+    window.addEventListener('resize', () => {
+      r.resize();
+      portraitPause();
+    });
     const input = CB.createInput({ canvas, renderer: r });
     const debug = CB.debugFromLocation(location);
 
@@ -201,9 +213,14 @@
         game.scene = CB.Scenes[name];
         game.sceneName = name;
         input.releaseAll();
+        input.setTouchMode('menu'); // every scene starts with taps; the play scene asks for the sticks itself, every update
         game.scene.enter(game, data || {});
         const label = from ? WIPES[from + '>' + name] : null;
         if (label && CB.Transition && CB.Transition.start) CB.Transition.start(label);
+      },
+      // A one-line toast from outside the scene (a controller coming or going); scenes without toasts ignore it.
+      notify(text) {
+        if (game.scene && typeof game.scene.notify === 'function') game.scene.notify(text);
       },
     };
     CB.game = game;
@@ -220,6 +237,7 @@
     const unlock = () => CB.Audio.init();
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
+    window.addEventListener('touchend', unlock); // a touch pointerdown is not a user activation, but its touchend is
     const blur = () => {
       input.releaseAll();
       if (game.scene && game.scene.onBlur) game.scene.onBlur();
@@ -227,6 +245,20 @@
     window.addEventListener('blur', blur);
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) blur();
+    });
+    // The page asks for landscape (a rotate overlay covers the canvas in portrait), so a fight does not run behind it.
+    // Every resize and rotation re-applies the pause, because a scene can be resumed underneath the overlay otherwise.
+    function portraitPause() {
+      if (input.device === 'touch' && CB.Touch && typeof CB.Touch.isPortrait === 'function' && CB.Touch.isPortrait(window)) blur();
+    }
+    window.addEventListener('orientationchange', portraitPause);
+    window.addEventListener('gamepadconnected', () => {
+      unlock(); // a pad press is a user gesture too
+      game.notify('controller connected');
+    });
+    window.addEventListener('gamepaddisconnected', () => {
+      game.notify('controller disconnected');
+      blur(); // auto-pauses a fight, so the pad you just lost is not mid-dodge
     });
 
     if (debug.active) game.go('play', { runOpts: debug });

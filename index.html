@@ -3,20 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B0B10">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>Clawd vs Bugs</title>
 <link rel="icon" href="data:,">
 <style>
   :root { color-scheme: dark; --bg: #0B0B10; --fg: #E8E6F0; --muted: #8C8AA0; --accent: #D97757; }
-  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); overflow: hidden; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); overflow: hidden; overscroll-behavior: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
   body { font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   #game { display: block; width: 100%; height: 100%; cursor: none; touch-action: none; image-rendering: pixelated; }
   #game:focus { outline: none; }
   noscript { position: absolute; inset: 0; display: grid; place-items: center; padding-inline: 16px; color: var(--fg); }
+  #rotate { display: none; position: fixed; inset: 0; z-index: 10; place-items: center; padding-inline: 16px; background: var(--bg); color: var(--fg); text-align: center; touch-action: none; pointer-events: auto; }
+  @media (orientation: portrait) and (pointer: coarse) { #rotate { display: grid; } }
 </style>
 </head>
 <body>
 <canvas id="game" tabindex="0" aria-label="Clawd vs Bugs game screen"></canvas>
 <noscript>Clawd vs Bugs needs JavaScript to run.</noscript>
+<div id="rotate">↻ Rotate your phone to play</div>
 <script src="src/core/ns.js"></script>
 <script src="src/core/math.js"></script>
 <script src="src/core/rng.js"></script>
