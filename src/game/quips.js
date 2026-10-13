@@ -32,7 +32,7 @@
       mergeConflict: { 2: ['git add -p ???', '<<<<<<< HEAD', '>>>>>>> theirs'] },
       heisenbug: {
         2: ['cannot reproduce', 'works for me', 'observed: no bug'],
-        3: ['works on my machine', 'flaky test?', "it's a feature"],
+        3: ['works on my machine', 'flaky test?', "it's a feature", 'regression detected'],
       },
     },
     pick,

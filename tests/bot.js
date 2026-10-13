@@ -2,8 +2,8 @@
 // Deterministic headless bot.
 // Targeting: boss parts first. Among them it keeps its current target unless another part has 15+ more HP.
 // This level-keeping wears the Merge Conflict twins down evenly, so both can fall inside the resolve window,
-// and it ignores Heisenbug's 1-HP decoys while the real body is targetable. With no boss part it shoots the
-// nearest regular bug.
+// and since Heisenbug mirrors one HP pool into every moth it simply keeps staring at the moth it has (which is
+// what fills that moth's strain ring). With no boss part it shoots the nearest regular bug.
 // Movement: kite at ~80 px, strafe, lead the aim, steer off walls, dash across bullets about to hit.
 // /compact (rev 3 meter: 45 hits, every boss fight starts full) fires as soon as the meter is full during a boss fight,
 // or when 6+ enemy bullets are on screen.

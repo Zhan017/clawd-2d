@@ -6,7 +6,7 @@
 //   - a part that moves publishes a non-zero velocity;
 //   - every event emitted during 10+ s of fighting carries a finite x, y.
 // The part, velocity and event checks run in every scenario (phase 1, each later phase, and for the Merge Conflict the one-twin-down window with its revive),
-// so parts that only exist later (Heisenbug decoys, the revived twin, Memory Leak blobs) are covered too.
+// so parts that only exist later (the Heisenbug's third moth, the revived twin, Memory Leak blobs) are covered too.
 // Shake is asserted through a spy on w.addShake and by calling the controller directly: world.step decays w.shake at the end of the tick.
 const test = require('node:test');
 const assert = require('node:assert');
@@ -26,7 +26,7 @@ const BOSSES = [
   { id: 'infiniteLoop', period: 3.0, main: (b) => [b.head], phases: { 2: 0.5 }, expect: ['enemyShoot', 'bossPhase'], late: [] },
   { id: 'memoryLeakBoss', period: 2.5, main: (b) => [b.body], phases: { 2: 0.5 }, expect: ['lob', 'splat', 'bossPhase', 'enemyShoot'], late: ['leakBlob'] },
   { id: 'mergeConflict', period: 2.8, main: (b) => [b.head, b.incoming], phases: { 2: 0.5 }, expect: ['enemyShoot', 'beamCharge', 'beam', 'bossPhase'], late: ['conflictTwin'] },
-  { id: 'heisenbug', period: 2.5, main: (b) => [b.body], phases: { 2: 0.6, 3: 0.25 }, expect: ['enemyShoot', 'teleport', 'bossPhase'], late: ['heisenDecoy'] },
+  { id: 'heisenbug', period: 2.5, main: (b) => [b.body], phases: { 2: 0.6, 3: 0.25 }, expect: ['enemyShoot', 'teleport', 'bossPhase', 'beamCharge'], late: ['heisenbug'] },
 ];
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -99,7 +99,7 @@ for (const def of BOSSES) {
       assert.ok(!e.regular, `${e.kind} is flagged regular`);
       assert.ok(e.noContactT >= 0.45, `${e.kind} noContactT ${e.noContactT}`);
     }
-    // Anything that appears later and is not an ordinary gauntlet bug (blobs, decoys, a revived twin) is a boss part too: it is checked on the tick it first shows.
+    // Anything that appears later and is not an ordinary gauntlet bug (blobs, the third moth, a revived twin) is a boss part too: it is checked on the tick it first shows.
     const lateKinds = new Set();
     let known;
     runScenarios(

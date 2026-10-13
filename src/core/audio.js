@@ -6,8 +6,9 @@
   const NOISE_SEED = 0xc1a0d;
   const MUTE_KEY = 'cb.muted';
 
-  // Seconds between two plays of the same sound, measured on ctx.currentTime. `perfect` carries the old graze throttle.
-  const THROTTLE = { shoot: 0.07, enemyShoot: 0.09, hit: 0.04, perfect: 0.05, blast: 0.06 };
+  // Seconds between two plays of the same sound, measured on ctx.currentTime. `perfect` carries the old graze throttle; `clink` stops a stream
+  // of bolts bouncing off a Heisenbug wave from machine-gunning.
+  const THROTTLE = { shoot: 0.07, enemyShoot: 0.09, hit: 0.04, perfect: 0.05, blast: 0.06, clink: 0.05 };
   // Pitch multipliers cycled per sound, so a stream of identical blips does not machine-gun. A throttled play does not advance them.
   const VARIANTS = { shoot: [1, 1.06, 0.97, 1.09], hit: [1, 0.92, 1.1], enemyDie: [1, 0.85, 1.15, 0.93] };
   // Music ducking per event: [amount, hold seconds, release seconds].

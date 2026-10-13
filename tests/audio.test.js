@@ -348,7 +348,7 @@ test('audio: heartbeat is not throttled', () => {
 
 test('audio: throttles are measured on ctx.currentTime and the first sound is never swallowed', () => {
   // [sound, gap, oscillators + noise bursts one play starts]
-  for (const [name, gap, voices] of [['shoot', 0.07, 1], ['enemyShoot', 0.09, 1], ['hit', 0.04, 1], ['perfect', 0.05, 2], ['blast', 0.06, 2]]) {
+  for (const [name, gap, voices] of [['shoot', 0.07, 1], ['enemyShoot', 0.09, 1], ['hit', 0.04, 1], ['perfect', 0.05, 2], ['blast', 0.06, 2], ['clink', 0.05, 1]]) {
     const { CB, ctx } = boot();
     ctx.currentTime = 0;
     CB.Audio.play(name);
@@ -364,7 +364,7 @@ test('audio: throttles are measured on ctx.currentTime and the first sound is ne
 
 test('audio: sounds without a throttle play every time', () => {
   const { CB, ctx } = boot();
-  CB.Audio.handleEvents([{ type: 'enemyDie', x: 1, y: 1 }, { type: 'enemyDie', x: 2, y: 2 }, { type: 'clink', x: 1, y: 1 }, { type: 'clink', x: 1, y: 1 }]);
+  CB.Audio.handleEvents([{ type: 'enemyDie', x: 1, y: 1 }, { type: 'enemyDie', x: 2, y: 2 }, { type: 'spawn', x: 1, y: 1 }, { type: 'spawn', x: 1, y: 1 }]);
   assert.equal(starts(ctx).length, 4);
   assert.equal(ctx.bufferSources.length, 2);
 });

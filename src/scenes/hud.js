@@ -14,6 +14,7 @@
   const GHOST_RATE = 20; // 1/s: how fast it eases (the segment is gone about 0.3 s after the hit)
   const PIP_MASK = [[1, 3], [0, 4], [0, 4], [0, 4], [1, 3]]; // [first, last] lit column in each row of the 5x5 pip
   const BANNER_TEXT = 'Compacting conversation...';
+  let looking = false; // this frame's boss reports a moth being looked at: set by draw(), read by cursor() right after it
 
   // Hearts: R is the rim (ink would vanish on the HUD strip), r the body, w the shine. The empty heart is a slate hollow in a grey rim.
   CB.Art.defineSprite('heart_full', ['.RR.RR.', 'RrwRrrR', 'RrrrrrR', '.RrrrR.', '..RrR..', '...R...']);
@@ -45,6 +46,8 @@
     '....kwk....',
     '.....k.....',
   ]);
+  // The same crosshair with cyan arms: it tints while the aim is looking at a Heisenbug moth (the tether on the floor is cyan too).
+  for (const i of [0, 1]) CB.Art.defineSprite('cursor_cross_look_' + i, CB.Art.spriteDef('cursor_cross_' + i).rows.map((row) => row.replace(/w/g, 'c')));
   // Pointer: the tip (top-left pixel) is the hotspot.
   CB.Art.defineSprite('cursor_pointer', ['k......', 'kk.....', 'kwk....', 'kwwk...', 'kwwwk..', 'kwwwwk.', 'kwwwwwk', 'kkkwwk.', '..kwwk.', '...kk..']);
 
@@ -183,6 +186,7 @@
 
     draw(r, run, t) {
       const w = run && run.world;
+      looking = !!(w && w.boss && !w.boss.defeated && w.boss.observing === true);
       if (!w || !w.player) return;
       const p = w.player;
       const stage = stageOf(run);
@@ -216,7 +220,7 @@
         r.sprite('cursor_pointer', cx + 3.5, cy + 5);
         return;
       }
-      r.sprite(Math.floor(num(t, 0) / 0.25) % 2 ? 'cursor_cross_1' : 'cursor_cross_0', cx, cy);
+      r.sprite((looking ? 'cursor_cross_look_' : 'cursor_cross_') + (Math.floor(num(t, 0) / 0.25) % 2), cx, cy);
     },
   };
 })(window.CB);

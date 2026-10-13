@@ -115,7 +115,7 @@ Starting a run goes fullscreen where the browser allows it. In portrait the game
 | **The Infinite Loop** | `~/src/` | A centipede circling the arena. Only its head takes damage, and its body blocks your shots. In phase 2 the circle tightens, it reverses direction and sheds segments that become Syntax Errors. |
 | **Memory Leak** | `~/node_modules/` | A slime that heals and grows whenever you stop hurting it. It lobs blobs (watch their shadows) that land as sticky puddles: they slow you and burn on contact. It also splits off smaller leaks as it weakens. |
 | **Merge Conflict** | `~/.git/` | Twin beetles, HEAD and incoming, that mirror each other and fire a beam between them. Kill one and you have 6 seconds to finish the other, or it comes back. Wear both down evenly. |
-| **The Heisenbug** | `~/prod/` | It teleports away if you stare at it too long; an observer ring shows the timer. It spawns decoys, then switches to spiral bullet patterns and summons Null Pointers. |
+| **The Heisenbug** | `~/prod/` | Only what you look at is real. The moth under your crosshair turns to stone and is the only thing that takes damage, but staring overloads it: a ring fills, then it novas and jumps. Look away and the other moths are ghosts that ignore your bolts and hunt you from your blind side, lunging along a dotted line you can sidestep. Swap targets to cancel their lunges. At 60% a third moth splits off; below 25% they merge into a giant that is only awake while you look at it. |
 
 - **Stagecraft:** each boss arrives with a glitching portrait on the warning card and an entrance burst. The arena also changes: an orbit ring for the Loop, a heap gauge for the Leak, a HEAD/incoming split for the Conflict, glitch bands for the Heisenbug.
 - **Fair hits:** phase changes come with a freeze-frame, a shake and a scan line, and each one drops a hotfix heart near you.
@@ -188,7 +188,7 @@ Picking a patch makes Clawd celebrate.
 ### Play your way
 
 - **Three ways to play:** keyboard and mouse, a controller, or touch. Switch at any moment and every prompt switches with you ("Click to start", "Tap to start", "Press A to start").
-- **Stick aim assist:** with a stick or a thumb, the aim gently snaps onto a regular bug within 10° of where you're shooting. It never helps on bosses, so the Heisenbug's decoys stay a puzzle. Mouse aim is never assisted.
+- **Stick aim assist:** with a stick or a thumb, the aim gently snaps onto a regular bug within 10° of where you're shooting. It never helps on bosses, so the Heisenbug is always a matter of where you point the stick. Mouse aim is never assisted.
 - **Toggles you can tap:** the title and pause screens have sound, music and calm toggles that work by click, tap or controller, so a phone needs no keyboard.
 - **Controller extras:** rumble, a "controller connected" toast, and an automatic pause if the controller disconnects mid-fight.
 

@@ -182,26 +182,13 @@ Every boss has a **2.5 s warning card** before the fight: flashing `⚠ WARNING`
   - The puzzle the bars teach: wear both twins down evenly, then finish them inside the window.
 
 **Boss 4 — The Heisenbug** (`heisenbug`)
-- **Tagline:** `works on my machine`
-- **Body:** a glitchy moth with chromatic-offset rendering, r = 9, HP 190 (240 before the 2026-10-13 cut).
-- **Observation rule (all phases):**
-  - If the aim point stays within 14 px of the real Heisenbug continuously for 2.0 s, it is "observed".
-  - **Tell:** an observer ring of 16 dots around the real body fills as the timer runs, the chromatic offset grows from 1 to 3 px, and it flashes white at 1.0 s.
-  - It immediately teleports (a "!?" pop and glitch burst) to a random arena point at least 80 px from the player.
-  - The observe timer resets on teleport or when the aim leaves the 14 px radius.
-- **Phase 1 (100–60%):**
-  - It blinks to a new random position every 2.5–3.5 s: a 0.3 s fade-out, then a 0.3 s fade-in. It is untargetable while faded.
-  - After each blink it fires a ring of 10 bullets.
-- **Phase 2 (60–25%):**
-  - Each blink also places 2 **decoys** that look identical. Decoys are separate enemies with HP 1 that pop with a "404" text when hit.
-  - Decoys fire 6-bullet rings when the real one fires its ring.
-  - Decoys are removed and replaced on every blink.
-  - Only the real one flickers white when hit.
-- **Phase 3 (<25%):**
-  - Decoys are removed and no longer appear.
-  - It blinks every 5 s.
-  - It fires a rotating 2-arm spiral: 8 bullets/s, rotating 2.2 rad/s.
-  - Every 8 s it summons 2 `nullPointer`s, with at most 4 alive.
+- Redesigned on 2026-10-13 as **"The Observer Effect"**; `2026-10-13-heisenbug-observer-effect.md` is the binding spec (190 HP and the blink, decoy and spiral design below this line no longer exist). What stays: the name, the tagline `works on my machine`, the moth sprites, the `~/prod/` stage, the boss card, the commit line `fix: cannot reproduce (closed)`, and the two phase thresholds (so two hotfix hearts).
+- **The law: only what you look at is real.** Looking is a ray from Clawd through the aim point (mouse, stick or touch alike), 14 px wide (20 px once it holds, 0.35 s of grace for bolts in flight). A looked-at moth is **stone**: frozen, harmless to touch, and the only thing that takes damage. Every other moth is a **ghost**: translucent, immune (bolts and /compact clink off), harmless unless lunging, and it hunts Clawd from the blind side, 70 degrees off the aim ray.
+- **Strain:** damage dealt to a stone moth fills its 16-dot ring. A full ring is a white-out, a nova of 8 with a gap centred on Clawd, a jump at least 80 px away, then 1 s dazzled.
+- **Lashes:** damage dealt charges a shared lash (a quiet player still gets one every 4.5 s, and nothing attacks in the first 2.6 s). The nearest idle ghost lunges (0.6 s tell with a dotted line and landing ring, a 55 px dash, contact only in the dash) or, from further than 90 px, fires a 9-bullet ripple with the gap on Clawd. Looking at a ghost during its tell freezes it and cancels the lunge.
+- **Phases (one HP pool, one boss bar, 340 HP):** 1 an entangled pair; 2 (below 60%) a third moth splits off, lashes come sooner and the ghosts pincer; 3 (below 25%) the three merge into a **giant** and the law inverts: it is awake and solid only while looked at, and looking provokes it (reflected sparks per 2.4 damage dealt, a lunge per 14, a bigger nova at 26 strain). Unobserved it sleeps as stone, harmless and immune.
+- **The last hit:** the pool floors just above 0, the giant goes to stone under a collapsing gold ring and a gold `REPRODUCED` pop, and the body dies about 0.9 s later, so the usual slow motion, blasts and BUG FIXED card follow.
+- **Fairness:** every nova and ripple leaves a gap centred on Clawd, every lunge is telegraphed for at least 0.6 s, new and jumping moths land at least 80 px away with 0.45 s of no contact, calm mode holds the white-out instead of flashing it, and every tell has a shape as well as a colour (nothing red on the red stage).
 
 **Boss defeat**
 - 1.5 s of slow motion (sim at 0.3×) with chained explosions.
@@ -316,7 +303,7 @@ dead → retry: restart current stage at stageIntro (full hearts, patches as the
   - the warning card slides in a glitching boss portrait;
   - the arena gets a per-boss overlay: the loop orbit ring, a heap gauge, a HEAD/incoming split and glitch bands;
   - a phase change sweeps a scan bar;
-  - the Heisenbug observer ring makes its rule learnable.
+  - the Heisenbug's cyan tether, strain ring and tinted crosshair make its rule learnable.
 
 **Meta and replay:**
 - **Victory tally:** bugs squashed by type (with icons) and a `git log` of the four fixes. It is a receipt, not a score.
@@ -500,7 +487,7 @@ controller = { id, hp, maxHp, phase, defeated, update(world, dt), draw(r, t) /*o
   - Infinite Loop: segments absorb bolts and the head takes damage;
   - Memory Leak: regenerates and grows when idle, shrinks on hit;
   - Merge Conflict: revive after 6.0 s, defeat if both die within the window;
-  - Heisenbug: teleports after 2.0 s of continuous observation, decoys pop in one hit.
+  - Heisenbug: only looked-at moths take damage; strain, lashes, the three phases and the REPRODUCED beat (see its own spec).
 - `stageRunner`: the full state sequence; retry restores stage-start patches and full hearts; victory after stage 4; deaths and time accounting.
 
 **Headless playthrough** (`sim.test.js`)
