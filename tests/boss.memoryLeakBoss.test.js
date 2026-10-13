@@ -314,7 +314,7 @@ test('memoryLeakBoss: a blob flies in a straight line, publishes its velocity, t
   assert.equal(landed[0].kind, 'puddle');
   assert.equal(landed[0].r, 12);
   assert.equal(landed[0].slow, 0.5);
-  assert.ok(landed[0].life > 5.9 && landed[0].life <= 6, `life ${landed[0].life}`);
+  assert.ok(landed[0].life > 4.4 && landed[0].life <= 4.5, `life ${landed[0].life}`);
   const splat = w.events.slice(evFrom).find((e) => e.type === 'splat' && e.x === d.tx && e.y === d.ty);
   assert.ok(splat, 'splat at the landing point');
   const die = w.events.slice(evFrom).find((e) => e.type === 'enemyDie' && e.kind === 'leakBlob');
@@ -330,6 +330,25 @@ test('memoryLeakBoss: a landed puddle slows Clawd to half speed while she stands
   w.player.y = puddle.y;
   H.stepN(w, 1, idle);
   assert.equal(w.player.slow, 0.5);
+});
+
+test('memoryLeakBoss: a blob that lands on Clawd hurts, and so does standing in its puddle; one beside her does not', () => {
+  const { w } = start();
+  H.stepN(w, 2.6 * 60, idle); // the first lob (at 2.5 s) is in the air
+  const blobs = w.enemies.filter((e) => !e.dead && e.kind === 'leakBlob');
+  assert.ok(blobs.length >= 2, 'two blobs in flight');
+  const [onHer, beside] = blobs;
+  beside.data.tx = onHer.data.tx + 40; // a second landing spot well clear of her
+  beside.data.ty = onHer.data.ty;
+  w.player.x = onHer.data.tx; // Clawd stands on the first shadow and does not move
+  w.player.y = onHer.data.ty;
+  const before = w.stats.wouldHits;
+  let n = 0;
+  while (w.enemies.some((e) => e === onHer && !e.dead) && n++ < 120) H.stepN(w, 1, () => H.makeInput({ aimX: 300, aimY: w.player.y }));
+  H.stepN(w, 1, idle);
+  assert.equal(w.stats.wouldHits, before + 1, 'the landing splash is one hit, the one beside her none');
+  H.stepN(w, 70, idle); // still standing in the puddle once the mercy frames run out
+  assert.equal(w.stats.wouldHits, before + 2, 'the puddle keeps burning');
 });
 
 test('memoryLeakBoss: lob targets stay on the floor when Clawd hugs a corner', () => {

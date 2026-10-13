@@ -110,7 +110,10 @@
         h.dead = true;
         continue;
       }
-      if (h.kind === 'puddle' && !p.dead && M.dist2(h.x, h.y, p.x, p.y) <= h.r * h.r) slow = Math.min(slow, h.slow);
+      if (h.kind === 'puddle' && !p.dead && M.dist2(h.x, h.y, p.x, p.y) <= h.r * h.r) {
+        slow = Math.min(slow, h.slow);
+        if (h.hurts) CB.Player.hurt(p, w); // leaked memory burns: a heart on contact, then the usual mercy frames (a dash's invulnerability crosses it)
+      }
     }
     p.slow = slow;
   }
@@ -315,7 +318,7 @@
     };
 
     w.addHazard = function (h) {
-      const hz = Object.assign({ kind: 'puddle', r: 12, life: 6, slow: 0.5, t: 0, dead: false }, h);
+      const hz = Object.assign({ kind: 'puddle', r: 12, life: 6, slow: 0.5, hurts: true, t: 0, dead: false }, h);
       w.hazards.push(hz);
       return hz;
     };

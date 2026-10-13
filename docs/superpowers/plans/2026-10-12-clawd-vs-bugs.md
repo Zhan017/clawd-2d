@@ -8766,3 +8766,13 @@ Boss fight length, bot in god mode, waves skipped, 6 seeds, mean seconds before 
 
 Would-be hits per fight stayed in the same range, so the fights are shorter, not harder.
 
+**Memory Leak puddles hurt (orchestrator, 2026-10-13, user report: "they land on Clawd or he walks on them and nothing happens"):**
+- `world.js` `addHazard`: puddles default to `hurts: true`, and `updateHazards` calls `Player.hurt` while Clawd's centre is inside one. Mercy frames and dash invulnerability apply, so a blob landing on Clawd is a hit.
+- `memoryLeakBoss.js`: puddle life 6 s → 4.5 s (`PUDDLE_LIFE`).
+- `tests/bot.js`: the bot steps out of puddles and away from blob shadows, as a player would.
+- **Leak fight, would-be hits per fight:**
+  - zero-latency bot, base kit: 5–8 → 4–11
+  - slow bot (0.25 s reaction), base kit: 6–13 → 9–16
+  - one patch: 1–5
+  - The sim gate (delayed bot, 0.15 s) is 8, inside 3–20.
+

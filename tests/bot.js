@@ -80,6 +80,19 @@ function makeBot(opts) {
       mx += (cx - p.x) / 50;
       my += (cy - p.y) / 50;
     }
+    // Leak puddles hurt: step out of them, and away from where a lobbed blob is about to land (its shadow).
+    const zones = [];
+    for (const h of w.hazards || []) if (!h.dead && h.kind === 'puddle') zones.push([h.x, h.y, h.r]);
+    for (const e of w.enemies) if (!e.dead && e.kind === 'leakBlob' && e.data) zones.push([e.data.tx, e.data.ty, 12]);
+    for (const [hx, hy, hr] of zones) {
+      const dx = p.x - hx;
+      const dy = p.y - hy;
+      const d = Math.hypot(dx, dy) || 1;
+      if (d < hr + 10) {
+        mx += (dx / d) * 2;
+        my += (dy / d) * 2;
+      }
+    }
     for (const b of w.eBullets) {
       const vv = b.vx * b.vx + b.vy * b.vy;
       if (vv < 1) continue;

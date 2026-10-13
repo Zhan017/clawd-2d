@@ -363,11 +363,12 @@ test('unchanged: inputs without the new fields and inputs with them neutral driv
 });
 
 // Fingerprints of bot replays. They were first taken with the pre-T4a player.js and heisenbug.js, and re-recorded after the 2026-10-13
-// boss-HP cut (infiniteLoop, memoryLeakBoss, mergeConflict, heisenbug), which changes how far the bot gets into each boss fight. They still
+// boss-HP cut (infiniteLoop, memoryLeakBoss, mergeConflict, heisenbug), which changes how far the bot gets into each boss fight, and the stage 2
+// one again when Memory Leak puddles started to hurt (the bot now steps around them). They still
 // guard that mouse- and bot-driven inputs follow the non-stick path, bit-identically: update these only when the simulation is changed on purpose.
 const GOLDEN = [
   { seed: 7, stage: 0, ticks: 2400, state: 'boss', px: '88.033774', py: '68.984578', shots: 200, kills: 17, dmg: '138.000000', compacts: 2 },
-  { seed: 3, stage: 1, ticks: 2400, state: 'boss', px: '135.896520', py: '98.806459', shots: 200, kills: 38, dmg: '153.000000', compacts: 2 },
+  { seed: 3, stage: 1, ticks: 2400, state: 'boss', px: '199.991500', py: '68.074677', shots: 200, kills: 38, dmg: '153.000000', compacts: 2 },
   { seed: 5, stage: 2, ticks: 3000, state: 'boss', px: '168.408265', py: '80.234127', shots: 250, kills: 19, dmg: '198.000000', compacts: 3 },
   { seed: 11, stage: 3, ticks: 3600, state: 'boss', px: '150.642629', py: '74.169872', shots: 300, kills: 34, dmg: '198.000000', compacts: 3 },
 ];

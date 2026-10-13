@@ -20,6 +20,7 @@
   const LOB_SPREAD = 24; // blobs land within this many px of Clawd, uniform over the disc
   const ARC_HEIGHT = 22; // the parabola's apex over the straight line, in px (drawing only)
   const PUDDLE_R = 12;
+  const PUDDLE_LIFE = 4.5; // seconds; puddles hurt on contact, so they clear a little sooner than the 6 s they had as slow-only zones
   const SPLIT_FRACS = [0.66, 0.33];
   const SPLIT_DIST = 20; // px from the body's centre
   const SPLIT_TURN = Math.PI / 3; // the second split is turned 60 degrees from the first, so a double split never stacks
@@ -145,7 +146,7 @@
       e.vx = dt > 0 ? (e.x - ox) / dt : 0;
       e.vy = dt > 0 ? (e.y - oy) / dt : 0;
       if (d.t >= d.dur - EPS) {
-        w.addHazard({ kind: 'puddle', x: d.tx, y: d.ty, r: PUDDLE_R, life: 6, slow: 0.5 });
+        w.addHazard({ kind: 'puddle', x: d.tx, y: d.ty, r: PUDDLE_R, life: PUDDLE_LIFE, slow: 0.5 });
         w.emit('splat', { x: d.tx, y: d.ty });
         w.killEnemy(e, true); // silent: the splat above is its burst
       }

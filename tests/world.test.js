@@ -231,13 +231,40 @@ test('world: a new player bolt does not move on its spawn tick', () => {
 test('world: puddle hazard halves player speed while inside', () => {
   const { w } = setup();
   const p = w.player;
-  w.addHazard({ x: p.x, y: p.y, r: 12 });
+  w.addHazard({ x: p.x, y: p.y, r: 12, hurts: false }); // the slow alone: a hurting puddle's hit-stop would pause the walk
   H.stepN(w, 1, idle);
   assert.equal(p.slow, 0.5);
   const x0 = p.x;
   H.stepN(w, 10, () => H.makeInput({ moveX: 1, aimX: 300, aimY: p.y }));
   const moved = p.x - x0;
   assert.ok(moved > 6 && moved < 7.5, `moved ${moved}`);
+});
+
+test('world: a puddle hurts on contact by default, once per mercy window, and slows too', () => {
+  const { w } = setup();
+  const p = w.player;
+  const hearts = p.hearts;
+  const hz = w.addHazard({ x: p.x, y: p.y, r: 12 });
+  assert.equal(hz.hurts, true, 'puddles hurt unless told otherwise');
+  H.stepN(w, 1, idle);
+  assert.equal(p.hearts, hearts - 1, 'standing in it costs a heart');
+  assert.equal(p.slow, 0.5);
+  H.stepN(w, 30, idle); // half a second, still inside: the mercy frames hold
+  assert.equal(p.hearts, hearts - 1);
+  H.stepN(w, 40, idle); // past the 1 s of mercy, still inside: it bites again
+  assert.equal(p.hearts, hearts - 2);
+});
+
+test('world: a puddle does not hurt from outside its radius, or through a dash', () => {
+  const { w } = setup();
+  const p = w.player;
+  const hearts = p.hearts;
+  w.addHazard({ x: p.x + 20, y: p.y, r: 12 });
+  H.stepN(w, 5, idle);
+  assert.equal(p.hearts, hearts, 'outside: no harm');
+  H.stepN(w, 1, () => H.makeInput({ moveX: 1, dash: true, aimX: 300, aimY: p.y })); // dash straight through it
+  H.stepN(w, 8, () => H.makeInput({ moveX: 1, aimX: 300, aimY: p.y }));
+  assert.equal(p.hearts, hearts, 'the dash invulnerability crosses it unharmed');
 });
 
 test('world: ricochet bolt bounces once off the wall', () => {

@@ -160,7 +160,7 @@ Every boss has a **2.5 s warning card** before the fight: flashing `⚠ WARNING`
   - Every 2.5 s it lobs 2 blobs (3 in phase 2).
   - Each blob flies in an arc for 1.0 s to a point within 24 px of the player (uniform over the disc).
   - The arc is purely visual: a parabola over the straight line, with its shadow drawn on the ground.
-  - On landing a blob becomes a **puddle hazard** (r = 12, lasts 6 s). The player moves at 50% speed while inside it. Puddles do no damage.
+  - On landing a blob becomes a **puddle hazard** (r = 12, lasts 4.5 s). The player moves at 50% speed while inside it. Since 2026-10-13 puddles also hurt on contact (one heart, then the usual mercy frames; a dash's invulnerability crosses them), so a blob landing on Clawd is a hit. The 1 s shadow and ring are the telegraph.
 - **Splits:** at 66% and 33% HP it spawns 3 `memoryLeak` (big) enemies around itself.
 - **Phase 2 (<50%):** adds a ring of 8 bullets every 4 s.
 

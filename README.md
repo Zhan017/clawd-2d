@@ -109,7 +109,7 @@ Starting a run goes fullscreen where the browser allows it. In portrait the game
 | Boss | Stage | Trick |
 |---|---|---|
 | **The Infinite Loop** | `~/src/` | A centipede circling the arena. Only its head takes damage, and its body blocks your shots. In phase 2 the circle tightens, it reverses direction and sheds segments that become Syntax Errors. |
-| **Memory Leak** | `~/node_modules/` | A slime that heals and grows whenever you stop hurting it. It lobs blobs that leave slowing puddles and splits off smaller leaks as it weakens. |
+| **Memory Leak** | `~/node_modules/` | A slime that heals and grows whenever you stop hurting it. It lobs blobs (watch their shadows) that land as sticky puddles: they slow you and burn on contact. It also splits off smaller leaks as it weakens. |
 | **Merge Conflict** | `~/.git/` | Twin beetles, HEAD and incoming, that mirror each other and fire a beam between them. Kill one and you have 6 seconds to finish the other, or it comes back. Wear both down evenly. |
 | **The Heisenbug** | `~/prod/` | It teleports away if you stare at it too long; an observer ring shows the timer. It spawns decoys, then switches to spiral bullet patterns and summons Null Pointers. |
 
