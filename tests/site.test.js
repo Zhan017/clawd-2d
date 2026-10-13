@@ -23,6 +23,8 @@ function buildOnce() {
 }
 
 const readOut = (rel) => fs.readFileSync(path.join(OUT, rel), 'utf8');
+// The bodies of a page's inline (no src) <script>s, in order.
+const inlineScripts = (page) => [...page.matchAll(/<script>\n([\s\S]*?)<\/script>/g)].map((m) => m[1]);
 
 // Sorted '/'-separated file paths under dir, skipping dotfiles like the build does; [] when dir is missing.
 function walk(dir) {
@@ -133,7 +135,7 @@ test('site build: the output is deterministic, so the hash only moves when the c
   assert.deepEqual(snap(), before, 'every file is byte-identical across builds');
 });
 
-test('site build: public/index.html is the dev page with one bundle script and the worker registration', async () => {
+test('site build: public/index.html is the dev page with one bundle script, the worker registration and the analytics snippet', async () => {
   const { bundle } = await buildOnce();
   const dev = fs.readFileSync(path.join(H.ROOT, 'index.html'), 'utf8');
   const page = readOut('index.html');
@@ -141,9 +143,11 @@ test('site build: public/index.html is the dev page with one bundle script and t
   const tag = `<script src="${bundle}"></script>\n`;
   assert.equal(page.split(tag).length, 2, 'and it is the bundle');
   const inline = [...page.matchAll(/<script>\n([\s\S]*?)<\/script>\n?/g)];
-  assert.equal(inline.length, 1, 'plus one inline script: the registration');
+  assert.equal(inline.length, 2, 'plus two inline scripts: the registration, then the analytics snippet');
   assert.ok(page.indexOf('<canvas id="game"') < page.indexOf(tag), 'the bundle comes after the canvas it boots on');
-  assert.ok(page.indexOf(tag) < page.indexOf(inline[0][0]) && inline[0].index + inline[0][0].length <= page.indexOf('</body>'));
+  assert.ok(page.indexOf(tag) < page.indexOf(inline[0][0]), 'the registration follows the bundle');
+  assert.ok(inline[0].index + inline[0][0].length <= inline[1].index, 'and the analytics snippet follows the registration');
+  assert.ok(inline[1].index + inline[1][0].length <= page.indexOf('</body>'));
   const reg = inline[0][1];
   assert.match(reg, /'serviceWorker' in navigator/);
   assert.match(reg, /location\.protocol === 'https:'/);
@@ -151,15 +155,16 @@ test('site build: public/index.html is the dev page with one bundle script and t
   assert.match(reg, /try \{[\s\S]*\} catch/);
   assert.match(reg, /addEventListener\('load'/);
   assert.doesNotThrow(() => new vm.Script(reg, { filename: 'registration' }));
+  assert.doesNotThrow(() => new vm.Script(inline[1][1], { filename: 'analytics' }));
   // Everything else is byte-identical to the dev page.
   const devRest = dev.replace(/<script\s+src="[^"]+"\s*><\/script>\n?/g, '');
-  const pageRest = page.replace(tag, '').replace(inline[0][0], '');
+  const pageRest = page.replace(tag, '').replace(inline[0][0], '').replace(inline[1][0], '');
   assert.equal(pageRest, devRest);
 });
 
 test('site build: the registration only registers /sw.js on https with service worker support and never throws', async () => {
   await buildOnce();
-  const reg = readOut('index.html').match(/<script>\n([\s\S]*?)<\/script>/)[1];
+  const reg = inlineScripts(readOut('index.html')).find((code) => code.includes('serviceWorker'));
   function run({ protocol, hasSw = true, register }) {
     const calls = [];
     const handlers = {};
@@ -177,6 +182,130 @@ test('site build: the registration only registers /sw.js on https with service w
   assert.deepEqual(run({ protocol: 'https:', hasSw: false }), [], 'no service worker support');
   assert.deepEqual(run({ protocol: 'https:', register: () => Promise.reject(new Error('blocked')) }), ['/sw.js'], 'a rejected registration is swallowed');
   assert.deepEqual(run({ protocol: 'https:', register: () => { throw new Error('sync'); } }), ['/sw.js'], 'a throwing register() is caught');
+});
+
+// ---- visitor stats (Vercel Web Analytics) ---------------------------------------------------------------------------------------
+
+const VA_PATH = '/_vercel/insights/script.js';
+const VA_DEFINE = 'window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };';
+
+test('site build: the analytics snippet is in public/index.html exactly once and nowhere else (not the dev page, the bundle or the worker logic)', async () => {
+  const { bundle, scripts } = await buildOnce();
+  const page = readOut('index.html');
+  assert.equal(page.split(VA_DEFINE).length, 2, 'window.va is defined once');
+  assert.equal(page.split(VA_PATH).length, 2, 'and the script path appears once');
+  const snippets = inlineScripts(page).filter((code) => code.includes('window.va'));
+  assert.equal(snippets.length, 1, 'in one inline script');
+  assert.ok(snippets[0].indexOf(VA_DEFINE) < snippets[0].indexOf(VA_PATH), 'va is defined before the script is requested');
+  assert.ok(!/<script\b[^>]*_vercel/.test(page), 'no static <script src> to the analytics path, which would 404 and log an error while analytics is off');
+  for (const f of ['index.html', ...scripts, 'tools/build-artifact.mjs']) {
+    const text = fs.readFileSync(path.join(H.ROOT, f), 'utf8');
+    assert.ok(!text.includes('_vercel') && !text.includes('vaq'), `${f} (the dev page, a game script or the Artifact build) has no analytics`);
+  }
+  assert.ok(!readOut(bundle).includes('_vercel'), 'the game bundle has none either');
+  assert.deepEqual(walk(OUT).filter((f) => f.endsWith('.html')), ['index.html'], 'public/index.html is the only page');
+});
+
+test('site build: the analytics snippet queues window.va calls and loads the script only on https after a HEAD comes back ok', async () => {
+  await buildOnce();
+  const snippet = inlineScripts(readOut('index.html')).find((code) => code.includes('window.va'));
+  const tick = () => new Promise((resolve) => setImmediate(resolve));
+  // Runs the snippet in a bare page whose window is its global; fetch answers with `reply()` (or is missing, or throws).
+  async function run({ protocol = 'https:', reply, hasFetch = true, throwSync = false, appendThrows = false, va } = {}) {
+    const heads = [];
+    const appended = [];
+    const sandbox = {
+      location: { protocol },
+      document: {
+        createElement: (tag) => ({ tag }),
+        head: { appendChild: (el) => (appendThrows ? assert.fail('append blocked') : appended.push(el)) },
+      },
+    };
+    sandbox.window = sandbox;
+    if (va) sandbox.va = va;
+    if (hasFetch) {
+      sandbox.fetch = (url, init) => {
+        heads.push([url, init]);
+        if (throwSync) throw new TypeError('blocked');
+        return reply();
+      };
+    }
+    const unhandled = [];
+    const onUnhandled = (err) => unhandled.push(err);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      vm.runInNewContext(snippet, sandbox);
+      await tick();
+      await tick();
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+    assert.deepEqual(unhandled, [], 'nothing is left rejected');
+    return { sandbox, heads, appended };
+  }
+  const ok = () => Promise.resolve({ ok: true, status: 200 });
+
+  let r = await run({ reply: ok });
+  assert.equal(r.heads.length, 1, 'one existence check');
+  assert.equal(r.heads[0][0], VA_PATH);
+  assert.equal(r.heads[0][1].method, 'HEAD');
+  assert.equal(r.appended.length, 1, 'analytics is on: the script is added');
+  assert.deepEqual({ tag: r.appended[0].tag, src: r.appended[0].src, defer: r.appended[0].defer }, { tag: 'script', src: VA_PATH, defer: true });
+
+  r = await run({ reply: () => Promise.resolve({ ok: false, status: 404 }) });
+  assert.equal(r.heads.length, 1);
+  assert.equal(r.appended.length, 0, 'analytics is off (404): no script tag, so no failed script load in the console');
+  r = await run({ reply: () => Promise.resolve({ ok: false, status: 503 }) });
+  assert.equal(r.appended.length, 0, 'any not-ok answer adds nothing');
+
+  r = await run({ reply: () => Promise.reject(new TypeError('offline')) });
+  assert.equal(r.appended.length, 0, 'offline: swallowed');
+  r = await run({ reply: ok, throwSync: true });
+  assert.equal(r.appended.length, 0, 'a throwing fetch is caught');
+  assert.equal(typeof r.sandbox.va, 'function', 'and window.va is still defined');
+  r = await run({ reply: ok, appendThrows: true });
+  assert.equal(r.heads.length, 1, 'a blocked append is swallowed too');
+
+  for (const protocol of ['http:', 'file:']) {
+    r = await run({ protocol, reply: ok });
+    assert.equal(r.heads.length, 0, `${protocol} (local dev) makes no request`);
+    assert.equal(r.appended.length, 0);
+  }
+  r = await run({ reply: ok, hasFetch: false });
+  assert.equal(r.appended.length, 0, 'no fetch support: nothing, and no throw');
+
+  // window.va queues its arguments (one entry per call) for the script to replay, and an existing va or queue is kept.
+  r = await run({ reply: ok });
+  r.sandbox.va('event', { name: 'win' });
+  r.sandbox.va('pageview');
+  assert.deepEqual(r.sandbox.vaq.map((args) => Array.from(args)), [['event', { name: 'win' }], ['pageview']]);
+  const existing = () => {};
+  r = await run({ reply: ok, va: existing });
+  assert.equal(r.sandbox.va, existing, 'an already-defined va is not replaced');
+});
+
+test('site build: the deployed page boots clean: both inline scripts run on plain http and on https with analytics off, adding nothing', async () => {
+  await buildOnce();
+  const inline = inlineScripts(readOut('index.html'));
+  assert.equal(inline.length, 2);
+  for (const protocol of ['http:', 'https:']) {
+    const heads = [];
+    const handlers = {};
+    const appended = [];
+    const sandbox = {
+      location: { protocol },
+      navigator: {},
+      fetch: (url, init) => (heads.push([url, init && init.method]), Promise.resolve({ ok: false, status: 404 })),
+      document: { createElement: (tag) => ({ tag }), head: { appendChild: (el) => appended.push(el) } },
+      addEventListener: (type, fn) => (handlers[type] = fn),
+    };
+    sandbox.window = sandbox;
+    for (const code of inline) assert.doesNotThrow(() => vm.runInNewContext(code, sandbox), protocol);
+    assert.doesNotThrow(() => handlers.load(), 'and the load handler');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(heads, protocol === 'https:' ? [[VA_PATH, 'HEAD']] : [], protocol);
+    assert.deepEqual(appended, [], 'a 404 adds no script');
+  }
 });
 
 test('site build: the bundle boots in a vm sandbox, defines the game and steps 600 ticks headless like the source scripts', async () => {
@@ -483,6 +612,34 @@ test('sw.js leaves non-GET and cross-origin requests to the browser and never ca
   assert.equal(JSON.stringify([...w.stores.get(w.cacheName).keys()]), before);
 });
 
+test('sw.js leaves /_vercel/ (the analytics script) to the browser: never handled, fetched, cached or served stale', async () => {
+  const sw = await swSource();
+  assert.match(sw, /startsWith\('\/_vercel\/'\)/);
+  const w = swWorld(sw);
+  await w.lifecycle('install');
+  // Even a copy that somehow got into the cache is never served.
+  w.stores.get(w.cacheName).set(`${ORIGIN}${VA_PATH}`, { status: 200, type: 'basic', body: 'stale analytics' });
+  w.net.calls.length = 0;
+  const before = JSON.stringify([...w.stores.get(w.cacheName).keys()]);
+  for (const req of [
+    new w.Request(VA_PATH),
+    new w.Request(`${VA_PATH}?v=1`),
+    new w.Request('/_vercel/speed-insights/script.js'),
+    new w.Request('/_vercel/insights/view', { method: 'POST' }),
+    new w.Request('/_vercel/anything', { mode: 'navigate' }),
+  ]) {
+    const r = await w.fetch(req);
+    assert.equal(r.handled, false, `${req.method} ${req.url}`);
+  }
+  assert.equal(w.net.calls.length, 0, 'the worker never touches the network for it');
+  assert.equal(JSON.stringify([...w.stores.get(w.cacheName).keys()]), before, 'and caches nothing');
+  // Only the /_vercel/ prefix is skipped: look-alikes are handled as before.
+  for (const url of ['/assets/_vercel/x.png', '/_vercelish.png', '/vercel/x.png']) {
+    assert.equal((await w.fetch(new w.Request(url))).handled, true, url);
+  }
+  assert.equal((await w.fetch(new w.Request('/', { mode: 'navigate' }))).handled, true, 'the page is still handled');
+});
+
 // ---- edge cases on throwaway trees ----------------------------------------------------------------------------------------------
 
 const PAGE = '<!doctype html>\n<html>\n<head>\n<title>t</title>\n</head>\n<body>\n<canvas id="game"></canvas>\n<script src="src/a.js"></script>\n<script src="src/sub/b.js"></script>\n</body>\n</html>\n';
@@ -493,7 +650,7 @@ test('site build without a manifest or assets: just the page, bundle, map and sw
     assert.deepEqual(res.files, ['index.html', res.bundle, res.map, 'sw.js'].sort());
     assert.deepEqual(res.precache, ['/', `/${res.bundle}`]);
     assert.equal(fs.readFileSync(path.join(out, res.bundle), 'utf8'), `// ---- src/a.js ----\nvar a = 1;\n// ---- src/sub/b.js ----\nvar b = 2;\n//# sourceMappingURL=${res.map}\n`);
-    assert.equal(fs.readFileSync(path.join(out, 'index.html'), 'utf8').replace(`<script src="${res.bundle}"></script>\n`, '').replace(/<script>\n[\s\S]*?<\/script>\n/, ''), PAGE.replace(/<script src="[^"]+"><\/script>\n/g, ''));
+    assert.equal(fs.readFileSync(path.join(out, 'index.html'), 'utf8').replace(`<script src="${res.bundle}"></script>\n`, '').replace(/<script>\n[\s\S]*?<\/script>\n/g, ''), PAGE.replace(/<script src="[^"]+"><\/script>\n/g, ''));
   });
 });
 

@@ -48,6 +48,28 @@ window.addEventListener('load', function () {
 </script>
 `;
 
+// Vercel Web Analytics (cookieless, first-party), in the deployed page only: never in the dev page or the Artifact build.
+// window.va queues events until the script arrives. The script is appended only once a HEAD says it exists, because until
+// the dashboard toggle is on, /_vercel/insights/script.js is a 404 and a plain <script src> would log a console error.
+// https only, and nothing here may touch the game: it is wrapped, and a failed or offline check is swallowed.
+const ANALYTICS = `<script>
+(function () {
+  try {
+    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+    if (location.protocol !== 'https:' || !window.fetch) return;
+    var src = '/_vercel/insights/script.js';
+    fetch(src, { method: 'HEAD' }).then(function (res) {
+      if (!res.ok) return;
+      var el = document.createElement('script');
+      el.defer = true;
+      el.src = src;
+      document.head.appendChild(el);
+    }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
+`;
+
 // The worker's behaviour, appended to a generated header that defines CACHE, BUNDLE and PRECACHE.
 const SW_RUNTIME = `
 // Install: fill this build's cache. The page and the unhashed files skip the HTTP cache, so the cached page and bundle are
@@ -72,10 +94,12 @@ self.addEventListener('activate', (event) => {
 });
 
 // Fetch: navigations are network-first, so a new deploy always shows, and fall back to the cached page when offline or on a
-// 5xx. Other same-origin GETs are cache-first and fill from the network. Non-GET and cross-origin requests are left alone.
+// 5xx. Other same-origin GETs are cache-first and fill from the network. Non-GET and cross-origin requests are left alone,
+// and so is /_vercel/ (Vercel's analytics script), which must always come from the network and never be served stale.
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  const url = new URL(req.url);
+  if (req.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/_vercel/')) return;
   if (req.mode === 'navigate') {
     const offline = (res) => caches.match('/', { cacheName: CACHE }).then((hit) => hit || res || Response.error());
     event.respondWith(fetch(req).then((res) => (res.status >= 500 ? offline(res) : res), () => offline()));
@@ -134,12 +158,12 @@ export function buildSite({ root = ROOT, out = join(root, 'public') } = {}) {
   });
   const sourceMap = { version: 3, file: bundle, sources: scripts, sourcesContent: codes, names: [], mappings: lines.join(';') };
 
-  // The dev page with its script tags replaced by the bundle (where the first one stood) and the worker registration.
+  // The dev page with its script tags replaced by the bundle (where the first one stood), the worker registration and the analytics snippet.
   let first = true;
   const page = html.replace(SCRIPT_RE, () => {
     if (!first) return '';
     first = false;
-    return `<script src="${bundle}"></script>\n${REGISTER}`;
+    return `<script src="${bundle}"></script>\n${REGISTER}${ANALYTICS}`;
   });
 
   rmSync(out, { recursive: true, force: true });

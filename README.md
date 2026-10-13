@@ -279,6 +279,7 @@ Debug URLs work only on localhost or `file://`, never on a deployed page:
   - The bundle's name changes with its content, so browsers cache it forever.
   - The page itself is always checked for a new version.
   - The service worker loads the page from the network first, so a new deploy shows up on the next visit and offline play still works.
+- **Analytics:** the deployed page (never the dev page) loads cookieless Vercel Web Analytics once it is switched on in the Vercel dashboard (project, Analytics, Enable); until then it only makes one quiet HEAD check and loads nothing.
 - Preview deployments stay behind Vercel Authentication. The production domain is meant to be public; that's set under the project's Deployment Protection settings.
 
 Regenerate the link preview card and app icons with `npm run art` after changing Clawd, a bug sprite, the palette or the font (a test fails until you do).
