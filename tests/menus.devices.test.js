@@ -980,14 +980,14 @@ for (const dev of DEVICES) {
     const G = env.CB.Screens.gameOver;
     const quit = box(rec, want.quit);
     assert.ok(quit, 'quit button');
-    assert.deepEqual(H.plain(G.QUIT_BOX), { x: 164, y: 128, w: 150, h: 20 }, 'the touch-sized box');
-    assert.deepEqual(H.plain(G.RETRY_BOX), { x: 6, y: 128, w: 150, h: 20 });
+    assert.deepEqual(H.plain(G.QUIT_BOX), { x: 164, y: 128, w: 120, h: 20 }, 'the touch-sized box');
+    assert.deepEqual(H.plain(G.RETRY_BOX), { x: 36, y: 128, w: 120, h: 20 });
     assert.equal(G.quitBox().h, dev === 'touch' ? 20 : 12, 'button height');
     assert.ok(inBox(quit, G.quitBox()), 'the quit box holds the label');
     for (const B of [G.quitBox(), G.retryBox()]) {
       assert.deepEqual(rec.texts().filter((b) => touches(b, B) && !inBox(b, B)).map((b) => b.str), [], 'nothing else touches a button');
     }
-    assert.ok(Math.abs(centreX(quit) - (G.quitBox().x + 75)) <= 1);
+    assert.ok(Math.abs(centreX(quit) - (G.quitBox().x + 60)) <= 1);
     // The first Q arms the quit: the button says so in gold.
     const armed = drawScreen(env, 'gameOver', base, 1, { quitArmT: 1.2 });
     assert.ok(box(armed, want.armed), dev + ': armed label');
@@ -1377,6 +1377,22 @@ test('title: a tap on the install button runs the prompt and toasts the outcome,
   assert.equal(env.visits.length, 0);
 });
 
+test('title: the install prompt waits for the touch release (a touch is no user activation until the finger lifts), then runs once', async () => {
+  const env = setup('touch');
+  enterTitle(env, { modes: true });
+  stubInstall(env, 'prompt');
+  const held = [];
+  env.game.input.withActivation = (fn) => { held.push(fn); return false; };
+  const B = env.title.INSTALL_BOX;
+  tick(env, 1, tapInput(B.x + 5, B.y + 5));
+  assert.equal(env.installCalls.prompt, 0, 'the finger is still down: nothing asked of the browser yet');
+  assert.equal(held.length, 1);
+  held[0]();
+  assert.equal(env.installCalls.prompt, 1, 'on the release it runs');
+  await settle();
+  assert.ok(box(titleFrame(env), 'installing Clawd ✓'));
+});
+
 test('title (pad): install is the top of the focus ring', () => {
   const env = setup('pad');
   enterTitle(env, { modes: true, hats: ['loopcap'], worn: 'loopcap' });
@@ -1393,6 +1409,36 @@ test('title (pad): install is the top of the focus ring', () => {
   assert.equal(env.visits.length, 0);
   tick(env, 1, navInput(0, 1));
   assert.equal(env.title.focus, 'hat');
+});
+
+test('title (pad): once the install button is gone (prompt shown or refused) the focus on it is dropped, so A starts the run and the next D-pad press lights START', async () => {
+  const env = setup('pad');
+  enterTitle(env, { modes: true, hats: ['loopcap'], worn: 'loopcap' });
+  let shown = true;
+  stubInstall(env, 'prompt', { kind: () => (shown ? 'prompt' : null), prompt: () => { shown = false; env.installCalls.prompt++; return Promise.resolve('dismissed'); } });
+  tick(env, 1, navInput(0, 1));
+  tick(env, 1, navInput(0, -1));
+  tick(env, 1, navInput(0, -1));
+  assert.equal(env.title.focus, 'install');
+  tick(env, 1, padInput('a'));
+  assert.equal(env.installCalls.prompt, 1);
+  await settle();
+  tick(env, 1, H.makeInput({ pad: Object.assign({}, PAD0) }));
+  assert.equal(env.title.focus, null, 'the ghost focus is cleared');
+  assert.equal(env.visits.length, 0);
+  tick(env, 1, navInput(0, 1));
+  assert.equal(env.title.focus, 'start', 'the next press lights START normally');
+  const again = setup('pad');
+  enterTitle(again, { modes: true });
+  let on = true;
+  stubInstall(again, 'prompt', { kind: () => (on ? 'prompt' : null) });
+  tick(again, 1, navInput(0, 1));
+  tick(again, 1, navInput(0, -1));
+  tick(again, 1, navInput(0, -1));
+  assert.equal(again.title.focus, 'install');
+  on = false; // the offer went away (appinstalled, or a spent prompt)
+  tick(again, 1, padInput('a'));
+  assert.equal(again.visits.length, 1, 'A starts the run instead of poking nothing');
 });
 
 test('title: a CB.Install that throws is a title without the button', () => {

@@ -150,6 +150,55 @@ test('install: standalone() is a standalone or fullscreen display mode or the iO
   assert.equal(throwing.I.standalone(), false);
 });
 
+test('install: the fullscreen display mode is not "installed" while the page itself holds Fullscreen-API fullscreen (the game requests it on the first tap)', () => {
+  const e = env({ media: { '(display-mode: fullscreen)': true } });
+  e.sandbox.document.fullscreenElement = {};
+  assert.equal(e.I.standalone(), false, 'a browser tab the game put into fullscreen');
+  e.offer('accepted');
+  assert.equal(e.I.kind(), 'prompt', 'the install button stays');
+  e.sandbox.document.fullscreenElement = null;
+  assert.equal(e.I.standalone(), true, 'an installed fullscreen app has no fullscreenElement');
+  assert.strictEqual(e.I.kind(), null);
+  const mini = env({ media: { '(display-mode: minimal-ui)': true } });
+  mini.sandbox.document.fullscreenElement = {};
+  assert.equal(mini.I.standalone(), true, 'minimal-ui is installed whatever fullscreen says');
+});
+
+test('install: inside a frame (the claude.ai Artifact) an iPhone is offered no install help, since Add to Home Screen would add the host page', () => {
+  const e = env({ navigator: { userAgent: IPHONE } });
+  assert.equal(e.I.kind(), 'ios');
+  e.sandbox.top = {}; // different from the window
+  assert.strictEqual(e.I.kind(), null);
+  e.offer('accepted');
+  assert.strictEqual(e.I.kind(), null, 'nor a stashed prompt');
+  const same = env({ navigator: { userAgent: IPHONE } });
+  same.sandbox.top = same.sandbox;
+  assert.equal(same.I.kind(), 'ios', 'a top-level page is not embedded');
+});
+
+test('install: a prompt() refused for lacking a user gesture (NotAllowedError) keeps the event for the next tap; a real outcome spends it', async () => {
+  const e = env();
+  let tries = 0;
+  const err = Object.assign(new Error('needs a user gesture'), { name: 'NotAllowedError' });
+  e.offer('accepted', { prompt() { tries++; return tries === 1 ? Promise.reject(err) : Promise.resolve(); } });
+  assert.equal(await e.I.prompt(), 'unavailable');
+  assert.equal(e.I.kind(), 'prompt', 'not spent');
+  assert.equal(await e.I.prompt(), 'accepted', 'the retry works');
+  assert.strictEqual(e.I.kind(), null, 'spent once the dialog was shown');
+
+  const other = env();
+  other.offer('accepted', { prompt: () => Promise.reject(new Error('boom')) });
+  assert.equal(await other.I.prompt(), 'unavailable');
+  assert.strictEqual(other.I.kind(), null, 'any other failure spends it');
+
+  const gone = env();
+  gone.offer('accepted', { prompt: () => Promise.reject(err) });
+  const p = gone.I.prompt();
+  gone.fire('appinstalled', {});
+  assert.equal(await p, 'unavailable');
+  assert.strictEqual(gone.I.kind(), null, 'an install that happened meanwhile is not resurrected');
+});
+
 test('install: kind() is "ios" on an iPhone or iPad in Safari or Chrome, not in an in-app browser, a Mac or Android', () => {
   assert.equal(env({ navigator: { userAgent: IPHONE } }).I.kind(), 'ios');
   assert.equal(env({ navigator: { userAgent: IPHONE_CHROME } }).I.kind(), 'ios');

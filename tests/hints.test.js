@@ -1064,6 +1064,39 @@ test('hints: the banner never covers the boss: it moves to the lower row (above 
   }
 });
 
+test('hints: the Merge Conflict rule starts on the lower row (the HEAD / incoming labels own the top row); the other rules start on top; a part under the lower row still sends it up', () => {
+  for (const device of ['kbm', 'touch']) {
+    const e = env({ device, seen: ['compact'] });
+    const g = renderer(e);
+    const lower = device === 'touch' ? 106 : e.CB.ARENA.y + e.CB.ARENA.h - e.Hints.BOX_H - 4;
+    const run = runAt(e.CB, 'boss', 5, { startStage: 2 });
+    run.world.boss = e.CB.Bosses.mergeConflict.create(run.world);
+    e.Hints.reset();
+    tick(e, run, 1);
+    assert.equal(shownId(e), 'conflict', device);
+    const parts = run.world.enemies.filter((p) => p.boss);
+    parts.forEach((p) => { p.x = 160; p.y = 70; }); // clear of both rows
+    const text = RULE_TEXT.conflict;
+    assert.equal(e.Hints.rowFor(text, g.r, run.world), lower, device + ': low, so the labels on the top row stay readable');
+    assert.notEqual(e.Hints.rowFor(text, g.r, run.world), 21);
+    if (parts.length) {
+      parts[0].x = 160;
+      parts[0].y = lower + 6;
+      assert.equal(e.Hints.rowFor(text, g.r, run.world), 21, device + ': a part under the lower row still moves it up');
+    }
+    // Another rule begins on the top row.
+    const e2 = env({ device, seen: ['compact'] });
+    const g2 = renderer(e2);
+    const run2 = runAt(e2.CB, 'boss', 5, { startStage: 0 });
+    run2.world.boss = e2.CB.Bosses.infiniteLoop.create(run2.world);
+    e2.Hints.reset();
+    tick(e2, run2, 1);
+    assert.equal(shownId(e2), 'loop', device);
+    run2.world.enemies.filter((p) => p.boss).forEach((p) => { p.x = 160; p.y = 70; });
+    assert.equal(e2.Hints.rowFor(RULE_TEXT.loop, g2.r, run2.world), 21, device + ': loop starts on top');
+  }
+});
+
 test('hints: in a real Heisenbug fight the look tip arrives at 2.6 s of the fight', () => {
   const e = env({ seen: ['compact', 'dash'] });
   const run = e.CB.createRun({ seed: 5, startStage: 3, skipWaves: true, god: true });

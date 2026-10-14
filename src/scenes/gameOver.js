@@ -9,7 +9,7 @@
   const RETRY_LABEL = { boss: 'retry boss', wave2: 'retry wave 2', stage: 'retry stage' };
   // Two framed buttons side by side under the quip: [ retry ... ] and [ quit to title ] (20 px tall on touch, a 44 CSS px target at 2x).
   const BTN_Y = 128;
-  const BTN_W = 150;
+  const BTN_W = 120;
   const BTN_GAP = 8;
   const BTN_X0 = Math.round((W - (2 * BTN_W + BTN_GAP)) / 2);
   const box = (i, h) => Object.freeze({ x: BTN_X0 + i * (BTN_W + BTN_GAP), y: BTN_Y, w: BTN_W, h });

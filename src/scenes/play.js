@@ -501,8 +501,9 @@
     drawToast(r) {
       const tt = this.toasts[0];
       const a = Math.min(1, tt.t / TOAST_FADE);
-      const y = this.run && this.run.state === 'victory' ? TOAST_Y_VICTORY : TOAST_Y;
-      r.alpha(a * 0.85, () => r.rect(0, y - 2, CB.W, 11, CB.Pal.C.ink));
+      const victory = !!this.run && this.run.state === 'victory';
+      const y = victory ? TOAST_Y_VICTORY : TOAST_Y;
+      r.alpha(a * (victory ? 1 : 0.85), () => r.rect(0, y - 2, CB.W, 11, CB.Pal.C.ink)); // over the victory footer the band is opaque, or the two lines garble each other
       r.alpha(a, () => r.text(tt.text, CB.W / 2, y, { color: CB.Pal.C.gold, align: 'center' }));
     },
 

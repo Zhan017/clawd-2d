@@ -35,7 +35,7 @@
   let queue = []; // ids waiting for their turn, in the order they were asked for
   let cur = null; // { id, t }: the hint on show and how long it has been up
   let gapT = 0;
-  let row = 0; // 0: the top row, 1: the lower row (see rowFor); a new hint starts on the top again
+  let row = 0; // 0: the top row, 1: the lower row (see rowFor); a new hint starts on the top, except the Merge Conflict rule, which starts low (arena.js draws the HEAD / incoming labels on the top row, y 25-32)
   let session = []; // ids seen this session, for when CB.Save is missing
 
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
@@ -119,7 +119,7 @@
       const id = queue.shift();
       markSeen(id);
       cur = { id, t: 0 };
-      row = 0;
+      row = RULES[id] && RULES[id].boss === 'mergeConflict' ? 1 : 0;
     }
   }
 

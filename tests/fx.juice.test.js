@@ -901,6 +901,22 @@ test('pops: last heart!, +heart and perfect beat quips: a priority pop clears th
   assert.equal(textsOf(w).length, 2);
 });
 
+test('pops: the +15 /compact pickup and a patch name are priority: they find a free lane beside a live priority pop instead of being dropped', () => {
+  const { CB, w } = setup();
+  w.player.x = 40;
+  w.player.y = 150;
+  feed(CB, w, [{ type: 'text', x: 200, y: 100, text: 'perfect' }]);
+  feed(CB, w, [{ type: 'text', x: 200, y: 100, text: '+15 /compact' }]);
+  assert.deepEqual(textsOf(w).map((f) => f.text).sort(), ['+15 /compact', 'perfect'], 'both are up');
+  assert.ok(textsOf(w).find((f) => f.text === '+15 /compact').prio, 'and the pickup is a priority pop');
+  const { CB: CB2, w: w2 } = setup();
+  w2.player.x = 200;
+  w2.player.y = 100;
+  feed(CB2, w2, [{ type: 'text', x: 200, y: 82, text: 'perfect' }]);
+  CB2.Fx.celebrate(w2, 'rapid');
+  assert.equal(textsOf(w2).filter((f) => /^\+ /.test(f.text)).length, 1, 'the patch name pop is not dropped');
+});
+
 test('pops: no hurt quip on the hit that leaves one heart', () => {
   const { CB, w } = setup();
   stubQuips(CB);

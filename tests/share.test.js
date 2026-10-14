@@ -994,3 +994,27 @@ test('end to end, pad: X copies and A plays again', async () => {
   s.frame();
   assert.deepEqual(s.visits, ['title']);
 });
+
+test('play victory: the toast band over the footer disclaimer is opaque (a translucent one lets the two lines garble each other); in a fight it stays translucent', () => {
+  const s = playScene({ send: ok });
+  const draw = () => {
+    const bands = [];
+    let alpha = 1;
+    const r = {
+      alpha(a, fn) { const prev = alpha; alpha = a; fn(); alpha = prev; },
+      rect(x, y, w, h) { bands.push({ x, y, w, h, alpha }); },
+      text() {},
+    };
+    s.play.drawToast(r);
+    return bands;
+  };
+  s.play.toasts.push({ text: 'shared ✓', t: 2.5 });
+  const v = draw();
+  assert.equal(v.length, 1);
+  assert.equal(v[0].y, 171, 'the victory band starts under the buttons, over the disclaimer');
+  assert.equal(v[0].alpha, 1, 'fully opaque');
+  s.play.run.state = 'playing';
+  const f = draw();
+  assert.equal(f[0].y, 169);
+  assert.equal(f[0].alpha, 0.85, 'a fight toast stays see-through');
+});

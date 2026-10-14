@@ -27,7 +27,7 @@
   const TEXT_PAD = 4;
   const LANE_H = 9; // a pop is 7 px tall: pops closer than this in y, with overlapping x, would print over each other
   const LANE_TRIES = [0, -1, -2, -3, 1, 2, 3, 4]; // lane offsets tried in order (negative is up)
-  const PRIORITY_TEXT = { 'last heart!': true, '+1 ♥': true, perfect: true }; // pops about Clawd's own state beat quips for a slot
+  const PRIORITY_TEXT = { 'last heart!': true, '+1 ♥': true, '+15 /compact': true, perfect: true }; // pops about Clawd's own state beat quips for a slot
   const BLOCKED_GAP = 1.2; // world seconds between two 'blocked' pops
 
   // Over the cap the oldest entry goes first, but floor stains (at most 40) outlive a particle flood.
@@ -89,7 +89,7 @@
   // A pop kept on screen: centred text slides in from the edges, and its rise never carries it above the arena top. It takes the first lane
   // (up, then down) that clears Clawd and every live pop. A priority pop takes its slot and clears the quips under it; a quip that would
   // land on a live priority pop, or finds no free lane, is dropped (null).
-  function popText(w, x, y, text, color, life, vy) {
+  function popText(w, x, y, text, color, life, vy, forcePrio) {
     const A = CB.ARENA;
     const half = textHalfWidth(text);
     const px = Math.min(CB.W - TEXT_PAD - half, Math.max(TEXT_PAD + half, x));
@@ -97,7 +97,7 @@
     const top = A.y + Math.abs(rise) * life;
     const lowest = A.y + A.h - 8;
     const clampY = (v) => Math.min(lowest, Math.max(top, v));
-    const prio = PRIORITY_TEXT[text] === true;
+    const prio = forcePrio === true || PRIORITY_TEXT[text] === true;
     const live = w.fx.filter((f) => f.kind === 'text' && !f.dead && f.life > 0);
     const clash = (box, list) => list.filter((f) => lanesClash(box, textBox(f.x, f.y, f.text)));
     let py = null;
@@ -363,7 +363,7 @@
       const color = C()[PATCH_COLOR[id]] || C().gold;
       Fx.ring(w, x, y, 2, 26, C().gold, 0.4);
       Fx.spark(w, x, y, color, 12, 60, 0.5, 2);
-      popText(w, x, y - 18, '+ ' + (def && def.name ? def.name : String(id)), C().gold, 1.2, -10);
+      popText(w, x, y - 18, '+ ' + (def && def.name ? def.name : String(id)), C().gold, 1.2, -10, true); // patch names are dynamic, so they ask for priority instead of sitting in PRIORITY_TEXT
       if (p) p.cheerT = 0.9;
     },
     consume(w, from) {

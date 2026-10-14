@@ -399,11 +399,17 @@
           return;
         }
         if (typeof I.prompt !== 'function') return;
-        Promise.resolve(I.prompt()).then((res) => {
-          if (res === 'accepted') this.setToast('installing Clawd ✓', TOAST_NOTIFY_T);
-          else if (res === 'dismissed') this.setToast('install skipped', TOAST_CALM_T);
-          else this.setToast('use your browser menu to install', TOAST_NOTIFY_T);
-        }, () => {});
+        // The browser only shows its dialog inside a user activation, and a touch's activation is its release (not its pointerdown, which is when the tap reaches here): so wait for the lift.
+        const run = () => {
+          Promise.resolve(I.prompt()).then((res) => {
+            if (res === 'accepted') this.setToast('installing Clawd ✓', TOAST_NOTIFY_T);
+            else if (res === 'dismissed') this.setToast('install skipped', TOAST_CALM_T);
+            else this.setToast('use your browser menu to install', TOAST_NOTIFY_T);
+          }, () => {});
+        };
+        const input = this.game && this.game.input;
+        if (input && typeof input.withActivation === 'function') input.withActivation(run);
+        else run();
       } catch (e) {
         // an install that fails is a button that did nothing, never a broken title
       }
@@ -613,6 +619,7 @@
       }
       // Pad: A starts (its confirm edge is not also read as a click at the old pointer spot), B the daily build, Y boss rush, X --yolo (locked, Y and X say what unlocks them).
       if (pad) {
+        if (this.focus && !this.rows().some((row) => row.some((it) => it.id === this.focus))) this.focus = null; // a focus on a row that is gone (install after a dismissed, accepted or failed prompt) points at nothing: A starts again
         // The D-pad and the L-stick walk the focus (a keyboard's arrows also say navX, so only the pad's own device does); A then activates it, with none it starts. Start always begins a normal run.
         if (dev === 'pad') {
           const nx = Number.isFinite(inp.navX) ? Math.sign(inp.navX) : 0;
@@ -821,9 +828,10 @@
     },
 
     // A locked mode button: its box, filled like the others, but framed with dashes and written in grey, so the shape and not only the colour says "locked". It never lights up; the description line and the toast do the talking.
-    drawLocked(r, b, label) {
+    drawLocked(r, b, label, id) {
       r.alpha(0.6, () => r.rect(b.x, b.y, b.w, b.h, C.ink));
       dashFrame(r, b, C.greyDark);
+      if (id && this.focus === id) r.frame(b.x - 1, b.y - 1, b.w + 2, b.h + 2, C.gold); // a pad's focus still shows here, 1 px outside like START's ring, so the cursor never goes invisible
       r.text(label, b.x + b.w / 2, b.y + 2, { color: C.grey, align: 'center' }); // grey: greyDark was too faint to read what unlocks it
     },
 
@@ -906,8 +914,8 @@
         if (seen.rush !== true) this.drawPip(r, RUSH_BOX, true);
         if (seen.yolo !== true) this.drawPip(r, this.hit(YOLO_BOX), false);
       } else {
-        this.drawLocked(r, RUSH_BOX, tag('Y', LOCKED_NAME.rush));
-        this.drawLocked(r, YOLO_BOX, tag('X', LOCKED_NAME.yolo));
+        this.drawLocked(r, RUSH_BOX, tag('Y', LOCKED_NAME.rush), 'rush');
+        this.drawLocked(r, YOLO_BOX, tag('X', LOCKED_NAME.yolo), 'yolo');
       }
 
       // One line under the buttons: what the button under the pointer does, else the controls, dimmer so they sit behind the buttons.

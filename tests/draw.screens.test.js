@@ -857,11 +857,11 @@ test('gameOver: the crash text, path, deaths, a dead quip, and hints only after 
   const G = CB.Screens.gameOver;
   const retry = box(rec, '[ R: retry stage ]');
   const quitBtn = box(rec, '[ Q: quit to title ]');
-  assert.deepEqual(H.plain(G.retryBox()), { x: 6, y: 128, w: 150, h: 12 });
-  assert.deepEqual(H.plain(G.quitBox()), { x: 164, y: 128, w: 150, h: 12 });
-  assert.deepEqual(H.plain(G.QUIT_BOX), { x: 164, y: 128, w: 150, h: 20 }, 'the touch-sized box');
+  assert.deepEqual(H.plain(G.retryBox()), { x: 36, y: 128, w: 120, h: 12 });
+  assert.deepEqual(H.plain(G.quitBox()), { x: 164, y: 128, w: 120, h: 12 });
+  assert.deepEqual(H.plain(G.QUIT_BOX), { x: 164, y: 128, w: 120, h: 20 }, 'the touch-sized box');
   assert.ok(inBox(retry, G.retryBox()) && inBox(quitBtn, G.quitBox()), 'each framed button holds its label');
-  assert.ok(env.log.frame.some((a) => a[0] === 6 && a[1] === 128 && a[2] === 150 && a[3] === 12), 'the retry button is framed');
+  assert.ok(env.log.frame.some((a) => a[0] === 36 && a[1] === 128 && a[2] === 120 && a[3] === 12), 'the retry button is framed');
   assert.ok(env.log.frame.some((a) => a[0] === 164 && a[1] === 128), 'and so is quit');
   assertLayout(rec, 'gameOver');
   // The quip moves with the death count and the stage.

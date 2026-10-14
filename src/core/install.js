@@ -20,9 +20,26 @@
     }
   }
 
-  // Running from the home screen: a standalone or fullscreen display mode (the manifest asks for fullscreen), or iOS's own flag.
+  // Running from the home screen: a standalone, minimal-ui or fullscreen display mode (the manifest asks for fullscreen), or iOS's own flag.
+  // The fullscreen display mode also matches a browser tab the page itself put into Fullscreen-API fullscreen (the game does that on its first start tap),
+  // so it only counts while there is no fullscreenElement: an installed fullscreen app has none at launch.
   function standalone() {
-    return media('(display-mode: standalone)') || media('(display-mode: fullscreen)') || nav().standalone === true;
+    let apiFs = false;
+    try {
+      apiFs = !!(typeof document === 'object' && document && document.fullscreenElement);
+    } catch (e) {
+      apiFs = false;
+    }
+    return media('(display-mode: standalone)') || media('(display-mode: minimal-ui)') || (!apiFs && media('(display-mode: fullscreen)')) || nav().standalone === true;
+  }
+
+  // Inside a frame (the claude.ai Artifact, an embed) Add to Home Screen would add the host page, not the game.
+  function embedded() {
+    try {
+      return !!window.top && window.top !== window; // a missing top (tests, odd hosts) reads as not embedded
+    } catch (e) {
+      return true; // reading top threw: a cross-origin frame
+    }
   }
 
   // iPhone or iPad in Safari or another browser that has Share > Add to Home Screen. iPadOS 13+ says it is a Mac, with a touch screen.
@@ -36,13 +53,13 @@
 
   // 'prompt': the browser offered an install and the event is stashed. 'ios': show the Share help. null: installed, standalone, or nothing to offer.
   function kind() {
-    if (installed || standalone()) return null;
+    if (installed || standalone() || embedded()) return null;
     if (deferred) return 'prompt';
     return iosBrowser() ? 'ios' : null;
   }
 
   // Shows the browser's install dialog. Resolves to 'accepted', 'dismissed' or 'unavailable', and never rejects. Call it inside a user gesture
-  // (for a touch, the release: see input.withActivation); the stashed event is spent either way.
+  // (for a touch, the release: see input.withActivation); the stashed event is spent once the browser has shown (or declined) its dialog, but kept if the call was refused for lacking a gesture.
   function prompt() {
     const ev = deferred;
     if (!ev || typeof ev.prompt !== 'function') return Promise.resolve('unavailable');
@@ -52,7 +69,10 @@
         .then(() => ev.userChoice)
         .then(
           (c) => (c && c.outcome === 'accepted' ? 'accepted' : 'dismissed'),
-          () => 'unavailable'
+          (err) => {
+            if (err && err.name === 'NotAllowedError' && !deferred && !installed) deferred = ev; // no user gesture reached it: the event is not spent, so the next tap can retry
+            return 'unavailable';
+          }
         );
     } catch (e) {
       return Promise.resolve('unavailable');

@@ -1405,6 +1405,25 @@ test('title (locked modes): a pad focus on a locked button shows the same descri
   }
 });
 
+test('title (locked modes): a pad focus on a locked button draws a gold ring 1 px outside it, so the cursor never goes invisible; none without focus', () => {
+  const env = lockedTitle('pad');
+  const C = env.CB.Pal.C;
+  for (const id of ['rush', 'yolo']) {
+    const b = env.title.BUTTONS.find((x) => x.id === id);
+    const ring = (f) => f.x === b.x - 1 && f.y === b.y - 1 && f.w === b.w + 2 && f.h === b.h + 2 && f.color === C.gold;
+    env.title.focus = id;
+    frame(env);
+    assert.ok(env.frames.some(ring), id + ': gold ring');
+    env.title.focus = null;
+    frame(env);
+    assert.ok(!env.frames.some(ring), id + ': no ring without focus');
+    const other = id === 'rush' ? 'yolo' : 'rush';
+    env.title.focus = other;
+    frame(env);
+    assert.ok(!env.frames.some(ring), id + ': and none while the other one is focused');
+  }
+});
+
 for (const dev of ['kbm', 'touch']) {
   test('title (locked modes, ' + dev + '): a click or tap on a locked button toasts what unlocks it, plays uiSelect, and neither starts nor toggles', () => {
     for (const id of ['rush', 'yolo']) {
