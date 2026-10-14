@@ -18,6 +18,8 @@ A top-down pixel boss rush. You play as Clawd and shoot your way through four so
 
 Fan game. Not affiliated with Anthropic.
 
+**Status: v1.0, finished.** See the [changelog](CHANGELOG.md) for what's in it and [ideas for later](docs/IDEAS.md) for what could come next.
+
 ## Screenshots
 
 | | |
