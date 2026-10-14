@@ -9,6 +9,7 @@
   const WAVE_FALLBACK = 'incoming...';
   const FADE_OUT = 0.3; // the intro card and the wave-break banner fade out over their last 0.3 s
   const QUIP_START = 0.5; // the prompt lines under the stage path start typing here...
+  const QUIP_HOLD = 0.6; // the finished prompt lines stay up this long before the card fades
   const QUIP_SPC = 0.02; // ...at this many seconds a character, or faster when the card is short
   const STRIPE_H = 10; // hazard tape at the top and bottom of the boss warning
   const STRIPE_PERIOD = 16;
@@ -93,7 +94,8 @@
       // The prompt block is left-aligned like a terminal, typed as one stream, and always done before the fade.
       const x = Math.round(W / 2 - Math.max(...lines.map((l) => r.measure(l, 1))) / 2);
       const total = lines.reduce((n, l) => n + Array.from(l).length, 0);
-      let typed = (st - QUIP_START) / Math.max(0.005, Math.min(QUIP_SPC, (len - 0.95) / total));
+      // The lines are typed by len - 0.9 at the latest: the punchline holds a full 0.6 s before the 0.3 s fade.
+      let typed = (st - QUIP_START) / Math.max(0.005, Math.min(QUIP_SPC, (len - QUIP_START - QUIP_HOLD - FADE_OUT) / total));
       lines.forEach((l, i) => {
         typedAt(r, l, typed, x, L.quips[i], { color: C.pale, shadow: C.ink });
         typed -= Array.from(l).length;
@@ -165,6 +167,7 @@
     const short = len < full - 1e-6; // a retry's card: tagline at once, portrait already in place
     const B = bossOf(run);
     r.alpha(0.4, () => r.rect(0, STRIPE_H, W, H - 2 * STRIPE_H, C.ink));
+    r.rect(0, STRIPE_H, W, (CB.ARENA ? CB.ARENA.y : 20) - STRIPE_H, C.ink); // the HUD strip (y 0-20) must not show through under the tape
     const pulse = 0.5 + 0.5 * Math.sin(st * Math.PI * 4); // 2 Hz
     r.alpha(0.1 + 0.2 * pulse, () => {
       for (let i = 0; i < 4; i++) r.frame(i, i, W - 2 * i, H - 2 * i, C.hurt);
@@ -182,6 +185,13 @@
   // ---- BUG FIXED card -----------------------------------------------------------------------------------------------------
 
   const diffOf = (B) => (Array.isArray(B && B.diff) ? B.diff.filter((l) => typeof l === 'string').slice(0, DIFF_MAX) : []);
+
+  // When the last line of the card (the passing test) has shown for this boss: a confirm press skips the card only after it.
+  function passAt(run) {
+    const n = diffOf(bossOf(run) || {}).length;
+    const step = n > 0 ? Math.min(TIMELINE.diffStep, (DIFF_LAST - TIMELINE.diffStart) / n) : TIMELINE.diffStep;
+    return TIMELINE.diffStart + step * n + TIMELINE.passDelay;
+  }
 
   function drawBossDead(r, run) {
     const st = num(run.stateT, 0);
@@ -269,10 +279,11 @@
       return out;
     },
 
-    // The chip under (x, y), or null.
-    hit(x, y, y0) {
+    // The chip under (x, y), or null. `pad` (optional, px) widens every chip's box on all four sides: a thumb's near-miss on touch.
+    hit(x, y, y0, pad) {
       if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-      for (const b of toggles.boxes(y0)) if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) return b.id;
+      const p = typeof pad === 'number' && Number.isFinite(pad) && pad > 0 ? pad : 0;
+      for (const b of toggles.boxes(y0)) if (x >= b.x - p && x < b.x + b.w + p && y >= b.y - p && y < b.y + b.h + p) return b.id;
       return null;
     },
 
@@ -304,11 +315,37 @@
     },
   };
 
+  // ---- framed buttons -----------------------------------------------------------------------------------------------------
+
+  // A framed button: ink panel, a frame (gold when lit), the label centred. On touch they are at least 20 game px tall (a 44 CSS px target at 2x).
+  const TOUCH_BTN_H = 20;
+  const isTouch = () => deviceOf() === 'touch';
+  function button(r, b, label, o) {
+    const lit = !!(o && o.lit);
+    const dim = o && typeof o.alpha === 'number' ? o.alpha : 1;
+    r.alpha(dim, () => {
+      r.rect(b.x, b.y, b.w, b.h, C.ink);
+      r.frame(b.x, b.y, b.w, b.h, lit ? C.gold : C.grey);
+      r.text(label, b.x + Math.floor(b.w / 2), b.y + Math.floor((b.h - 7) / 2), { color: (o && o.color) || (lit ? C.white : C.pale), align: 'center' });
+    });
+  }
+  const inRect = (b, x, y) => !!b && Number.isFinite(x) && Number.isFinite(y) && x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
+
   // ---- pause --------------------------------------------------------------------------------------------------------------
 
   const CHIPS_Y = 68; // text row of the chips: their frames clear the legend line above by 2 px
-  const QUIT_Y = 152; // the 7th patch line ends at 152 and the disclaimer starts at 160
-  const QUIT_BOX = Object.freeze({ x: 110, y: 150, w: 100, h: 10 });
+  // The bottom row: [ resume ] and [ quit to title ], side by side (taller on touch). The patch list gives way to it (PATCH_ROWS lines fit above).
+  const BTN_Y = 136;
+  const BTN_W = 104;
+  const BTN_GAP = 8;
+  const BTN_X0 = Math.round((W - (2 * BTN_W + BTN_GAP)) / 2);
+  const PATCH_Y = 91;
+  const PATCH_ROWS = 5; // 91..134
+  const pauseBox = (i, h) => Object.freeze({ x: BTN_X0 + i * (BTN_W + BTN_GAP), y: BTN_Y, w: BTN_W, h });
+  const RESUME_BOX = pauseBox(0, TOUCH_BTN_H); // the touch-sized boxes; resumeBox() / quitBox() give the current device's
+  const QUIT_BOX = pauseBox(1, TOUCH_BTN_H);
+  const resumeBox = () => pauseBox(0, isTouch() ? TOUCH_BTN_H : 12);
+  const quitBox = () => pauseBox(1, isTouch() ? TOUCH_BTN_H : 12);
 
   // "Name ×n" for each owned patch, in the catalogue's order.
   function patchLines(run) {
@@ -330,23 +367,32 @@
     r.alpha(0.75, () => r.rect(0, 0, W, H, C.ink));
     r.text('PAUSED', W / 2, 14, { scale: 2, color: C.white, shadow: C.ink, align: 'center' });
     if (armed) r.text(say('quitArm', 'Press Q again to quit'), W / 2, 34, { color: C.gold, align: 'center' });
-    else r.text(say('pauseLine', 'Esc: resume · Q: quit to title'), W / 2, 34, { color: C.pale, align: 'center' });
+    else r.text(isTouch() ? 'Tap resume to keep playing' : say('pauseLine', 'Esc: resume · Q: quit to title'), W / 2, 34, { color: C.pale, align: 'center' });
     r.text(say('pauseLegend1', 'WASD move · Mouse aim · Click shoot'), W / 2, 48, { color: C.pale, align: 'center' });
     r.text(say('pauseLegend2', 'Space dash · E /compact (meter full)'), W / 2, 57, { color: C.pale, align: 'center' });
     toggles.draw(r, CHIPS_Y, ui && ui.pauseNav ? ui.pauseFocus : -1, aim);
     r.text('patches', W / 2, 82, { color: C.gold, align: 'center' });
     const lines = patchLines(run);
-    if (!lines.length) r.text('none yet', W / 2, 91, { color: C.grey, align: 'center' });
-    lines.forEach((l, i) => r.text(l, W / 2, 91 + 9 * i, { color: C.pale, align: 'center' }));
-    const over = aim && aim.x >= QUIT_BOX.x && aim.x < QUIT_BOX.x + QUIT_BOX.w && aim.y >= QUIT_BOX.y && aim.y < QUIT_BOX.y + QUIT_BOX.h;
-    r.text('[ quit to title ]', W / 2, QUIT_Y, { color: armed ? C.gold : over ? C.white : C.pale, align: 'center' });
-    r.text(DISCLAIMER, W / 2, 160, { color: C.grey, align: 'center' });
+    if (!lines.length) r.text('none yet', W / 2, PATCH_Y, { color: C.grey, align: 'center' });
+    // Up to PATCH_ROWS lines in one centred column; more (only a debug run holds so many) split into two, so the buttons below keep their place.
+    const rows = lines.length > PATCH_ROWS ? Math.ceil(lines.length / 2) : PATCH_ROWS;
+    lines.forEach((l, i) => {
+      const col = lines.length > PATCH_ROWS ? Math.floor(i / rows) : 0;
+      const cx = lines.length > PATCH_ROWS ? (col ? W * 0.75 : W * 0.25) : W / 2;
+      r.text(l, cx, PATCH_Y + 9 * (i % rows), { color: C.pale, align: 'center' });
+    });
+    const rb = resumeBox();
+    const qb = quitBox();
+    button(r, rb, '[ resume ]', { lit: !!(aim && inRect(rb, aim.x, aim.y)) });
+    button(r, qb, armed ? '[ quit again ]' : '[ quit to title ]', { lit: armed || !!(aim && inRect(qb, aim.x, aim.y)), color: armed ? C.gold : undefined });
+    r.text(DISCLAIMER, W / 2, 166, { color: C.grey, align: 'center' });
   }
 
   CB.Screens.stageIntro = { draw: drawStageIntro };
   CB.Screens.waveBanner = { draw: drawWaveBanner };
   CB.Screens.bossWarn = { draw: drawBossWarn };
-  CB.Screens.bossDead = { TIMELINE, draw: drawBossDead };
+  CB.Screens.bossDead = { TIMELINE, passAt, draw: drawBossDead };
   CB.Screens.toggles = toggles;
-  CB.Screens.pause = { CHIPS_Y, QUIT_BOX, draw: drawPause };
+  CB.Screens.button = button;
+  CB.Screens.pause = { CHIPS_Y, QUIT_BOX, RESUME_BOX, resumeBox, quitBox, draw: drawPause };
 })(window.CB);

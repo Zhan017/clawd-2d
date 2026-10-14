@@ -75,7 +75,7 @@ test('extra: same-tick death and defeat leaves Clawd alive for bossDead', () => 
   assert.equal(run.state, 'bossDead');
   assert.equal(w.player.dead, false);
 });
-test('extra: state timings match the spec (waveBreak 1.5, bossWarn 2.5, bossDead 3.0, dying 1.2)', () => {
+test('extra: state timings match the spec (waveBreak 1.5, bossWarn 2.5, bossDead 4.6 first time, dying 1.2)', () => {
   const CB = runSetup();
   const run = CB.createRun({ seed: 1, skipWaves: false });
   const near = (n, s) => assert.ok(Math.abs(n / 60 - s) <= 0.04, `${n / 60} vs ${s}`);
@@ -86,7 +86,7 @@ test('extra: state timings match the spec (waveBreak 1.5, bossWarn 2.5, bossDead
   near(ticksIn(run, 'bossWarn'), 2.5);
   run.world.boss.hp = 0;
   while (run.state === 'boss') run.step(idle());
-  near(ticksIn(run, 'bossDead'), 3.0);
+  near(ticksIn(run, 'bossDead'), 4.6);
 });
 test('extra: parseDebugHash survives malformed escapes and ignores bare anchors', () => {
   const CB = H.loadWith('src/game/stages.js', 'src/game/waves.js', 'src/game/stageRunner.js', 'src/scenes/play.js', 'src/main.js');

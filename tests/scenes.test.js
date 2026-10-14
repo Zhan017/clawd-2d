@@ -141,6 +141,8 @@ test('play: Q on the dead screen waits for the input lock', () => {
   for (let i = 0; i < 10; i++) play.update(CB.DT, H.makeInput());
   assert.ok(play.run.stateT >= CB.RUN_T.inputLock);
   play.update(CB.DT, H.makeInput({ quit: true }));
+  assert.equal(visits.length, 0, 'the first Q after the lock only arms, like the pause screen');
+  play.update(CB.DT, H.makeInput({ quit: true }));
   assert.equal(visits.length, 1);
   assert.equal(visits[0][0], 'title');
 });

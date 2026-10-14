@@ -42,7 +42,7 @@ test('stageRunner: full stage sequence through to patch pick', () => {
   assert.ok(run.world.boss);
   run.world.boss.hp = 0;
   assert.ok(until(run, (r) => r.state === 'bossDead', 5));
-  assert.ok(until(run, (r) => r.state === 'patchPick', 200));
+  assert.ok(until(run, (r) => r.state === 'patchPick', 300)); // the first BUG FIXED card holds 4.6 s
   assert.equal(run.offer.length, 3);
   assert.ok(until(run, (r) => r.stateT >= 0.6, 60));
   assert.equal(run.choosePatch(0), true);
@@ -161,7 +161,7 @@ function kill(run) {
   run.step(idle());
 }
 
-test('stageRunner: state durations match the spec (waveBreak 1.5, bossWarn 2.5, bossDead 3.0, dying 1.2)', () => {
+test('stageRunner: state durations match the spec (waveBreak 1.5, bossWarn 2.5, bossDead 4.6 first time, dying 1.2)', () => {
   const CB = setup();
   const run = CB.createRun({ seed: 1 });
   assert.ok(until(run, (r) => r.state === 'wave', 200));
@@ -174,7 +174,7 @@ test('stageRunner: state durations match the spec (waveBreak 1.5, bossWarn 2.5, 
   assert.equal(run.state, 'boss');
   run.world.boss.hp = 0;
   toState(run, 'bossDead');
-  near(ticksIn(run, 'bossDead'), 3.0);
+  near(ticksIn(run, 'bossDead'), 4.6);
   assert.equal(run.state, 'patchPick');
 
   const run2 = CB.createRun({ seed: 1 });
@@ -707,4 +707,62 @@ test('stageRunner: a boss phase change with CB.Pickups not loaded breaks nothing
   assert.equal(run.state, 'boss');
   for (let i = 0; i < 30; i++) run.step(idle());
   assert.equal(run.state, 'boss');
+});
+
+// ---- the UX pass: the BUG FIXED card holds, skips, and the world eases back in -----------------------------------------------------
+
+function toBossDead(run) {
+  toState(run, 'boss');
+  run.world.boss.hp = 0;
+  assert.ok(until(run, (r) => r.state === 'bossDead', 10));
+}
+
+test('stageRunner: the first BUG FIXED card holds 4.6 s, a boss beaten again after a retry holds 3.0 s', () => {
+  const CB = setup();
+  assert.equal(CB.RUN_T.bossDead, 4.6);
+  assert.equal(CB.RUN_T.bossDeadRetry, 3.0);
+  const run = CB.createRun({ seed: 1, skipWaves: true });
+  toBossDead(run);
+  assert.equal(run.deadT, 4.6);
+  assert.equal(run.seenFixed.has(0), false);
+  near(ticksIn(run, 'bossDead'), 4.6);
+  assert.equal(run.seenFixed.has(0), true, 'marked when the card completes');
+  assert.equal(run.state, 'patchPick');
+
+  // The same boss again (a retry that got back to it): the short hold.
+  const again = CB.createRun({ seed: 1, skipWaves: true });
+  again.seenFixed.add(0);
+  toBossDead(again);
+  assert.equal(again.deadT, 3.0);
+  near(ticksIn(again, 'bossDead'), 3.0);
+});
+
+test('stageRunner: skipFixedCard ends the card on the next step, but only after the slow-mo, and only on that card', () => {
+  const CB = setup();
+  const run = CB.createRun({ seed: 1, skipWaves: true });
+  assert.equal(run.skipFixedCard(), false, 'not on a stage intro');
+  toBossDead(run);
+  assert.equal(run.skipFixedCard(), false, 'the boss is still exploding');
+  until(run, (r) => r.stateT > CB.RUN_T.slowmo + 0.1, 200);
+  assert.equal(run.state, 'bossDead');
+  assert.equal(run.skipFixedCard(), true);
+  run.step(idle());
+  run.step(idle());
+  assert.equal(run.state, 'patchPick');
+  assert.equal(run.seenFixed.has(0), true, 'a skipped card still counts as seen');
+});
+
+test('stageRunner: timeScale slows the whole step (the world, the clocks) and defaults to exactly 1', () => {
+  const CB = setup();
+  const a = CB.createRun({ seed: 1 });
+  const b = CB.createRun({ seed: 1 });
+  assert.equal(a.timeScale, 1);
+  b.timeScale = 0.5;
+  for (let i = 0; i < 60; i++) {
+    a.step(idle());
+    b.step(idle());
+  }
+  assert.ok(Math.abs(a.stateT - 1.0) < 1e-9);
+  assert.ok(Math.abs(b.stateT - 0.5) < 1e-9, 'half the speed, half the clock');
+  assert.ok(Math.abs(b.time - 0.5) < 1e-9);
 });

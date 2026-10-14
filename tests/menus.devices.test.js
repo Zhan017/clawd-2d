@@ -846,7 +846,7 @@ test('title: the worst case per device (hats, modes, daily done, yolo on, toast,
 
 const PAUSE_TEXT = {
   kbm: { line: 'Esc: resume · Q: quit to title', armed: 'Press Q again to quit', l1: 'WASD move · Mouse aim · Click shoot', l2: 'Space dash · E /compact (meter full)', chips: ['M sound: on', 'N music: on', 'V calm: off'] },
-  touch: { line: 'Tap: resume', armed: 'Tap quit again to quit', l1: 'Left thumb: move · Right thumb: aim + shoot', l2: 'DASH · /compact (meter full)', chips: ['sound: on', 'music: on', 'calm: off'] },
+  touch: { line: 'Tap resume to keep playing', armed: 'Tap quit again to quit', l1: 'Left thumb: move · Right thumb: aim + shoot', l2: 'DASH · /compact (meter full)', chips: ['sound: on', 'music: on', 'calm: off'] },
   pad: { line: 'Start: resume · Back: quit to title', armed: 'Press Back again to quit', l1: 'L-stick move · R-stick aim + shoot', l2: 'A/LB dash · RB/B /compact (meter full)', chips: ['sound: on', 'music: on', 'calm: off'] },
 };
 
@@ -866,9 +866,13 @@ for (const dev of DEVICES) {
     row(want.l1, 48);
     row(want.l2, 57);
     want.chips.forEach((s, i) => assert.ok(Math.abs(centreX(row(s, 68)) - (45 + 78 * i + 37)) <= 1, s));
-    const quit = row('[ quit to title ]', 152);
-    assert.ok(inBox(quit, env.CB.Screens.pause.QUIT_BOX));
-    row(DISCLAIMER, 160);
+    // [ resume ] and [ quit to title ]: two framed buttons side by side (20 px tall on touch, 12 otherwise), the disclaimer under them.
+    const P = env.CB.Screens.pause;
+    const resume = row('[ resume ]', P.resumeBox().y + Math.floor((P.resumeBox().h - 7) / 2));
+    const quit = row('[ quit to title ]', P.quitBox().y + Math.floor((P.quitBox().h - 7) / 2));
+    assert.equal(P.resumeBox().h, dev === 'touch' ? 20 : 12, dev + ': button height');
+    assert.ok(inBox(resume, P.resumeBox()) && inBox(quit, P.quitBox()), dev + ': each box holds its label');
+    row(DISCLAIMER, 166);
     assert.ok(!box(rec, want.armed), 'not armed');
     assertLayout(rec, 'pause ' + dev);
     // Armed: the arm prompt replaces line 34, in gold, and the button turns gold too.
@@ -876,7 +880,7 @@ for (const dev of DEVICES) {
     assert.equal(box(armed, want.armed).y, 34);
     assert.ok(!box(armed, want.line));
     assert.ok(env.texts.some((t) => t[0] === want.armed && t[1].color === env.C.gold));
-    assert.ok(env.texts.some((t) => t[0] === '[ quit to title ]' && t[1].color === env.C.gold));
+    assert.ok(env.texts.some((t) => t[0] === '[ quit again ]' && t[1].color === env.C.gold), 'the button reads quit again, in gold');
     assertLayout(armed, 'pause armed ' + dev);
   });
 }
@@ -885,7 +889,9 @@ test('pause: the chips are at CHIPS_Y, the quit box is exported, and the hit hel
   const env = setup('touch');
   const P = env.CB.Screens.pause;
   assert.equal(P.CHIPS_Y, 68);
-  assert.deepEqual(H.plain(P.QUIT_BOX), { x: 110, y: 150, w: 100, h: 10 });
+  assert.deepEqual(H.plain(P.QUIT_BOX), { x: 164, y: 136, w: 104, h: 20 }, 'the touch-sized box');
+  assert.deepEqual(H.plain(P.RESUME_BOX), { x: 52, y: 136, w: 104, h: 20 });
+  assert.deepEqual(H.plain(P.quitBox()), { x: 164, y: 136, w: 104, h: 20 }, 'touch device: the same');
   assert.equal(typeof P.draw, 'function');
   const run = mkRun(env.CB, { state: 'wave' });
   const rec = drawScreen(env, 'pause', run, 0);
@@ -896,9 +902,17 @@ test('pause: the chips are at CHIPS_Y, the quit box is exported, and the hit hel
     const label = rec.texts().find((b) => b.str.startsWith(id));
     assert.ok(label && label.x < c.x && c.x < label.x + label.w, id + ' label is on its chip');
   }
-  // With no patches owned the quit box holds the button and no other text.
-  const others = rec.texts().filter((b) => b.str !== '[ quit to title ]' && touches(b, P.QUIT_BOX));
-  assert.deepEqual(others.map((b) => b.str), []);
+  // The button boxes hold their label and no other text.
+  for (const [B, str] of [[P.QUIT_BOX, '[ quit to title ]'], [P.RESUME_BOX, '[ resume ]']]) {
+    const others = rec.texts().filter((b) => b.str !== str && touches(b, B));
+    assert.deepEqual(others.map((b) => b.str), [], str);
+  }
+  // The toggles' optional padding: a point 3 px off a chip misses without it and hits with it.
+  const c0 = chipAt(env, 'sound', P.CHIPS_Y);
+  assert.equal(T.hit(c0.x, c0.y - 6, P.CHIPS_Y), null);
+  assert.equal(T.hit(c0.x, c0.y - 6, P.CHIPS_Y, 3), 'sound', 'half a pixel above the chip is inside a 3 px pad');
+  assert.equal(T.hit(c0.x, c0.y - 12, P.CHIPS_Y, 3), null, 'but the pad is only 3 px');
+  assert.equal(T.hit(c0.x, c0.y - 6, P.CHIPS_Y, -2), null, 'a bad pad is no pad');
 });
 
 test('pause: the pad focus lights one chip, only while pauseNav is set', () => {
@@ -906,40 +920,47 @@ test('pause: the pad focus lights one chip, only while pauseNav is set', () => {
   const run = mkRun(env.CB, { state: 'wave' });
   const lit = (ui) => {
     drawScreen(env, 'pause', run, 0, ui);
-    return env.frames.map((f) => (f.color === env.C.gold ? 'B' : 'd')).join('');
+    return env.frames.map((f, i) => (f.color === env.C.gold ? 'B' : i < 3 ? 'd' : 'U')).join('');
   };
-  assert.equal(lit({ pauseNav: false, pauseFocus: 1 }), 'ddd');
-  assert.equal(lit({ pauseNav: true, pauseFocus: 0 }), 'Bdd');
-  assert.equal(lit({ pauseNav: true, pauseFocus: 1 }), 'dBd');
-  assert.equal(lit({ pauseNav: true, pauseFocus: 2 }), 'ddB');
-  assert.equal(lit({ pauseNav: true }), 'ddd', 'no focus index');
-  assert.equal(lit(undefined), 'ddd');
-  assert.equal(lit(null), 'ddd');
+  // The first three frames are the chips; the two after them are the [ resume ] and [ quit ] buttons, which the pad does not focus.
+  assert.equal(lit({ pauseNav: false, pauseFocus: 1 }), 'dddUU');
+  assert.equal(lit({ pauseNav: true, pauseFocus: 0 }), 'BddUU');
+  assert.equal(lit({ pauseNav: true, pauseFocus: 1 }), 'dBdUU');
+  assert.equal(lit({ pauseNav: true, pauseFocus: 2 }), 'ddBUU');
+  assert.equal(lit({ pauseNav: true }), 'dddUU', 'no focus index');
+  assert.equal(lit(undefined), 'dddUU');
+  assert.equal(lit(null), 'dddUU');
 });
 
 test('pause: the mouse position lights the chip or the quit button under it (keyboard and mouse only)', () => {
   const env = setup('kbm');
   const run = mkRun(env.CB, { state: 'wave' });
   const chip = chipAt(env, 'music', 66);
+  const chipFrames = () => env.frames.slice(0, 3).map((f) => (f.color === env.C.gold ? 'B' : 'd'));
   drawScreen(env, 'pause', run, 0, { aimX: chip.x, aimY: chip.y });
-  assert.deepEqual(env.frames.map((f) => (f.color === env.C.gold ? 'B' : 'd')), ['d', 'B', 'd']);
-  drawScreen(env, 'pause', run, 0, { aimX: 160, aimY: 154 });
-  assert.ok(env.texts.some((t) => t[0] === '[ quit to title ]' && t[1].color === env.C.white), 'the button brightens');
+  assert.deepEqual(chipFrames(), ['d', 'B', 'd']);
+  const QB = env.CB.Screens.pause.quitBox();
+  drawScreen(env, 'pause', run, 0, { aimX: QB.x + 5, aimY: QB.y + 5 });
+  assert.equal(env.frames[4].color, env.C.gold, 'the quit button lights');
+  assert.notEqual(env.frames[3].color, env.C.gold, 'and not the resume button');
+  const RB = env.CB.Screens.pause.resumeBox();
+  drawScreen(env, 'pause', run, 0, { aimX: RB.x + 5, aimY: RB.y + 5 });
+  assert.equal(env.frames[3].color, env.C.gold, 'the resume button lights');
   device(env, 'touch');
   drawScreen(env, 'pause', run, 0, { aimX: chip.x, aimY: chip.y });
-  assert.deepEqual(env.frames.map((f) => (f.color === env.C.gold ? 'B' : 'd')), ['d', 'd', 'd'], 'a stale tap spot lights nothing');
+  assert.deepEqual(env.frames.map((f) => (f.color === env.C.gold ? 'B' : 'd')), ['d', 'd', 'd', 'd', 'd'], 'a stale tap spot lights nothing');
 });
 
 // ---- game over ----------------------------------------------------------------------------------------------------------------------
 
 const OVER_TEXT = {
-  kbm: { retry: 'R / click', quit: 'Q: quit to title' },
-  touch: { retry: 'Tap', quit: '[ quit to title ]' },
-  pad: { retry: 'A', quit: 'Back: quit to title' },
+  kbm: { retry: 'R: ', quit: '[ Q: quit to title ]', armed: '[ quit again ]' },
+  touch: { retry: '', quit: '[ quit to title ]', armed: '[ quit again ]' },
+  pad: { retry: 'A: ', quit: '[ Back: quit to title ]', armed: '[ Back again to quit ]' },
 };
 
 for (const dev of DEVICES) {
-  test('gameOver (' + dev + '): the retry hint and the quit line read for the device; the quit box holds the line and nothing else', () => {
+  test('gameOver (' + dev + '): the retry and quit buttons read for the device; each box holds its label and nothing else', () => {
     const env = setup(dev);
     const base = mkRun(env.CB, { state: 'dead', deaths: 2 });
     const want = OVER_TEXT[dev];
@@ -948,57 +969,66 @@ for (const dev of DEVICES) {
     for (const [cp, label] of [['boss', 'retry boss'], ['wave2', 'retry wave 2'], ['stage', 'retry stage']]) {
       const run = Object.create(base, { checkpoint: { value: cp } });
       const rec = drawScreen(env, 'gameOver', run, 1);
-      assert.equal(box(rec, want.retry + ': ' + label).y, 124, dev + ' ' + cp);
+      const G = env.CB.Screens.gameOver;
+      const b = box(rec, '[ ' + want.retry + label + ' ]');
+      assert.ok(b, dev + ' ' + cp);
+      assert.ok(inBox(b, G.retryBox()), dev + ' ' + cp + ': inside the retry button');
     }
     const rec = drawScreen(env, 'gameOver', base, 1);
+    const G = env.CB.Screens.gameOver;
     const quit = box(rec, want.quit);
-    assert.ok(quit, 'quit line');
-    assert.equal(quit.y, 136);
-    const Q = env.CB.Screens.gameOver.QUIT_BOX;
-    assert.deepEqual(H.plain(Q), { x: 100, y: 133, w: 120, h: 11 });
-    assert.ok(inBox(quit, Q), 'the tap box holds the quit line');
-    assert.deepEqual(rec.texts().filter((b) => b !== quit && touches(b, Q)).map((b) => b.str), [], 'and nothing else');
-    assert.ok(Math.abs(centreX(quit) - 160) <= 1);
+    assert.ok(quit, 'quit button');
+    assert.deepEqual(H.plain(G.QUIT_BOX), { x: 164, y: 128, w: 150, h: 20 }, 'the touch-sized box');
+    assert.deepEqual(H.plain(G.RETRY_BOX), { x: 6, y: 128, w: 150, h: 20 });
+    assert.equal(G.quitBox().h, dev === 'touch' ? 20 : 12, 'button height');
+    assert.ok(inBox(quit, G.quitBox()), 'the quit box holds the label');
+    for (const B of [G.quitBox(), G.retryBox()]) {
+      assert.deepEqual(rec.texts().filter((b) => touches(b, B) && !inBox(b, B)).map((b) => b.str), [], 'nothing else touches a button');
+    }
+    assert.ok(Math.abs(centreX(quit) - (G.quitBox().x + 75)) <= 1);
+    // The first Q arms the quit: the button says so in gold.
+    const armed = drawScreen(env, 'gameOver', base, 1, { quitArmT: 1.2 });
+    assert.ok(box(armed, want.armed), dev + ': armed label');
+    assert.ok(env.texts.some((t) => t[0] === want.armed && t[1].color === env.C.gold));
     assertLayout(rec, 'gameOver ' + dev);
   });
 }
 
 // ---- victory --------------------------------------------------------------------------------------------------------------------------
 
-test('victory: the play-again prompt reads for the device, after 1.5 s, and the layout holds', () => {
-  const want = { kbm: 'Click to play again', touch: 'Tap to play again', pad: 'Press A to play again' };
+test('victory: the continue and share buttons read for the device, from 1.6 s, and the layout holds', () => {
+  const want = { kbm: '[ continue ]', touch: '[ continue ]', pad: '[ A: continue ]' };
   const share = { kbm: '[ copy result ] (C)', touch: '[ share result ]', pad: '[ X: copy result ]' };
   for (const dev of DEVICES) {
     const env = setup(dev);
     const run = mkRun(env.CB, { state: 'victory', deaths: 3, time: 61.9, bossesFixed: 4, history: ['spread', 'rapid'], squashed: { syntaxError: 3, nullPointer: 2 } });
     assert.ok(!box(drawScreen(env, 'victory', run, 1.5), want[dev]), dev + ': not yet');
     assert.ok(!box(drawScreen(env, 'victory', run, 1.5), share[dev]), dev + ': no share button yet either');
-    const rec = drawScreen(env, 'victory', run, 2.0);
+    const rec = drawScreen(env, 'victory', run, 2.6);
+    const V = env.CB.Screens.victory;
     const b = box(rec, want[dev]);
     assert.ok(b, dev);
-    assert.equal(b.y, 160);
-    // With CB.Share loaded (the whole game) the prompt shares its row with the share button: the prompt starts right of the middle,
-    // the button ends left of it, and both are on the row the toast band clears.
-    assert.equal(b.x, 166, dev + ': the prompt starts right of the gutter');
+    assert.ok(inBox(b, V.continueBox()), dev + ': inside its button');
+    assert.equal(V.continueBox().h, dev === 'touch' ? 22 : 14, dev + ': touch buttons are 22 px tall');
     const s = box(rec, share[dev]);
     assert.ok(s, dev + ': the share button');
-    assert.equal(s.y, 160);
-    assert.equal(s.x + s.w, 154, dev + ': the button ends left of the gutter');
-    for (const other of DEVICES.filter((d) => d !== dev)) assert.ok(!box(rec, want[other]) && !box(rec, share[other]), dev + ' shows no ' + other + ' prompt');
+    assert.ok(inBox(s, V.shareBox()));
+    assert.equal(V.shareBox().y, V.continueBox().y, 'one row');
+    assert.ok(V.shareBox().x + V.shareBox().w < V.continueBox().x, dev + ': share on the left, with air');
+    for (const other of DEVICES.filter((d) => d !== dev)) assert.ok(!box(rec, share[other]), dev + ' shows no ' + other + ' share label');
     assert.deepEqual(rec.overlaps().filter((p) => p[0].str !== '✻' && p[1].str !== '✻').map((p) => p[0].str + ' / ' + p[1].str), []);
   }
 });
 
-test('victory: without CB.Share there is no share button and the play-again prompt keeps the middle of the row', () => {
+test('victory: without CB.Share there is no share button and [ continue ] keeps the middle of the row', () => {
   for (const dev of DEVICES) {
     const env = setup(dev);
     delete env.CB.Share;
     const run = mkRun(env.CB, { state: 'victory', deaths: 3, time: 61.9, bossesFixed: 4, history: ['spread', 'rapid'], squashed: { syntaxError: 3, nullPointer: 2 } });
-    const want = { kbm: 'Click to play again', touch: 'Tap to play again', pad: 'Press A to play again' }[dev];
-    const b = box(drawScreen(env, 'victory', run, 2.0), want);
+    const want = { kbm: '[ continue ]', touch: '[ continue ]', pad: '[ A: continue ]' }[dev];
+    const b = box(drawScreen(env, 'victory', run, 2.6), want);
     assert.ok(b, dev);
-    assert.equal(b.y, 160);
-    assert.ok(Math.abs(centreX(b) - 160) <= 1, dev + ': centred as it always was');
+    assert.ok(Math.abs(centreX(b) - 160) <= 1, dev + ': centred');
     assert.ok(!strs(env.rec).some((t) => /result/.test(t)), dev + ': no share button');
   }
 });
@@ -1111,9 +1141,9 @@ test('kbm: every screen reads the same with CB.Prompts as without it, and with a
   assert.ok(withPrompts.title.includes('Loop cap') && withPrompts.title.includes('Q') && withPrompts.title.includes('E'), 'the hat name and its Q / E hints');
   assert.ok(withPrompts.pause.includes('Esc: resume · Q: quit to title'));
   assert.ok(withPrompts.pauseArmed.includes('Press Q again to quit'));
-  assert.ok(withPrompts.gameOver.includes('R / click: retry stage') || withPrompts.gameOver.includes('R / click: retry wave 2') || withPrompts.gameOver.includes('R / click: retry boss'));
-  assert.ok(withPrompts.gameOver.includes('Q: quit to title'));
-  assert.ok(withPrompts.victory.includes('Click to play again'));
+  assert.ok(withPrompts.gameOver.includes('[ R: retry stage ]') || withPrompts.gameOver.includes('[ R: retry wave 2 ]') || withPrompts.gameOver.includes('[ R: retry boss ]'));
+  assert.ok(withPrompts.gameOver.includes('[ Q: quit to title ]'));
+  assert.ok(withPrompts.victory.includes('[ continue ]'));
   assert.ok(withPrompts.patchPick.includes('[1]') && withPrompts.patchPick.includes('[3]'));
   assert.ok(withPrompts.panic.includes('Press R to reload'));
 });

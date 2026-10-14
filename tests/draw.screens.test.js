@@ -172,12 +172,27 @@ test('screens: victory time format pads minutes', () => {
   assert.equal(f(6000), '100:00');
 });
 
+test('screens: the four commit hashes of a receipt look different all along, not just in their last digits', () => {
+  const { CB } = setup({ stub: true });
+  const h = CB.Screens.victory.commitHash;
+  for (const seed of [1, 7, 12345, 4294967295, 0]) {
+    const four = [0, 1, 2, 3].map((i) => h(seed, i));
+    assert.equal(new Set(four).size, 4, 'four different hashes for seed ' + seed);
+    for (let a = 0; a < 4; a++) {
+      for (let b = a + 1; b < 4; b++) {
+        const same = [...four[a]].filter((c, k) => c === four[b][k]).length;
+        assert.ok(same <= 4, `seed ${seed}: hashes ${a} and ${b} share ${same} of 7 digits (${four[a]} ${four[b]})`);
+      }
+    }
+  }
+});
+
 test('screens: victory commitHash is seven lowercase hex chars and deterministic', () => {
   const { CB } = setup({ stub: true });
   const h = CB.Screens.victory.commitHash;
   assert.match(h(1, 0), /^[0-9a-f]{7}$/);
   assert.equal(h(1, 0), h(1, 0));
-  assert.equal(h(1, 0), '9e3779b');
+  assert.equal(h(1, 0), '0db3f8c');
   assert.notEqual(h(1, 0), h(1, 1));
   assert.notEqual(h(1, 0), h(2, 0));
   assert.match(h(4294967295, 3), /^[0-9a-f]{7}$/);
@@ -232,6 +247,21 @@ test('stageIntro: types STAGE n and the path, then the prompt lines, and fades o
   assert.ok(seen.includes(q2));
   assert.ok(Math.abs(env.log.alpha[0][0] - 1 / 3) < 1e-6, 'a third strength at 1.9 s: ' + env.log.alpha[0][0]);
   assert.deepEqual(strs(draw(env, 'stageIntro', run, 2.0)), [], 'faded out entirely at the end');
+});
+
+test('stageIntro: the punchline is fully typed and held at full strength for at least 0.6 s before the fade', () => {
+  const env = setup({ stub: true, extra: [QUIPS] });
+  const { CB } = env;
+  for (let i = 0; i < CB.STAGES.length; i++) {
+    const run = mkRun(CB, { stageIndex: i, state: 'stageIntro', introT: 2.0 });
+    const [q1, q2] = CB.Quips.stage[i];
+    assert.ok(!strs(draw(env, 'stageIntro', run, 1.0)).includes(q2) || i === 0, 'stage ' + (i + 1) + ': still typing at 1.0 s (or short enough already)');
+    for (const st of [1.12, 1.4, 1.69]) {
+      const seen = strs(draw(env, 'stageIntro', run, st));
+      assert.ok(seen.includes(q1) && seen.includes(q2), `stage ${i + 1}: both prompt lines are complete at ${st} s`);
+      assert.equal(env.log.alpha[0][0], 1, `stage ${i + 1}: full strength at ${st} s, before the fade (the last 0.3 s)`);
+    }
+  }
 });
 
 test('stageIntro: every stage fits its prompt lines in the band', () => {
@@ -437,6 +467,27 @@ test('bossWarn: a boss without a portrait still gets its card', () => {
 
 // ---- bossDead -----------------------------------------------------------------------------------------------------------------
 
+test('bossWarn: the HUD strip under the hazard tape is covered, so no hearts or bars leak out below the tape', () => {
+  const env = setup({ stub: true });
+  const { CB, C } = env;
+  const run = mkRun(CB, { stageIndex: 0, state: 'bossWarn', warnT: 2.5 });
+  draw(env, 'bossWarn', run, 1.0);
+  assert.ok(env.log.rect.some((a) => a[0] === 0 && a[1] === 10 && a[2] === 320 && a[3] === CB.ARENA.y - 10 && a[4] === C.ink), 'an opaque ink band from the tape (y 10) to the arena (y ' + CB.ARENA.y + ')');
+  assert.ok(env.log.rect.findIndex((a) => a[1] === 10 && a[3] === CB.ARENA.y - 10) < env.log.text.length + env.log.rect.length, 'drawn');
+});
+
+test('bossDead: passAt says when the passing-test line has shown, for every boss', () => {
+  const env = setup({ real: true });
+  const { CB } = env;
+  CB.STAGES.forEach((stage, i) => {
+    const run = mkRun(CB, { stageIndex: i, state: 'bossDead' });
+    const at = CB.Screens.bossDead.passAt(run);
+    assert.ok(at > CB.Screens.bossDead.TIMELINE.diffStart && at < 3.0, 'in the card: ' + at);
+    assert.ok(!strs(draw(env, 'bossDead', run, at - 0.02)).includes('✓ 1 test passing'), 'not yet just before');
+    assert.ok(strs(draw(env, 'bossDead', run, at + 0.02)).includes('✓ 1 test passing'), 'shown just after');
+  });
+});
+
 test('bossDead: TIMELINE is exported', () => {
   const { CB } = setup({ stub: true });
   assert.deepEqual(H.plain(CB.Screens.bossDead.TIMELINE), { start: 1.5, commitCps: 100, diffStart: 1.95, diffStep: 0.2, passDelay: 0.1 });
@@ -578,19 +629,28 @@ test('pause: the Rev 3 layout table, with every patch owned', () => {
   });
   assert.equal(CB.Screens.pause.CHIPS_Y, 68);
   assert.equal(T('patches').y, 82);
+  // Seven owned patches (a debug run) split into two columns of four, so the button row keeps its place.
   const lines = ['Spread Shot ×2', 'Rapid Fire ×1', 'Pierce ×2', 'Heavy Bolts ×1', 'Extra Heart ×2', 'Quick Dash ×1', 'Ricochet ×1'];
-  lines.forEach((s, i) => assert.equal(T(s).y, 91 + 9 * i, s));
-  // The new quit button sits between the seventh patch line (ends at 152) and the footer (160), and its hit box holds the text.
+  lines.forEach((s, i) => {
+    assert.equal(T(s).y, 91 + 9 * (i % 4), s);
+    assert.ok(Math.abs(centreX(T(s)) - (i < 4 ? 80 : 240)) <= 1, s + ' is in its column');
+  });
+  // [ resume ] and [ quit to title ]: framed buttons side by side (12 px tall off touch), each label centred in its box.
+  const resume = T('[ resume ]');
   const quit = T('[ quit to title ]');
-  assert.equal(quit.y, 152);
-  assert.ok(Math.abs(centreX(quit) - 160) <= 1);
-  assert.deepEqual(H.plain(CB.Screens.pause.QUIT_BOX), { x: 110, y: 150, w: 100, h: 10 });
-  assert.ok(inBox(quit, CB.Screens.pause.QUIT_BOX), 'the box holds the text');
-  assert.ok(T('Ricochet ×1').y + T('Ricochet ×1').h <= quit.y, 'the seventh patch line clears the quit button');
-  assert.equal(T(DISCLAIMER).y, 160);
+  const RB = CB.Screens.pause.resumeBox();
+  const QB = CB.Screens.pause.quitBox();
+  assert.deepEqual(H.plain(RB), { x: 52, y: 136, w: 104, h: 12 });
+  assert.deepEqual(H.plain(QB), { x: 164, y: 136, w: 104, h: 12 });
+  assert.deepEqual(H.plain(CB.Screens.pause.QUIT_BOX), { x: 164, y: 136, w: 104, h: 20 }, 'the touch-sized box');
+  assert.ok(inBox(resume, RB) && inBox(quit, QB), 'each box holds its label');
+  assert.ok(Math.abs(centreX(resume) - (RB.x + RB.w / 2)) <= 1 && Math.abs(centreX(quit) - (QB.x + QB.w / 2)) <= 1);
+  assert.ok(env.log.frame.some((a) => a[0] === RB.x && a[1] === RB.y && a[2] === RB.w && a[3] === RB.h), 'the resume button is framed');
+  assert.ok(env.log.frame.some((a) => a[0] === QB.x && a[1] === QB.y && a[2] === QB.w && a[3] === QB.h), 'and so is quit');
+  assert.ok(T('Heavy Bolts ×1').y + T('Heavy Bolts ×1').h < RB.y, 'the patch list clears the buttons');
+  assert.equal(T(DISCLAIMER).y, 166);
   assert.ok(Math.abs(centreX(T(DISCLAIMER)) - 160) <= 1);
-  for (const s of lines) assert.ok(T(s).y + T(s).h < 160, s + ' clears the footer');
-  assert.ok(quit.y + quit.h <= T(DISCLAIMER).y, 'the quit button clears the footer');
+  assert.ok(RB.y + 20 < T(DISCLAIMER).y, 'even the touch-sized buttons clear the footer');
   assertLayout(rec, 'pause worst case');
   // The dim.
   assert.ok(env.log.rect.some((a) => a[0] === 0 && a[1] === 0 && a[2] === 320 && a[3] === 180 && a[4] === C.ink), 'full-screen ink');
@@ -794,10 +854,15 @@ test('gameOver: the crash text, path, deaths, a dead quip, and hints only after 
   assert.ok(env.log.text.some((a) => a[0] === quip && a[3].color === C.grey));
   assert.ok(!strs(rec).some((s) => /retry|quit/.test(s)), 'no hints while the input is locked');
   rec = draw(env, 'gameOver', run, 0.7);
-  assert.equal(box(rec, 'R / click: retry stage').y, 124);
-  assert.equal(box(rec, 'Q: quit to title').y, 136);
-  assert.deepEqual(H.plain(CB.Screens.gameOver.QUIT_BOX), { x: 100, y: 133, w: 120, h: 11 });
-  assert.ok(inBox(box(rec, 'Q: quit to title'), CB.Screens.gameOver.QUIT_BOX), 'the tap box holds the quit line');
+  const G = CB.Screens.gameOver;
+  const retry = box(rec, '[ R: retry stage ]');
+  const quitBtn = box(rec, '[ Q: quit to title ]');
+  assert.deepEqual(H.plain(G.retryBox()), { x: 6, y: 128, w: 150, h: 12 });
+  assert.deepEqual(H.plain(G.quitBox()), { x: 164, y: 128, w: 150, h: 12 });
+  assert.deepEqual(H.plain(G.QUIT_BOX), { x: 164, y: 128, w: 150, h: 20 }, 'the touch-sized box');
+  assert.ok(inBox(retry, G.retryBox()) && inBox(quitBtn, G.quitBox()), 'each framed button holds its label');
+  assert.ok(env.log.frame.some((a) => a[0] === 6 && a[1] === 128 && a[2] === 150 && a[3] === 12), 'the retry button is framed');
+  assert.ok(env.log.frame.some((a) => a[0] === 164 && a[1] === 128), 'and so is quit');
   assertLayout(rec, 'gameOver');
   // The quip moves with the death count and the stage.
   const run2 = mkRun(CB, { stageIndex: 2, state: 'dead', deaths: 4 });
@@ -810,15 +875,15 @@ test('gameOver: the retry hint follows the checkpoint', () => {
   const env = setup({ stub: true });
   const { CB } = env;
   const base = mkRun(CB, { state: 'dead', deaths: 1 });
-  const hint = (run) => strs(draw(env, 'gameOver', run, 1)).find((s) => s.startsWith('R / click'));
-  assert.equal(hint(withCheckpoint(base, 'boss')), 'R / click: retry boss');
-  assert.equal(hint(withCheckpoint(base, 'wave2')), 'R / click: retry wave 2');
-  assert.equal(hint(withCheckpoint(base, 'stage')), 'R / click: retry stage');
-  assert.equal(hint(withCheckpoint(base, undefined)), 'R / click: retry stage');
+  const hint = (run) => strs(draw(env, 'gameOver', run, 1)).find((s) => s.startsWith('[ R: retry'));
+  assert.equal(hint(withCheckpoint(base, 'boss')), '[ R: retry boss ]');
+  assert.equal(hint(withCheckpoint(base, 'wave2')), '[ R: retry wave 2 ]');
+  assert.equal(hint(withCheckpoint(base, 'stage')), '[ R: retry stage ]');
+  assert.equal(hint(withCheckpoint(base, undefined)), '[ R: retry stage ]');
   // A run that only carries diedInBoss (older state) still gets the boss hint.
   const old = { state: 'dead', stateT: 1, stageIndex: 0, deaths: 1, diedInBoss: true };
-  assert.equal(hint(old), 'R / click: retry boss');
-  assert.equal(hint({ state: 'dead', stateT: 1, stageIndex: 0, deaths: 1, diedInBoss: false }), 'R / click: retry stage');
+  assert.equal(hint(old), '[ R: retry boss ]');
+  assert.equal(hint({ state: 'dead', stateT: 1, stageIndex: 0, deaths: 1, diedInBoss: false }), '[ R: retry stage ]');
 });
 
 test('gameOver: a real run that dies reads its own checkpoint (stage, wave 2, boss)', () => {
@@ -836,16 +901,16 @@ test('gameOver: a real run that dies reads its own checkpoint (stage, wave 2, bo
     assert.equal(run.state, 'dead');
     return run;
   };
-  const hint = (run) => strs(draw(env, 'gameOver', run, 1)).find((s) => s.startsWith('R / click'));
+  const hint = (run) => strs(draw(env, 'gameOver', run, 1)).find((s) => s.startsWith('[ R: retry'));
   const a = killIn(CB.createRun({ seed: 3, god: false }), (r) => r.state === 'wave' && r.waveIndex === 0);
   assert.equal(a.checkpoint, 'stage');
-  assert.equal(hint(a), 'R / click: retry stage');
+  assert.equal(hint(a), '[ R: retry stage ]');
   const b = killIn(CB.createRun({ seed: 3 }), (r) => r.state === 'wave' && r.waveIndex === 1);
   assert.equal(b.checkpoint, 'wave2');
-  assert.equal(hint(b), 'R / click: retry wave 2');
+  assert.equal(hint(b), '[ R: retry wave 2 ]');
   const c = killIn(CB.createRun({ seed: 3, skipWaves: true }), (r) => r.state === 'boss');
   assert.equal(c.checkpoint, 'boss');
-  assert.equal(hint(c), 'R / click: retry boss');
+  assert.equal(hint(c), '[ R: retry boss ]');
 });
 
 // ---- victory ------------------------------------------------------------------------------------------------------------------
@@ -858,7 +923,7 @@ function victoryRun(CB, over) {
   }, over || {}));
 }
 
-test('victory: the Rev 3 layout table with a full tally and four fixes', () => {
+test('victory: the layout table with a full tally and four fixes', () => {
   const env = setup({ real: true, extra: [QUIPS] });
   const { CB, C } = env;
   const run = victoryRun(CB);
@@ -876,8 +941,8 @@ test('victory: the Rev 3 layout table with a full tally and four fixes', () => {
   const quip = CB.Quips.victory[(3 + 3) % CB.Quips.victory.length];
   assert.equal(T(quip).y, 23);
   assert.ok(env.log.text.some((a) => a[0] === quip && a[3].color === C.grey));
-  assert.equal(T('time 01:01 · deaths 3').y, 62);
-  assert.equal(T('patches: Spread Shot ×2, Rapid Fire').y, 71);
+  assert.equal(T('time 01:01 · deaths 3').y, 60);
+  assert.equal(T('patches: Spread Shot ×2, Rapid Fire').y, 69);
   // Clawd: happy, scale 2, centred at (160, 44), hopping up by at most 4 px.
   const clawd = rec.sprites().filter((b) => /^clawd_idle[01]_happy$/.test(b.name));
   assert.equal(clawd.length, 1, 'one happy Clawd');
@@ -885,7 +950,7 @@ test('victory: the Rev 3 layout table with a full tally and four fixes', () => {
   assert.equal(clawd[0].h, 24);
   assert.ok(Math.abs(centreX(clawd[0]) - 160) <= 1);
   assert.ok(clawd[0].y >= 28 && clawd[0].y <= 32, 'hop box ' + clawd[0].y);
-  // The tally: 5 cells, 56 px apart, sprite on top (<= 12 px), xN beneath, all within y 82..102.
+  // The tally: 5 cells, 56 px apart, sprite on top (<= 12 px), xN beneath, all within y 77..98.
   const cells = rec.sprites().filter((b) => /_0$/.test(b.name) && !b.name.startsWith('clawd'));
   assert.deepEqual(cells.map((b) => b.name), KINDS.map((k) => k + '_0'));
   for (let i = 1; i < cells.length; i++) assert.equal(Math.round(centreX(cells[i]) - centreX(cells[i - 1])), 56);
@@ -893,35 +958,63 @@ test('victory: the Rev 3 layout table with a full tally and four fixes', () => {
   KINDS.forEach((k, i) => {
     const n = run.squashed[k];
     const label = T('x' + n);
-    assert.equal(label.y, 95);
+    assert.equal(label.y, 90);
     assert.ok(Math.abs(centreX(label) - centreX(cells[i])) <= 1, 'count centred under its sprite');
-    assert.ok(cells[i].h <= 12 && cells[i].y >= 82 && cells[i].y + cells[i].h <= label.y, k + ' sprite above its count');
-    assert.ok(label.y + label.h <= 102);
+    assert.ok(cells[i].h <= 12 && cells[i].y >= 77 && cells[i].y + cells[i].h <= label.y, k + ' sprite above its count');
+    assert.ok(label.y + label.h <= 98);
   });
-  // git log: header at 106, four lines at x 40 from 115 in steps of 9.
-  assert.equal(T('git log --oneline').y, 106);
+  // The log: header at 101, four lines at x 40 from 109 in steps of 8.
+  assert.equal(T('git log --oneline').y, 101);
   CB.STAGES.forEach((stage, i) => {
     const line = CB.Screens.victory.commitHash(7, i) + ' ' + CB.Bosses[stage.boss].commitMsg;
     const b = T(line);
     assert.equal(b.x, 40, 'log lines start at x 40');
-    assert.equal(b.y, 115 + 9 * i);
+    assert.equal(b.y, 109 + 8 * i);
     assert.ok(env.log.text.some((a) => a[0] === line && a[3].color === C.grey));
   });
-  assert.equal(T(DISCLAIMER).y, 152);
-  assert.equal(T('Click to play again').y, 160);
+  assert.equal(T(DISCLAIMER).y, 173);
+  const cont = T('[ continue ]');
+  const CB_ = CB.Screens.victory.continueBox();
+  assert.deepEqual(H.plain(CB_), { x: 100, y: 153, w: 120, h: 14 }, 'no share module: the continue button keeps the middle');
+  assert.ok(inBox(cont, CB_) && Math.abs(centreX(cont) - 160) <= 1);
+  assert.ok(env.log.frame.some((a) => a[0] === CB_.x && a[1] === CB_.y && a[2] === CB_.w && a[3] === CB_.h), 'framed');
   assert.ok(env.log.text.some((a) => a[0] === DISCLAIMER), 'r.text received the disclaimer');
   assertLayout(rec, 'victory');
 });
 
-test('victory: Click to play again waits for 1.5 s and blinks; nothing else stays hidden', () => {
+test('victory: the buttons show dimmed from 1.6 s, at full strength once they take input (2.5 s), and never blink', () => {
   const env = setup({ real: true, extra: [QUIPS] });
   const { CB } = env;
   const run = victoryRun(CB);
-  assert.ok(!box(draw(env, 'victory', run, 1.4), 'Click to play again'));
-  assert.ok(!box(draw(env, 'victory', run, 1.5), 'Click to play again'), 'play.js accepts the click strictly after 1.5 s');
-  const on = [];
-  for (let st = 1.6; st < 3.6; st += 0.05) on.push(!!box(draw(env, 'victory', run, st), 'Click to play again'));
-  assert.ok(on.some((v) => v) && on.some((v) => !v), 'it blinks');
+  assert.equal(CB.Screens.victory.CLICK_AT, 2.5);
+  assert.ok(!box(draw(env, 'victory', run, 1.5), '[ continue ]'), 'not yet');
+  const dim = (rec) => env.log.alpha.some((a) => Math.abs(a[0] - 0.35) < 1e-9);
+  assert.ok(box(draw(env, 'victory', run, 2.0), '[ continue ]') && dim(), 'dim while it takes no input');
+  assert.ok(box(draw(env, 'victory', run, 2.5), '[ continue ]') && dim(), 'still dim at exactly 2.5: play.js accepts input strictly after it');
+  assert.ok(box(draw(env, 'victory', run, 2.6), '[ continue ]') && !dim(), 'full strength after');
+  for (let st = 2.6; st < 4.6; st += 0.05) assert.ok(box(draw(env, 'victory', run, st), '[ continue ]'), 'steady at ' + st);
+});
+
+test('victory: an UNLOCKED line shows on the receipt when the play scene hands it over, and clears the log and the buttons', () => {
+  const env = setup({ real: true, extra: [QUIPS] });
+  const { CB, C } = env;
+  const run = victoryRun(CB);
+  assert.ok(!strs(draw(env, 'victory', run, 3)).some((x) => /UNLOCKED/.test(x)), 'nothing without ui');
+  assert.ok(!strs(draw(env, 'victory', run, 3, { unlocked: [] })).some((x) => /UNLOCKED/.test(x)));
+  const rec = draw(env, 'victory', run, 3, { unlocked: ['hat Crown', 'boss rush + --yolo'] });
+  const line = box(rec, 'UNLOCKED: hat Crown, boss rush + --yolo');
+  assert.ok(line, 'one gold line');
+  assert.ok(env.log.text.some((a) => a[0] === line.str && a[3].color === C.gold));
+  assert.ok(Math.abs(centreX(line) - 160) <= 1);
+  assert.equal(line.y, 141);
+  const last = box(rec, CB.Screens.victory.commitHash(7, 3) + ' ' + CB.Bosses[CB.STAGES[3].boss].commitMsg);
+  assert.ok(line.y >= last.y + last.h, 'under the last log line');
+  assert.ok(line.y + line.h <= CB.Screens.victory.shareBox().y, 'above the buttons');
+  assertLayout(rec, 'unlocked');
+  // A line too long for the receipt is cut, never run off the screen.
+  const long = draw(env, 'victory', run, 3, { unlocked: ['x'.repeat(80)] });
+  assert.ok(long.texts().every((b) => b.x >= 0 && b.x + b.w <= 320));
+  assert.ok(box(draw(env, 'victory', run, 1.4, { unlocked: ['hat Crown'] }), 'UNLOCKED: hat Crown') === undefined, 'it fades in with the log, not before');
 });
 
 test('victory: fewer tally kinds, no fixes and an empty history still lay out', () => {
@@ -1031,7 +1124,7 @@ test('victory: Clawd hops with abs(sin(6t)) * 4 and wears the hat, clear of the 
 
 const SHARE_JS = 'src/core/share.js';
 const SHARE_LABEL = { kbm: '[ copy result ] (C)', touch: '[ share result ]', pad: '[ X: copy result ]' };
-const AGAIN_LABEL = { kbm: 'Click to play again', touch: 'Tap to play again', pad: 'Press A to play again' };
+const CONTINUE_LABEL = { kbm: '[ continue ]', touch: '[ continue ]', pad: '[ A: continue ]' };
 const DEVICES = ['kbm', 'touch', 'pad'];
 const touchesBox = (b, hit) => b.x < hit.x + hit.w && hit.x < b.x + b.w && b.y < hit.y + hit.h && hit.y < b.y + b.h;
 const shareEnv = (dev) => {
@@ -1040,92 +1133,102 @@ const shareEnv = (dev) => {
   return env;
 };
 
-test('victory share: the button shows with the play-again prompt, does not blink, and the rows above it have not moved', () => {
+test('victory share: two framed buttons side by side, steady, with the rows above them where they were', () => {
   const env = shareEnv('kbm');
   const { CB, C } = env;
   const run = victoryRun(CB);
   const SH = SHARE_LABEL.kbm;
-  assert.ok(!box(draw(env, 'victory', run, 1.4), SH), 'hidden at 1.4');
-  assert.ok(!box(draw(env, 'victory', run, 1.5), SH), 'and at exactly 1.5: play.js accepts the share strictly after it, like the click');
-  const shows = [];
-  const agains = [];
-  for (let st = 1.6; st < 3.6; st += 0.05) {
+  assert.ok(!box(draw(env, 'victory', run, 1.5), SH), 'hidden at 1.5');
+  for (let st = 1.7; st < 3.6; st += 0.05) {
     const rec = draw(env, 'victory', run, st);
-    shows.push(!!box(rec, SH));
-    agains.push(!!box(rec, AGAIN_LABEL.kbm));
+    assert.ok(box(rec, SH) && box(rec, CONTINUE_LABEL.kbm), 'both buttons stay up at ' + st);
   }
-  assert.ok(shows.every((v) => v), 'the share button never blinks');
-  assert.ok(agains.some((v) => v) && agains.some((v) => !v), 'the play-again prompt does');
-  const rec = draw(env, 'victory', run, 2.0);
+  const rec = draw(env, 'victory', run, 3);
   const share = box(rec, SH);
-  const again = box(rec, AGAIN_LABEL.kbm);
-  assert.equal(share.y, 160);
-  assert.equal(again.y, 160, 'one row');
-  assert.equal(share.x + share.w, 154, 'the button ends left of the gutter');
-  assert.equal(again.x, 166, 'the prompt starts right of it');
-  assert.ok(env.log.text.some((a) => a[0] === SH && a[3].color === C.pale && a[3].align === 'right'));
-  assert.ok(env.log.text.some((a) => a[0] === AGAIN_LABEL.kbm && a[3].color === C.white));
+  const cont = box(rec, CONTINUE_LABEL.kbm);
+  const SB = CB.Screens.victory.shareBox();
+  const NB = CB.Screens.victory.continueBox();
+  assert.deepEqual(H.plain(SB), { x: 36, y: 153, w: 120, h: 14 });
+  assert.deepEqual(H.plain(NB), { x: 164, y: 153, w: 120, h: 14 });
+  assert.equal(NB.x - (SB.x + SB.w), 8, 'air between them');
+  assert.ok(inBox(share, SB) && inBox(cont, NB), 'each label inside its button');
+  assert.ok(Math.abs(centreX(share) - (SB.x + SB.w / 2)) <= 1 && Math.abs(centreX(cont) - (NB.x + NB.w / 2)) <= 1, 'centred');
+  for (const b of [SB, NB]) assert.ok(env.log.frame.some((a) => a[0] === b.x && a[1] === b.y && a[2] === b.w && a[3] === b.h), 'framed');
+  assert.ok(env.log.text.some((a) => a[0] === SH && a[3].color === C.pale));
+  assert.ok(env.log.text.some((a) => a[0] === CONTINUE_LABEL.kbm && a[3].color === C.white));
   // Everything above the row is where it was.
-  assert.equal(box(rec, DISCLAIMER).y, 152);
-  assert.equal(box(rec, 'git log --oneline').y, 106);
-  CB.STAGES.forEach((stage, i) => assert.equal(box(rec, CB.Screens.victory.commitHash(7, i) + ' ' + CB.Bosses[stage.boss].commitMsg).y, 115 + 9 * i));
-  assert.equal(box(rec, 'time 01:01 · deaths 3').y, 62);
-  assert.ok(share.y + share.h < 169 && again.y + again.h < 169, 'both clear the toast band (y 169-180)');
+  assert.equal(box(rec, DISCLAIMER).y, 173);
+  assert.equal(box(rec, 'git log --oneline').y, 101);
+  CB.STAGES.forEach((stage, i) => assert.equal(box(rec, CB.Screens.victory.commitHash(7, i) + ' ' + CB.Bosses[stage.boss].commitMsg).y, 109 + 8 * i));
+  assert.equal(box(rec, 'time 01:01 · deaths 3').y, 60);
+  assert.ok(SB.y + SB.h <= 171 && NB.y + NB.h <= 171, 'both clear the victory toast band (y 171-180)');
   assertLayout(rec, 'victory with share');
 });
 
-test('victory share: SHARE_BOX is frozen, holds the label on every device, touches no other text and stays above the toast band', () => {
-  for (const dev of DEVICES) {
-    const env = shareEnv(dev);
-    const S = env.CB.Screens.victory.SHARE_BOX;
-    assert.ok(Object.isFrozen(S));
-    assert.deepEqual(H.plain(S), { x: 70, y: 159, w: 88, h: 10 });
-    assert.ok(S.x >= 0 && S.y >= 0 && S.x + S.w <= 320 && S.y + S.h <= 169, 'on screen, above the toast band');
-    const run = victoryRun(env.CB);
-    for (const st of [1.6, 2.1, 3.1]) {
-      const rec = draw(env, 'victory', run, st);
-      const label = box(rec, SHARE_LABEL[dev]);
-      assert.ok(label, dev + ' label at ' + st);
-      assert.ok(inBox(label, S), `${dev}: the label (${label.x},${label.y} ${label.w}x${label.h}) is inside the box`);
-      const others = rec.texts().filter((b) => b !== label && b.str !== '✻' && touchesBox(b, S));
-      assert.deepEqual(others.map((b) => b.str), [], dev + ': no other text touches the box');
-    }
+test('victory share: on touch the buttons are at least 22 px tall (44 CSS px at 2x), and the boxes agree with the frames', () => {
+  const env = shareEnv('touch');
+  const V = env.CB.Screens.victory;
+  const SB = V.shareBox();
+  const NB = V.continueBox();
+  assert.ok(SB.h >= 22 && NB.h >= 22, 'touch height ' + SB.h);
+  assert.equal(SB.y, NB.y);
+  assert.ok(SB.y + SB.h <= 171, 'still clears the toast band');
+  assert.ok(NB.x - (SB.x + SB.w) >= 8, 'with air between');
+  assert.deepEqual(H.plain(V.SHARE_BOX), H.plain(SB), 'SHARE_BOX is the touch-sized box');
+  assert.ok(Object.isFrozen(V.SHARE_BOX));
+  const rec = draw(env, 'victory', victoryRun(env.CB), 3);
+  assert.ok(env.log.frame.some((a) => a[0] === SB.x && a[1] === SB.y && a[2] === SB.w && a[3] === SB.h));
+  assert.ok(inBox(box(rec, SHARE_LABEL.touch), SB) && inBox(box(rec, CONTINUE_LABEL.touch), NB));
+  // Off touch they are shorter.
+  for (const dev of ['kbm', 'pad']) {
+    const e = shareEnv(dev);
+    assert.equal(e.CB.Screens.victory.shareBox().h, 14, dev);
   }
 });
 
-test('victory share: the box fits the widest label closely and the labels each fit it with room to spare for a thumb', () => {
-  const env = shareEnv('kbm');
-  const S = env.CB.Screens.victory.SHARE_BOX;
-  const widest = Math.max(...DEVICES.map((d) => env.CB.Font.measure(SHARE_LABEL[d], 1)));
-  assert.ok(widest <= S.w && S.w - widest <= 12, `box ${S.w} px for a ${widest} px label`);
-  assert.ok(S.h >= 8 && S.h <= 12, 'about a text row tall');
+test('victory share: each button holds its label on every device and touches no other text', () => {
+  for (const dev of DEVICES) {
+    const env = shareEnv(dev);
+    const V = env.CB.Screens.victory;
+    const run = victoryRun(env.CB);
+    for (const st of [1.7, 2.6, 3.1]) {
+      const rec = draw(env, 'victory', run, st);
+      for (const [b, str] of [[V.shareBox(), SHARE_LABEL[dev]], [V.continueBox(), CONTINUE_LABEL[dev]]]) {
+        const label = box(rec, str);
+        assert.ok(label, dev + ' ' + str + ' at ' + st);
+        assert.ok(inBox(label, b), `${dev}: "${str}" fits its button`);
+        const others = rec.texts().filter((t) => t !== label && t.str !== '✻' && touchesBox(t, b));
+        assert.deepEqual(others.map((t) => t.str), [], dev + ': no other text touches the button');
+      }
+    }
+  }
 });
 
 test('victory share: a pad shows its X button, a phone its tap label, and each device only its own', () => {
   for (const dev of DEVICES) {
     const env = shareEnv(dev);
     const rec = draw(env, 'victory', victoryRun(env.CB), 2.1);
-    for (const other of DEVICES.filter((d) => d !== dev)) assert.ok(!box(rec, SHARE_LABEL[other]), dev + ' shows no ' + other + ' label');
+    for (const other of DEVICES.filter((d) => d !== dev)) {
+      assert.ok(!box(rec, SHARE_LABEL[other]), dev + ' shows no ' + other + ' label');
+      if (CONTINUE_LABEL[other] !== CONTINUE_LABEL[dev]) assert.ok(!box(rec, CONTINUE_LABEL[other]), dev + ' shows no ' + other + ' continue');
+    }
     assert.ok(box(rec, SHARE_LABEL[dev]), dev);
+    assert.ok(box(rec, CONTINUE_LABEL[dev]), dev);
   }
 });
 
-test('victory share: without CB.Share there is no button and the prompt is centred as before', () => {
+test('victory share: without CB.Share there is no share button and [ continue ] is centred', () => {
   const env = setup({ real: true, extra: [QUIPS] });
   assert.equal(env.CB.Share, undefined);
   const run = victoryRun(env.CB);
-  let seen = false;
-  for (let st = 1.6; st < 3.6; st += 0.05) {
+  for (let st = 1.7; st < 3.6; st += 0.05) {
     const rec = draw(env, 'victory', run, st);
     assert.ok(!strs(rec).some((s) => /result/.test(s)), 'no share label');
-    const b = box(rec, 'Click to play again');
-    if (b) {
-      seen = true;
-      assert.equal(b.y, 160);
-      assert.ok(Math.abs(centreX(b) - 160) <= 1);
-    }
+    const b = box(rec, '[ continue ]');
+    assert.ok(b, 'steady at ' + st);
+    assert.equal(b.y, 153 + 3, 'centred in the band: the label row sits 3 px into the 14 px button');
+    assert.ok(Math.abs(centreX(b) - 160) <= 1);
   }
-  assert.ok(seen);
 });
 
 test('victory daily: the date shows in gold at the right end of the log header row, only when run.daily is a string', () => {
@@ -1164,15 +1267,21 @@ test('victory daily: every combination of device, daily, fix count and time lays
 });
 
 test('victory daily: the bottom row, the log lines and the toast band never share a pixel', () => {
-  const env = shareEnv('pad');
-  const { CB } = env;
-  const run = victoryRun(CB, { daily: '2026-10-13' });
-  const rec = draw(env, 'victory', run, 2.1);
-  const TOAST_BAND = { x: 0, y: 169, w: 320, h: 11 }; // play.js: TOAST_Y 171, the band starts two above it
-  const others = noConfetti(rec).filter((b) => touchesBox(b, TOAST_BAND));
-  assert.deepEqual(others.map((b) => b.str), [], 'no text reaches the toast band');
-  const last = Math.max(...CB.STAGES.map((s, i) => 115 + 9 * i + 7));
-  assert.ok(last <= box(rec, DISCLAIMER).y - 1, 'the last log line ends above the disclaimer');
+  for (const dev of DEVICES) {
+    const env = shareEnv(dev);
+    const { CB } = env;
+    const run = victoryRun(CB, { daily: '2026-10-13' });
+    const rec = draw(env, 'victory', run, 3, { unlocked: ['hat Crown'] });
+    const V = CB.Screens.victory;
+    for (const b of [V.shareBox(), V.continueBox()]) {
+      assert.ok(b.y + b.h <= 171, dev + ': the buttons end where the toast band starts');
+      const hit = noConfetti(rec).filter((t) => touchesBox(t, b) && !inBox(t, b));
+      assert.deepEqual(hit.map((t) => t.str), [], dev + ': only the label is inside the button');
+    }
+    const last = Math.max(...CB.STAGES.map((s, i) => 109 + 8 * i + 7));
+    assert.ok(last <= box(rec, 'UNLOCKED: hat Crown').y - 1, 'the last log line ends above the unlocked line');
+    assert.ok(box(rec, DISCLAIMER).y >= 171, 'the disclaimer lives in the toast band, under the buttons');
+  }
 });
 
 test('victory patches: the line counts what the run holds, so a daily build starts with its patch on the receipt', () => {

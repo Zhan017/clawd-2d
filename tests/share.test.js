@@ -9,7 +9,6 @@ const H = require('./harness');
 
 const DEVICES = ['kbm', 'touch', 'pad'];
 const SITE = 'https://clawd-2d.vercel.app';
-const SHARE_X = 70; // SHARE_BOX.x (w 88, y 159, h 10), pinned in tests/draw.screens.test.js
 const LOAD = ['src/core/ns.js', 'src/game/patches.js', 'src/core/share.js'];
 const tick = () => new Promise((resolve) => setImmediate(resolve)); // lets the promise chains in send() and the toast settle
 const abort = () => Object.assign(new Error('The user aborted a request.'), { name: 'AbortError' });
@@ -360,7 +359,7 @@ function victoryScene(dev, over) {
   r.resize();
   const rec = H.recorder(r, CB);
   const run = CB.createRun({ seed: 7, startStage: 3 });
-  Object.assign(run, { state: 'victory', stateT: 2.2, deaths: 3, time: 61.9, bossesFixed: 4, history: ['spread', 'rapid'], squashed: { syntaxError: 3, nullPointer: 2 } }, o.run || {});
+  Object.assign(run, { state: 'victory', stateT: 3, deaths: 3, time: 61.9, bossesFixed: 4, history: ['spread', 'rapid'], squashed: { syntaxError: 3, nullPointer: 2 } }, o.run || {});
   return { CB, sandbox, r, rec, run };
 }
 
@@ -368,10 +367,10 @@ test('victory share: every pixel of the drawn label is a hit and the pixels arou
   const LABEL = { kbm: '[ copy result ] (C)', touch: '[ share result ]', pad: '[ X: copy result ]' };
   for (const dev of DEVICES) {
     const { CB, r, rec, run } = victoryScene(dev);
-    CB.Screens.victory.draw(r, run, 2.2);
+    CB.Screens.victory.draw(r, run, 3);
     const label = rec.texts().find((b) => b.str === LABEL[dev]);
     assert.ok(label, dev);
-    const S = CB.Screens.victory.SHARE_BOX;
+    const S = CB.Screens.victory.shareBox(); // the box of this device (22 px tall on touch, 14 elsewhere)
     const inside = (x, y) => x >= S.x && x < S.x + S.w && y >= S.y && y < S.y + S.h;
     for (const [x, y] of [[label.x, label.y], [label.x + label.w - 1, label.y], [label.x, label.y + label.h - 1], [label.x + label.w - 1, label.y + label.h - 1], [label.x + label.w / 2, label.y + label.h / 2]]) {
       assert.ok(inside(x, y), `${dev}: ${x},${y} of the label is a hit`);
@@ -385,7 +384,7 @@ test('victory share: every pixel of the drawn label is a hit and the pixels arou
     assert.equal(tap(label.x + label.w - 2, label.y + label.h - 2), true);
     assert.equal(tap(S.x - 1, S.y + 3), false, dev + ': a tap beside it does not');
     assert.equal(tap(160, 100), false);
-    assert.equal(tap(210, 163), false, dev + ': nor one on the play-again prompt');
+    assert.equal(tap(210, 163), false, dev + ': nor one on the continue button');
   }
 });
 
@@ -424,7 +423,7 @@ function playScene(over) {
   s.game = { debug: {}, input: s.input, go: (name) => s.visits.push(name) };
   s.play = CB.Scenes.play;
   s.play.enter(s.game, { runOpts: { seed: 7, skipWaves: true, startStage: 3 } });
-  Object.assign(s.play.run, { state: 'victory', stateT: o.stateT == null ? 2 : o.stateT, deaths: 3, time: 61.9, bossesFixed: 4, history: ['spread', 'rapid'], squashed: { syntaxError: 3, nullPointer: 2 } }, o.run || {});
+  Object.assign(s.play.run, { state: 'victory', stateT: o.stateT == null ? 3 : o.stateT, deaths: 3, time: 61.9, bossesFixed: 4, history: ['spread', 'rapid'], squashed: { syntaxError: 3, nullPointer: 2 } }, o.run || {});
   s.step = (inp) => s.play.update(CB.DT, H.makeInput(inp));
   s.toastTexts = () => s.play.toasts.map((t) => t.text);
   return s;
@@ -462,7 +461,7 @@ test('play victory: the pad\'s X shares and stays, with the pad\'s toast', async
 test('play victory: a tap on the share button shares and does not play again, though it is a confirm too', async () => {
   for (const dev of DEVICES) {
     const s = playScene({ send: ok, device: dev });
-    const box = s.CB.Screens.victory.SHARE_BOX;
+    const box = s.CB.Screens.victory.shareBox();
     s.step({ confirm: true, tap: true, aimX: box.x + box.w / 2, aimY: box.y + box.h / 2 });
     assert.equal(s.sent.length, 1, dev);
     assert.deepEqual(s.visits, [], dev + ': stayed');
@@ -471,13 +470,24 @@ test('play victory: a tap on the share button shares and does not play again, th
   }
 });
 
-test('play victory: any other confirm plays again -- Enter, a tap or click elsewhere, a tap just beside the button, pad A', () => {
-  const taps = [[160, 100], [20, 20], [SHARE_X - 1, 164], [SHARE_X + 88, 164], [210, 163], [100, 158], [100, 169]];
-  for (const [x, y] of taps) {
-    const s = playScene({ send: ok });
-    s.step({ confirm: true, tap: true, aimX: x, aimY: y });
-    assert.deepEqual(s.visits, ['title'], `a tap at ${x},${y} leaves`);
-    assert.equal(s.sent.length, 0);
+test('play victory: only [ continue ], Enter and pad A leave -- a tap or click anywhere else, even just beside a button, does nothing', () => {
+  for (const dev of DEVICES) {
+    const probe = playScene({ send: ok, device: dev });
+    const SB = probe.CB.Screens.victory.shareBox();
+    const NB = probe.CB.Screens.victory.continueBox();
+    const taps = [[160, 100], [20, 20], [SB.x - 1, SB.y + 3], [NB.x + NB.w, NB.y + 3], [NB.x + 4, NB.y - 1], [NB.x + 4, NB.y + NB.h], [SB.x + SB.w + 2, SB.y + 3]];
+    for (const [x, y] of taps) {
+      const s = playScene({ send: ok, device: dev });
+      s.step({ confirm: true, tap: true, aimX: x, aimY: y });
+      assert.deepEqual(s.visits, [], `${dev}: a tap at ${x},${y} stays on the receipt`);
+      assert.equal(s.sent.length, 0);
+    }
+    for (const [x, y] of [[NB.x, NB.y], [NB.x + NB.w - 1, NB.y + NB.h - 1], [NB.x + NB.w / 2, NB.y + NB.h / 2]]) {
+      const s = playScene({ send: ok, device: dev });
+      s.step({ confirm: true, tap: true, aimX: x, aimY: y });
+      assert.deepEqual(s.visits, ['title'], `${dev}: a tap at ${x},${y} is the continue button`);
+      assert.equal(s.sent.length, 0);
+    }
   }
   const enter = playScene({ send: ok });
   enter.step({ confirm: true });
@@ -488,6 +498,19 @@ test('play victory: any other confirm plays again -- Enter, a tap or click elsew
   assert.equal(a.sent.length, 0);
 });
 
+test('play victory: the receipt stays after a share, and a second tap on share shares again', async () => {
+  const s = playScene({ send: ok });
+  const box = s.CB.Screens.victory.shareBox();
+  s.step({ confirm: true, tap: true, aimX: box.x + 5, aimY: box.y + 5 });
+  s.step({});
+  s.step({ confirm: true, tap: true, aimX: 160, aimY: 100 });
+  assert.deepEqual(s.visits, []);
+  assert.equal(s.sent.length, 1);
+  s.step({ confirm: true, tap: true, aimX: box.x + 5, aimY: box.y + 5 });
+  assert.equal(s.sent.length, 2);
+  assert.deepEqual(s.visits, []);
+});
+
 test('play victory: share wins when it arrives with a confirm, so C and Enter together do not leave', () => {
   const s = playScene({ send: ok });
   s.step({ keys: ['KeyC'], confirm: true });
@@ -495,22 +518,25 @@ test('play victory: share wins when it arrives with a confirm, so C and Enter to
   assert.deepEqual(s.visits, []);
 });
 
-test('play victory: nothing shares before the prompt delay (strictly after 1.5 s), and nothing leaves either', () => {
-  for (const st of [0, 0.5, 1.5]) {
+test('play victory: nothing shares before the input delay (strictly after 2.5 s), and nothing leaves either', () => {
+  for (const st of [0, 0.5, 1.5, 2.5]) {
     const s = playScene({ send: ok, stateT: st });
     // stateT moves on with the step: set it back so the update that sees it is at `st`.
     s.play.run.stateT = st;
     s.step({ keys: ['KeyC'], confirm: true });
     assert.equal(s.sent.length, 0, 'C at ' + st);
-    const box = s.CB.Screens.victory.SHARE_BOX;
+    const box = s.CB.Screens.victory.shareBox();
     s.play.run.stateT = st;
     s.step({ confirm: true, tap: true, aimX: box.x + 4, aimY: box.y + 4 });
     assert.equal(s.sent.length, 0, 'a tap on the button at ' + st);
     assert.deepEqual(s.visits, [], 'and no leave at ' + st);
+    s.play.run.stateT = st;
+    s.step({ confirm: true });
+    assert.deepEqual(s.visits, [], 'Enter does not leave at ' + st);
   }
-  const late = playScene({ send: ok, stateT: 1.51 });
+  const late = playScene({ send: ok, stateT: 2.51 });
   late.step({ keys: ['KeyC'] });
-  assert.equal(late.sent.length, 1, 'just after 1.5 s it works');
+  assert.equal(late.sent.length, 1, 'just after 2.5 s it works');
 });
 
 test('play victory: C does nothing outside victory', () => {
@@ -670,15 +696,17 @@ test('play victory: notify keeps its old shape for a plain message and rewrites 
   assert.equal(s.play.toasts.length, 2, 'junk is ignored');
 });
 
-test('play victory: without CB.Share, C and the pad\'s X do nothing and a tap where the button would be plays again, as before', () => {
+test('play victory: without CB.Share, C and the pad\'s X do nothing and a tap where the button would be is only a tap', () => {
   const s = playScene({});
   delete s.CB.Share;
   s.step({ keys: ['KeyC'] });
   s.step({ pad: { a: false, b: false, x: true, y: false, lb: false, rb: false, start: false, back: false } });
   assert.deepEqual(s.visits, [], 'nothing happened');
-  const box = s.CB.Screens.victory.SHARE_BOX;
+  const box = s.CB.Screens.victory.shareBox();
   s.step({ confirm: true, tap: true, aimX: box.x + 4, aimY: box.y + 4 });
-  assert.deepEqual(s.visits, ['title'], 'it is only a tap now');
+  assert.deepEqual(s.visits, [], 'it is only a tap now: nothing');
+  s.step({ confirm: true });
+  assert.deepEqual(s.visits, ['title'], 'Enter still leaves');
   const t = playScene({});
   t.CB.Share = { text: () => 'x' }; // half a module is no module
   t.step({ keys: ['KeyC'] });
@@ -800,14 +828,14 @@ test('play daily: a new run records its own result', () => {
   s.CB.Daily = { record: (key) => calls.push(key) };
   s.step({});
   s.play.enter(s.game, { runOpts: { seed: 9, startStage: 3 } });
-  Object.assign(s.play.run, { daily: '2026-10-14', state: 'victory', stateT: 2 });
+  Object.assign(s.play.run, { daily: '2026-10-14', state: 'victory', stateT: 3 });
   s.step({});
   assert.deepEqual(calls, ['2026-10-13', '2026-10-14']);
 });
 
 test('play daily: a daily run that leaves straight after the delay was recorded first', () => {
   const calls = [];
-  const s = playScene({ run: { daily: '2026-10-13' }, stateT: 2 });
+  const s = playScene({ run: { daily: '2026-10-13' }, stateT: 3 });
   s.CB.Daily = { record: (key) => calls.push(key) };
   s.step({ confirm: true });
   assert.deepEqual(s.visits, ['title']);
@@ -857,7 +885,7 @@ function wired(dev, over) {
 
 test('end to end, touch: a tap on the button waits for the finger to lift, then opens the share sheet once and stays', async () => {
   const s = wired('touch');
-  const box = s.CB.Screens.victory.SHARE_BOX;
+  const box = s.CB.Screens.victory.shareBox();
   s.tdown(1, box.x + 20, box.y + 5);
   s.frame();
   assert.equal(s.nav.calls.length, 0, 'the finger is down: a touch pointerdown is not a user activation');
@@ -880,7 +908,7 @@ test('end to end, touch: a tap on the button waits for the finger to lift, then 
 
 test('end to end, touch: a quick tap that has lifted before the frame shares at once', async () => {
   const s = wired('touch');
-  const box = s.CB.Screens.victory.SHARE_BOX;
+  const box = s.CB.Screens.victory.shareBox();
   s.tdown(1, box.x + 20, box.y + 5);
   s.tup(1);
   assert.equal(s.nav.calls.length, 0, 'nothing runs by itself');
@@ -891,14 +919,19 @@ test('end to end, touch: a quick tap that has lifted before the frame shares at 
   assert.deepEqual(s.visits, []);
 });
 
-test('end to end, touch: a tap anywhere else plays again, and a cancelled share tap shares nothing later', () => {
+test('end to end, touch: a tap anywhere else does nothing, [ continue ] plays again, and a cancelled share tap shares nothing later', () => {
   const s = wired('touch');
   s.tdown(1, 160, 100);
   s.frame();
-  assert.deepEqual(s.visits, ['title']);
+  assert.deepEqual(s.visits, [], 'a tap on nothing');
+  assert.equal(s.nav.calls.length, 0);
+  const cont = s.CB.Screens.victory.continueBox();
+  s.tdown(2, cont.x + 20, cont.y + 5);
+  s.frame();
+  assert.deepEqual(s.visits, ['title'], 'the continue button');
   assert.equal(s.nav.calls.length, 0);
   const t = wired('touch');
-  const box = t.CB.Screens.victory.SHARE_BOX;
+  const box = t.CB.Screens.victory.shareBox();
   t.tdown(1, box.x + 20, box.y + 5);
   t.frame();
   t.win.fire('pointercancel', { pointerType: 'touch', pointerId: 1 });
@@ -908,10 +941,10 @@ test('end to end, touch: a tap anywhere else plays again, and a cancelled share 
   assert.deepEqual(t.visits, []);
 });
 
-test('end to end, mouse: a click on the button copies now (mousedown is an activation, nav.share stays unused) and a click elsewhere plays again', async () => {
+test('end to end, mouse: a click on the button copies now (mousedown is an activation, nav.share stays unused) and only [ continue ] plays again', async () => {
   const nav = mkNav({ share: () => Promise.resolve(), write: () => Promise.resolve() });
   const s = wired('kbm', { nav });
-  const box = s.CB.Screens.victory.SHARE_BOX;
+  const box = s.CB.Screens.victory.shareBox();
   s.canvas.fire('mousedown', { button: 0, clientX: (box.x + 20) * 4, clientY: (box.y + 5) * 4 });
   s.frame();
   assert.deepEqual(H.plain(nav.calls.map((c) => c[0])), ['write']);
@@ -921,7 +954,11 @@ test('end to end, mouse: a click on the button copies now (mousedown is an activ
   assert.deepEqual(s.visits, []);
   s.canvas.fire('mousedown', { button: 0, clientX: 160 * 4, clientY: 100 * 4 });
   s.frame();
-  assert.deepEqual(s.visits, ['title']);
+  assert.deepEqual(s.visits, [], 'a click on nothing stays');
+  const cont = s.CB.Screens.victory.continueBox();
+  s.canvas.fire('mousedown', { button: 0, clientX: (cont.x + 20) * 4, clientY: (cont.y + 5) * 4 });
+  s.frame();
+  assert.deepEqual(s.visits, ['title'], 'the continue button leaves');
 });
 
 test('end to end, keyboard: C copies and Enter plays again', async () => {
