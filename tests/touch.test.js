@@ -316,6 +316,23 @@ test('touch: the aim stick sets the last aim direction outside a 4 px deadzone a
   near(out.aimDirY, 0.8);
 });
 
+test('touch: a tap in the side bar or the HUD strip steers instead of shooting at the thumb', () => {
+  const { T, st } = sticks();
+  for (const [x, y] of [[340, 120], [300, 8], [316, 100]]) {
+    T.down(st, 1, x, y); // a resting aim thumb off the arena floor
+    let out = T.sample(st);
+    assert.equal(out.aimAt, null, 'no shot at ' + x + ',' + y);
+    assert.equal(out.fire, true, 'it still fires, along the stick');
+    near(out.aimDirX, 0);
+    near(out.aimDirY, -1);
+    T.up(st, 1);
+    out = T.sample(st);
+    assert.equal(out.aimAt, null, 'and no shot after the lift either');
+  }
+  T.down(st, 2, 250, 40); // on the floor it is a tap at that point
+  assert.deepEqual(plain(T.sample(st).aimAt), { x: 250, y: 40 });
+});
+
 test('touch: landing the aim stick keeps the last direction until the finger slides', () => {
   const { T, st } = sticks();
   T.down(st, 1, 310, 100);

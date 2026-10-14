@@ -115,8 +115,14 @@
 
   // The origin is exactly where the finger lands, even in the letterbox, so landing never moves or turns anything by itself.
   // `fresh` false (a finger picked up by a mode change, not one that just landed) can never count as a tap.
+  // The arena floor in game px: a tap there is a shot at that point.
+  function onField(x, y) {
+    const A = CB.ARENA || { x: 8, y: 20, w: 304, h: 152 };
+    return x >= A.x && x <= A.x + A.w && y >= A.y && y <= A.y + A.h;
+  }
+
   function grab(st, which, id, x, y, fresh) {
-    st[which] = { ox: x, oy: y, x, y, sx: x, sy: y, t0: fresh === false ? -Infinity : st.tick, travel: 0 };
+    st[which] = { ox: x, oy: y, x, y, sx: x, sy: y, t0: fresh === false ? -Infinity : st.tick, travel: 0, field: onField(x, y) };
     st.ptr.set(id, which);
     if (which === 'aim') st.shot = null;
   }
@@ -179,7 +185,8 @@
   }
 
   // Down for fewer than `ticks` sim ticks and moved less than TAP_PX since landing.
-  const isTap = (st, s, ticks) => st.tick - s.t0 < ticks && s.travel < TAP_PX;
+  // Only a finger that lands on the arena itself is a tap at a point; one landing in a side bar or the HUD strip (a resting aim thumb) steers.
+  const isTap = (st, s, ticks) => s.field !== false && st.tick - s.t0 < ticks && s.travel < TAP_PX;
 
   function sample(st) {
     const sticks = st.mode === 'sticks';

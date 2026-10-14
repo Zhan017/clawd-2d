@@ -29,7 +29,7 @@ Fan game. Not affiliated with Anthropic.
 ## Play
 
 - **Web:** https://clawd-2d.vercel.app (deployed from `main` on Vercel)
-- **Install it:** on a phone, use *Add to Home Screen*; in desktop Chrome or Edge, use the install button in the address bar. It opens fullscreen with its own icon, and works offline after your first visit.
+- **Install it:** tap **install** at the top right of the title screen. On Android and in desktop Chrome or Edge it opens the install prompt; on an iPhone or iPad it shows how to use Share → *Add to Home Screen*. The installed game opens fullscreen with its own icon and works offline after your first visit.
 - **Locally:** `npm run serve`, then open http://127.0.0.1:8137/. You can also double-click `index.html`.
 
 ## How to play
@@ -91,13 +91,14 @@ The controller rumbles when you get hit, at boss phase changes, on /compact and 
 | Touch | Action |
 |---|---|
 | Left thumb, anywhere on the left half | A move stick appears where you land |
-| Right thumb, anywhere on the right half | An aim stick that fires while held; a quick tap fires the way you last aimed |
+| Right thumb, anywhere on the right half | An aim stick that fires while held |
+| Quick tap on the arena | Shoots at the spot you tapped |
 | DASH button | Dash |
 | /c button | Cast /compact. It fills with the meter and glows when ready |
-| II (top right of the arena) | Pause |
+| II | Pause |
 | Tap | Everything in menus: start, daily build, patches, retry, quit, play again, share your result |
 
-Starting a run goes fullscreen where the browser allows it. In portrait the game asks you to turn your phone, and a fight pauses until you do.
+On wide phones the sticks, DASH, /c and II sit in the black side bars, clear of the arena and of the notch, so your thumbs never cover the action. The first time, the sticks are labelled MOVE and AIM + FIRE. Starting a run goes fullscreen where the browser allows it. In portrait the game asks you to turn your phone, and a fight pauses until you do.
 
 </details>
 
@@ -268,7 +269,7 @@ Debug URLs work only on localhost or `file://`, never on a deployed page:
 
 | Command | Output | Used for |
 |---|---|---|
-| `npm run build:site` | `public/`: the page, one content-hashed bundle of all 52 scripts (`game.<hash>.js`, about 120 KB gzipped) with a source map, a service worker for offline play, the app manifest and the images. Tests, docs and tools stay out. | Static hosting (Vercel). |
+| `npm run build:site` | `public/`: the page, one content-hashed bundle of all 53 scripts (`game.<hash>.js`, about 120 KB gzipped) with a source map, a service worker for offline play, the app manifest and the images. Tests, docs and tools stay out. | Static hosting (Vercel). |
 | `npm run build` | `dist/clawd-vs-bugs.html`: every script inlined into one file (one `<script>` per source file, with `sourceURL` comments so stack traces name the real file). | The claude.ai Artifact version. |
 
 ### Deploying (Vercel)
