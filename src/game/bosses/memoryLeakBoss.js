@@ -112,7 +112,7 @@
     // Translucent disc at the true hitbox radius (it grows with size while the sprite does not), the slime, and a heap gauge above.
     draw(e, r) {
       const size = e.r / BODY_R;
-      const pct = Math.round(50 + 49 * (size - 1));
+      const pct = Math.round(100 * M.clamp(size - 1, 0, 1)); // the label reads the wall gauge's own number: 0 % at size 1, full at size 2
       r.alpha(0.35, () => r.disc(e.x, e.y, e.r, C.green));
       r.alpha(0.6, () => r.ring(e.x, e.y, e.r, C.green));
       const white = e.hitFlash > 0 || (e.invuln > 0 && blink(e.t, 16)); // a hit, or the phase change's invulnerability
@@ -159,7 +159,14 @@
       r.alpha(0.3 + 0.35 * k, () => {
         for (const [dy, wd] of SHADOW) r.rect(d.tx - (wd - 1) / 2, d.ty + dy, wd, 1, C.ink);
       });
-      r.alpha(0.15 + 0.35 * k, () => r.ring(d.tx, d.ty, PUDDLE_R, C.green));
+      // The landing mark: a 2 px yellow rim that firms up as the blob nears, with an inner ring shrinking onto the spot (static in calm mode).
+      r.alpha(0.55 + 0.4 * k, () => {
+        r.ring(d.tx, d.ty, PUDDLE_R, C.yellow);
+        r.ring(d.tx, d.ty, PUDDLE_R - 1, C.yellow);
+      });
+      const calm = !!(CB.Comfort && typeof CB.Comfort.calm === 'function' && CB.Comfort.calm());
+      const inner = calm ? Math.round(PUDDLE_R / 2) : Math.max(1, Math.round((PUDDLE_R - 2) * (1 - k)));
+      r.alpha(0.9, () => r.ring(d.tx, d.ty, inner, C.white));
       r.sprite('leakBlob_' + (Math.floor(e.t / 0.12) % 2), e.x, e.y - 4 * k * (1 - k) * ARC_HEIGHT); // a true parabola: 0 at both ends, ARC_HEIGHT at k = 0.5
     },
   };

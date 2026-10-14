@@ -16,7 +16,10 @@ const BASE = [
 ];
 const FILES = [...BASE, 'src/game/hints.js'];
 const DEVICES = ['kbm', 'touch', 'pad'];
-const IDS = ['dash', 'compact', 'perfect', 'look'];
+const IDS = ['dash', 'compact', 'perfect', 'look']; // the four first-run tips (every loop below that says IDS means these)
+const RULE_IDS = ['loop', 'leak', 'conflict']; // the boss rules, told once on the first fight with each boss
+const RULE_TEXT = { loop: 'only the head takes damage', leak: 'keep hitting it or it heals', conflict: 'kill one twin, then finish the other in 6 s' };
+const RULE_BOSS = { loop: 'infiniteLoop', leak: 'memoryLeakBoss', conflict: 'mergeConflict' };
 const KEY = { dash: 'hintDash', compact: 'hintCompact', perfect: 'hintPerfect', look: 'hintLook' };
 const LIVE = ['wave', 'boss'];
 const NOT_LIVE = ['stageIntro', 'waveBreak', 'bossWarn', 'bossDead', 'patchPick', 'dying', 'dead', 'victory'];
@@ -116,9 +119,9 @@ const fadeOf = (t) => Math.max(0, Math.min(1, t / 0.25, (3 - t) / 0.5)); // the 
 
 // ---- the module ---------------------------------------------------------------------------------------------------------------
 
-test('hints: CB.Hints exposes the four ids and the entry points the play scene calls', () => {
+test('hints: CB.Hints exposes the four tips and three boss rules and the entry points the play scene calls', () => {
   const { Hints } = env();
-  assert.deepEqual(Array.from(Hints.IDS), IDS);
+  assert.deepEqual(Array.from(Hints.IDS), IDS.concat(RULE_IDS));
   for (const k of ['onEvents', 'draw', 'box', 'current', 'pending', 'reset']) assert.equal(typeof Hints[k], 'function', k);
   assert.equal(Hints.SHOW_T, 3, 'a hint stays up for 3 s');
   assert.equal(Hints.NEAR, 48);
@@ -266,7 +269,7 @@ test('hints: look fires 2.6 s into the Heisenbug fight, not before, and not in a
   assert.ok(first !== null, 'it fired');
   assert.ok(first >= 2.6 && first < 2.6 + 1 / 60 + 1e-9, 'at 2.6 s, to the step: ' + first);
 
-  const other = env({ seen: ['compact'] });
+  const other = env({ seen: ['compact', 'loop'] });
   const run2 = runAt(other.CB, 'boss', 5, { startStage: 0 });
   run2.world.boss = other.CB.Bosses.infiniteLoop.create(run2.world);
   tick(other, run2, 5);
@@ -349,15 +352,17 @@ test('hints: a hint is written to cb.hints as an array of ids when it starts, an
 test('hints: a hint already in the saved list never shows', () => {
   for (const id of IDS) {
     const e = env({ seen: [id] });
-    const run = runAt(e.CB, 'boss', 5, { startStage: 3 });
+    const run = runAt(e.CB, 'wave', 5, { startStage: 3 });
     run.world.boss = e.CB.Bosses.heisenbug.create(run.world);
     bulletAt(run, 20, 80);
-    tick(e, run, 1, [COMPACT_READY, PERFECT, OPTIMIZED]);
+    tick(e, run, 1, [COMPACT_READY]); // the /compact tip comes from a meter filled in a wave...
+    run.state = 'boss';
+    tick(e, run, 1, [PERFECT, OPTIMIZED]); // ...the others while the fight is on
     const shown = [shownId(e)].concat(e.Hints.pending());
     assert.ok(!shown.includes(id), id + ' was already seen: ' + JSON.stringify(shown));
     assert.equal(shown.length, 3, 'the other three are still on their way');
   }
-  const all = env({ seen: IDS });
+  const all = env({ seen: IDS.concat(RULE_IDS) });
   const run = runAt(all.CB, 'boss', 5, { startStage: 3 });
   run.world.boss = all.CB.Bosses.heisenbug.create(run.world);
   bulletAt(run, 20, 80);
@@ -460,8 +465,8 @@ test('hints: nothing shows in a debug run, and nothing is written', () => {
 test('hints: a hint shows only in the wave and boss states, and waits for them', () => {
   for (const state of LIVE) {
     const e = env();
-    tick(e, runAt(e.CB, state), 1, [COMPACT_READY]);
-    assert.equal(shownId(e), 'compact', state);
+    tick(e, runAt(e.CB, state), 1, [PERFECT]);
+    assert.equal(shownId(e), 'perfect', state);
   }
   for (const state of NOT_LIVE) {
     const e = env();
@@ -469,11 +474,13 @@ test('hints: a hint shows only in the wave and boss states, and waits for them',
     bulletAt(run, 20, 80);
     tick(e, run, 300, [COMPACT_READY, PERFECT]);
     assert.equal(shownId(e), null, state);
-    assert.deepEqual(e.Hints.pending(), ['compact', 'perfect'], state + ': noted and kept for later (the bullet near her is not noted: it is not a fight)');
+    // A meter filled in the boss states is the fight's own fill (every boss opens with a full one): no tip for it.
+    const bossy = ['bossWarn', 'bossDead'].includes(state);
+    assert.deepEqual(e.Hints.pending(), bossy ? ['perfect'] : ['compact', 'perfect'], state + ': noted and kept for later (the bullet near her is not noted: it is not a fight)');
     assert.equal(e.storage.mem['cb.hints'], undefined, state + ': not seen until shown');
     run.state = 'wave';
     tick(e, run, 1);
-    assert.equal(shownId(e), 'compact', state + ' -> wave: now');
+    assert.equal(shownId(e), bossy ? 'perfect' : 'compact', state + ' -> wave: now');
     assert.deepEqual(e.Hints.pending(), ['perfect', 'dash'].filter((id) => e.Hints.pending().includes(id)), state);
   }
 });
@@ -599,11 +606,12 @@ test('hints: the same hint asked for twice waits once', () => {
 
 test('hints: a four-hint pile-up plays out in order and each is seen once', () => {
   const e = env({ seen: [] });
-  const run = runAt(e.CB, 'boss', 5, { startStage: 3 });
+  const run = runAt(e.CB, 'wave', 5, { startStage: 3 });
   run.world.boss = e.CB.Bosses.heisenbug.create(run.world);
   bulletAt(run, 20, 80);
   const order = [];
-  tick(e, run, 1, [COMPACT_READY, PERFECT]);
+  tick(e, run, 1, [COMPACT_READY, PERFECT]); // the meter fills in a wave: the /compact tip heads the queue
+  run.state = 'boss';
   for (let i = 0; i < 1200; i++) {
     if (shownId(e) && order[order.length - 1] !== shownId(e)) order.push(shownId(e));
     tick(e, run, 1);
@@ -922,7 +930,7 @@ test('hints: the simulation does not know it is there (the same seeded run, with
   assert.ok(without.length > 100);
 });
 
-test('hints: in a real run, the first thing it shows is the /compact tip as the first boss fight opens', () => {
+test('hints: in a real run, the first boss fight opens with no /compact tip (every fight starts with a full meter); its rule comes at 1.2 s', () => {
   const e = env();
   const run = e.CB.createRun({ seed: 3, startStage: 0, skipWaves: true });
   let started = -1;
@@ -933,9 +941,127 @@ test('hints: in a real run, the first thing it shows is the /compact tip as the 
   }
   assert.ok(started >= 0, 'a tip appeared');
   assert.equal(run.state, 'boss', 'in the boss state');
-  assert.equal(shownId(e), 'compact');
-  assert.ok(run.stateT < 0.1, 'on the first step of the fight (Compact.fill opens it)');
-  assert.deepEqual(seenList(e), ['compact']);
+  assert.equal(shownId(e), 'loop', 'the Infinite Loop\'s rule, not /compact');
+  assert.ok(run.stateT >= 1.2 && run.stateT < 1.2 + 2 / 60, 'once the boss name and bar have settled: ' + run.stateT);
+  assert.deepEqual(seenList(e), ['loop']);
+  assert.ok(!e.Hints.pending().includes('compact'), 'the fill that opened the fight is not news');
+});
+
+test('hints: the /compact tip comes when the meter first fills during a wave', () => {
+  const e = env();
+  const fill = (state) => {
+    const run = runAt(e.CB, state, 5);
+    e.Hints.reset();
+    e.CB.Compact.charge(run.world, 1000); // the meter reaches full: Compact announces it with a compactReady event
+    const evs = run.world.events.splice(0);
+    assert.ok(evs.some((x) => x.type === 'compactReady'));
+    tick(e, run, 1, evs);
+    return shownId(e);
+  };
+  assert.equal(fill('wave'), 'compact', 'earned in a wave');
+  e.CB.Save.set('hints', []); // forget it, so a null below can only come from the rule
+  assert.equal(fill('boss'), null, 'refilled in a boss fight: no tip');
+  assert.equal(fill('bossWarn'), null);
+  const run = runAt(e.CB, 'boss', 0);
+  e.Hints.reset();
+  e.CB.Compact.fill(run.world); // what every boss fight opens with
+  tick(e, run, 5, run.world.events.splice(0));
+  assert.equal(shownId(e), null, 'the opening fill is no news');
+  assert.deepEqual(e.Hints.pending(), []);
+});
+
+test('hints: each boss tells its rule once, 1.2 s into the first fight with it, in the boss state only', () => {
+  const stages = { loop: 0, leak: 1, conflict: 2 };
+  for (const id of RULE_IDS) {
+    const e = env({ seen: ['compact'] });
+    const boss = (t, state) => {
+      const run = runAt(e.CB, state || 'boss', t, { startStage: stages[id] });
+      run.world.boss = e.CB.Bosses[RULE_BOSS[id]].create(run.world);
+      return run;
+    };
+    let run = boss(1.19);
+    tick(e, run, 3);
+    assert.equal(shownId(e), null, id + ': not before 1.2 s');
+    run = boss(1.2);
+    tick(e, run, 3);
+    assert.equal(shownId(e), id);
+    assert.deepEqual(seenList(e).slice().sort(), ['compact', id].sort(), id + ' is saved the moment it shows');
+    // Once seen it never returns, on any later run.
+    const again = env({ seen: ['compact', id], storage: e.storage });
+    run = boss(5);
+    tick(again, run, 3);
+    assert.equal(shownId(again), null, id + ' only the first time');
+    // Another boss, another rule: the rest do not fire in this fight.
+    for (const other of RULE_IDS.filter((o) => o !== id)) assert.ok(!seenList(e).includes(other), id + ' fight does not tell ' + other);
+    for (const state of ['wave', 'bossWarn', 'bossDead']) {
+      const e2 = env({ seen: ['compact'] });
+      const r2 = runAt(e2.CB, state, 5, { startStage: stages[id] });
+      r2.world.boss = e2.CB.Bosses[RULE_BOSS[id]].create(r2.world);
+      tick(e2, r2, 3);
+      assert.equal(shownId(e2), null, id + ' in ' + state);
+    }
+    const e3 = env({ seen: ['compact'] });
+    const r3 = boss(5);
+    r3.world.boss.defeated = true;
+    tick(e3, r3, 3);
+    assert.equal(shownId(e3), null, id + ': not once the boss is down');
+  }
+});
+
+test('hints: the rule lines are the same on every device and fit with room to spare', () => {
+  const e = env({ seen: ['compact'] });
+  const g = renderer(e);
+  for (const d of DEVICES) {
+    e.CB.Prompts.setDevice(d);
+    for (const id of RULE_IDS) {
+      const run = runAt(e.CB, 'boss', 5, { startStage: { loop: 0, leak: 1, conflict: 2 }[id] });
+      run.world.boss = e.CB.Bosses[RULE_BOSS[id]].create(run.world);
+      e.Hints.reset();
+      tick(e, run, 1);
+      assert.equal(shownId(e), id, d);
+      for (let i = 0; i < 20; i++) tick(e, run, 1);
+      g.clear();
+      e.Hints.draw(g.r, 1, run);
+      assert.ok(g.log.some((l) => l[0] === 'text' && l[1] === RULE_TEXT[id]), `${id}/${d} drew its line`);
+      const b = e.Hints.box(RULE_TEXT[id], g.r);
+      assert.ok(b.x >= 4 && b.x + b.w <= 296 - 6, `${id}/${d} clear of the screen edge and the touch pause button: ${b.x}..${b.x + b.w}`);
+      e.CB.Save.set('hints', ['compact']);
+    }
+  }
+});
+
+test('hints: the banner never covers the boss: it moves to the lower row (above the touch sticks on a phone) when a part gets under it', () => {
+  for (const device of ['kbm', 'touch']) {
+    const e = env({ device, seen: ['compact', 'loop'] });
+    const g = renderer(e);
+    const run = runAt(e.CB, 'boss', 5, { startStage: 0 });
+    run.world.boss = e.CB.Bosses.infiniteLoop.create(run.world);
+    run.world.player.x = 20;
+    run.world.player.y = 150;
+    tick(e, run, 1, [PERFECT]);
+    assert.equal(shownId(e), 'perfect');
+    for (let i = 0; i < 20; i++) tick(e, run, 1);
+    const text = e.CB.Prompts.text('hintPerfect');
+    const parts = run.world.enemies.filter((p) => p.boss);
+    assert.ok(parts.length > 3);
+    const clear = (b) => parts.every((p) => !(p.x + p.r > b.x && p.x - p.r < b.x + b.w && p.y + p.r > b.y && p.y - p.r < b.y + b.h));
+    // Parts away from both rows: the top row, as ever.
+    parts.forEach((p, i) => { p.x = 160; p.y = 96; });
+    assert.equal(e.Hints.rowFor(text, g.r, run.world), 21, device + ': top by default');
+    // A part under the top row: the lower one.
+    parts[0].x = 160;
+    parts[0].y = 27;
+    const low = e.Hints.rowFor(text, g.r, run.world);
+    assert.ok(low > 21, `${device}: moved down to ${low}`);
+    assert.ok(device === 'touch' ? low + 13 < 124 : low + 13 <= 172, `${device}: the lower row clears the sticks (y 124+) / stays in the arena`);
+    assert.ok(clear(e.Hints.box(text, g.r, low)), device + ': and it is clear of every part');
+    // Stays down while the part stays near the top row, even if the part leaves the lower row's reach.
+    parts[0].y = 60;
+    assert.equal(e.Hints.rowFor(text, g.r, run.world), low, device + ': no flicker back and forth');
+    // A part now under the lower row, the top is free again.
+    parts[0].y = low + 6;
+    assert.equal(e.Hints.rowFor(text, g.r, run.world), 21, device + ': back up');
+  }
 });
 
 test('hints: in a real Heisenbug fight the look tip arrives at 2.6 s of the fight', () => {
@@ -1015,9 +1141,21 @@ test('hints (scene): update hands every step\'s events, the run and the host to 
   assert.equal(calls.length, 3, 'once per step, however many steps a frame runs');
 });
 
-test('hints (scene): the boss fight opens with the /compact tip, drawn in the box after the HUD', () => {
+// A wave in progress (the scene steps it with a stub spawner) whose meter has just filled: the /compact tip's trigger.
+const toWaveTip = (s) => {
+  const run = s.play.run;
+  run.state = 'wave';
+  run.stateT = 0;
+  run.spawner = { update() {}, done: false };
+  s.CB.Hints.onEvents([COMPACT_READY], run, s.game);
+};
+
+test('hints (scene): the /compact tip comes in a wave, not as the boss fight opens, and is drawn in the box after the HUD', () => {
   const s = scene();
   toBoss(s);
+  for (let i = 0; i < 30; i++) s.play.update(s.CB.DT, H.makeInput());
+  assert.equal(s.CB.Hints.current(), null, 'the fight opened with its own full meter: no tip');
+  toWaveTip(s);
   assert.equal(s.CB.Hints.current().id, 'compact');
   for (let i = 0; i < 20; i++) s.play.update(s.CB.DT, H.makeInput());
   s.log.length = 0;
@@ -1049,7 +1187,7 @@ test('hints (scene): it is drawn under an overlay card (the tip, then the wave b
 
 test('hints (scene): a paused scene draws no hint and its clock stands still', () => {
   const s = scene();
-  toBoss(s);
+  toWaveTip(s);
   for (let i = 0; i < 40; i++) s.play.update(s.CB.DT, H.makeInput());
   const t = s.CB.Hints.current().t;
   s.play.paused = true;
@@ -1079,7 +1217,7 @@ test('hints (scene): a debug run shows none and saves none', () => {
 test('hints (scene): the tip uses the device in use', () => {
   for (const [device, text] of [['kbm', 'E: /compact clears the screen'], ['touch', '/c: /compact clears the screen'], ['pad', 'RB: /compact clears the screen']]) {
     const s = scene({ device });
-    toBoss(s);
+    toWaveTip(s);
     for (let i = 0; i < 30; i++) s.play.update(s.CB.DT, H.makeInput());
     s.log.length = 0;
     s.play.draw(s.r, 0.5);

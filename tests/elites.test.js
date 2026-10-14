@@ -61,6 +61,8 @@ test('hotfix: heals below max, gives +15 context at full, expires at 8 s, cap 6'
   CB.Pickups.drop(w, p.x, p.y);
   H.stepN(w, 1, idle);
   assert.equal(w.context.value, 15);
+  const pops = w.events.filter((e) => e.type === 'text').map((e) => e.text);
+  assert.deepEqual(pops, ['+1 ♥', '+15 /compact'], 'the pop names the meter it feeds, not "ctx"');
   CB.Pickups.drop(w, 30, 30);
   H.stepN(w, 8.1 * 60, idle);
   assert.equal(w.pickups.length, 0);

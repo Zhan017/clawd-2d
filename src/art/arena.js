@@ -15,6 +15,7 @@
   const GLITCH_T = 0.4; // the length of w.glitchT, as Fx sets it on a phase change
   const SCAN_H = 6;
   const OVERLAY_A = 0.18; // boss overlays stay at or under 0.2 so bullets stay readable
+  const LABEL_A = 0.5; // the Merge Conflict's HEAD / incoming labels
   const GAUGE = { x: 2, y: A.y + 26, w: 4, h: 100 }; // memory-leak heap gauge, inside the left wall
   const CENTER = { x: 160, y: 96 };
 
@@ -244,8 +245,9 @@
     r.alpha(OVERLAY_A, () => {
       for (let y = A.y; y < A.y + A.h; y += 6) r.rect(CENTER.x, y, 1, Math.min(3, A.y + A.h - y), pal.accent);
     });
-    r.text('<<<<<<< HEAD', 12, 22, { color: C.blue, alpha: OVERLAY_A });
-    r.text('>>>>>>> incoming', 308, 166, { color: C.green, align: 'right', alpha: OVERLAY_A });
+    // Both labels ride the floor's top row, clear of the walls and the touch buttons, at half strength (OVERLAY_A was unreadable); the pause button owns x 296+.
+    r.text('<<<<<<< HEAD', A.x + 8, A.y + 5, { color: C.blue, alpha: LABEL_A });
+    r.text('>>>>>>> incoming', A.x + A.w - 24, A.y + 5, { color: C.green, align: 'right', alpha: LABEL_A });
   }
 
   // A 0.12 s band every 1.7 s: three strips of the floor shifted sideways, placed by a hash of floor(t * 8).

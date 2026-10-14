@@ -325,7 +325,7 @@ function spy(r) {
       return orig.apply(r, a);
     };
   };
-  for (const k of ['sprite', 'text', 'squash', 'rect']) wrap(k);
+  for (const k of ['sprite', 'text', 'squash', 'rect', 'ring']) wrap(k);
   return log;
 }
 const sprites = (log) => log.filter((e) => e.k === 'sprite');
@@ -893,4 +893,98 @@ test('look: a shot from a stick sets the recoil, and the drawn sprite is pushed 
   CB.Player.draw(p, r, 0, {});
   const x = bodyCall(log).a[1];
   assert.ok(x < p.x, `aiming right pushes Clawd left (${x} vs ${p.x})`);
+});
+
+// ---- H1 / H3: the bubble stays in the arena and holds back at wave starts; one heart pulses a ring under Clawd -------------------------
+
+test('look: the Thinking bubble flips below Clawd near the top wall so it never leaves the arena', () => {
+  const { CB, r } = setup();
+  const log = spy(r);
+  const p = quiet(CB, { idleT: 3 });
+  const ys = [];
+  for (const py of [22, 30, 45, 52, 53, 54, 60, 100]) {
+    p.y = py;
+    log.length = 0;
+    CB.Player.draw(p, r, 0, {});
+    const t = log.filter((e) => e.k === 'text');
+    assert.equal(t.length, 2);
+    ys.push(t[1].a[2]);
+    assert.ok(t[1].a[2] >= CB.ARENA.y + 2, `at y ${py} the bubble is at ${t[1].a[2]}`);
+    assert.ok(t[1].a[2] + 7 <= CB.ARENA.y + CB.ARENA.h, 'and above the bottom wall');
+  }
+  assert.ok(ys[0] > 22 + 3, 'flipped below Clawd when she is at the top');
+  assert.equal(ys[7], 100 - 31, 'unchanged mid-arena');
+});
+
+test('look: a flipped bubble clears a /compact prompt that is also below her', () => {
+  const { CB, r } = setup();
+  const log = spy(r);
+  const p = quiet(CB, { idleT: 3 });
+  p.y = 30;
+  const w = CB.createWorld({ seed: 1 });
+  w.player = p;
+  CB.Compact = { ready: () => false, promptBelow: () => true };
+  log.length = 0;
+  CB.Player.draw(p, r, 0, { w });
+  const plain = log.filter((e) => e.k === 'text')[1].a[2];
+  CB.Compact.ready = () => true;
+  log.length = 0;
+  CB.Player.draw(p, r, 0, { w });
+  const lower = log.filter((e) => e.k === 'text')[1].a[2];
+  assert.ok(lower >= plain + 10, `the bubble sits below the prompt: ${plain} -> ${lower}`);
+});
+
+test('look: the bubble holds back while the HUD says a wave is starting, and comes back after it', () => {
+  const { CB, r } = setup();
+  const log = spy(r);
+  const p = quiet(CB, { idleT: 3 });
+  CB.Screens = { hud: { bubbleQuiet: (t) => t < 2 } };
+  CB.Player.draw(p, r, 1, {});
+  assert.deepEqual(texts(log), [], 'quiet');
+  CB.Player.draw(p, r, 2.5, {});
+  assert.equal(texts(log).length, 2, 'back');
+  CB.Screens = { hud: {} };
+  log.length = 0;
+  CB.Player.draw(p, r, 1, {});
+  assert.equal(texts(log).length, 2, 'a HUD without the hook never holds it back');
+});
+
+test('look: at one heart a ring pulses under Clawd, steady in calm mode, gold on the prod floor; none at two hearts or when dead', () => {
+  const { CB, r } = setup();
+  const log = spy(r);
+  const C = CB.Pal.C;
+  const rings = () => log.filter((e) => e.k === 'ring');
+  const p = quiet(CB, { hearts: 2 });
+  CB.Player.draw(p, r, 0, {});
+  assert.equal(rings().length, 0, 'two hearts: none');
+  p.hearts = 1;
+  p.beatPulse = 0;
+  log.length = 0;
+  CB.Player.draw(p, r, 0, {});
+  const calmRad = rings()[0].a[2];
+  assert.equal(rings().length, 2, 'two nested rings');
+  assert.equal(rings()[0].a[3], C.hurt);
+  assert.deepEqual([rings()[0].a[0], rings()[0].a[1]], [p.x, p.y + 2], 'under her feet');
+  p.beatPulse = 1;
+  log.length = 0;
+  CB.Player.draw(p, r, 0, {});
+  assert.ok(rings()[0].a[2] > calmRad, 'swells on the beat');
+  CB.Comfort = { calm: () => true, blink: () => true };
+  const steady = [0, 1].map((b) => {
+    p.beatPulse = b;
+    log.length = 0;
+    CB.Player.draw(p, r, 0, {});
+    return rings()[0].a[2];
+  });
+  assert.equal(steady[0], steady[1], 'calm: no pulse');
+  CB.Comfort = undefined;
+  const w = CB.createWorld({ seed: 1, stage: CB.STAGES ? CB.STAGES[3] : { palette: 'prod' } });
+  w.stage = { palette: 'prod' };
+  log.length = 0;
+  CB.Player.draw(p, r, 0, { w });
+  assert.equal(rings()[0].a[3], C.gold, 'prod: gold, since red vanishes on that floor');
+  p.dead = true;
+  log.length = 0;
+  CB.Player.draw(p, r, 0, {});
+  assert.equal(rings().length, 0, 'not while dead');
 });

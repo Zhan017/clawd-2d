@@ -61,7 +61,7 @@
         } else {
           if (CB.Compact) CB.Compact.charge(w, Pickups.CHARGE);
           w.emit('pickup', { x: k.x, y: k.y, heal: false });
-          w.emit('text', { x: k.x, y: k.y - 10, text: '+15 ctx', color: CB.Pal.C.gold });
+          w.emit('text', { x: k.x, y: k.y - 10, text: '+15 /compact', color: CB.Pal.C.gold });
         }
       }
       let j = 0;

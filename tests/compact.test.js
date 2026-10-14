@@ -619,7 +619,56 @@ test('drawPrompt: on a pad the RB keycap bobs like the E one and "/compact" sits
   w.seenCompact = false;
   r = fakeR();
   CB.Compact.drawPrompt(w, r, 0);
-  assert.equal(r.calls.length, 0, 'touch: no keycap and no gold text, the button glows instead');
+  assert.deepEqual(r.calls.map((c) => c.kind), ['text'], 'touch: no keycap, only the small gold marker (the button glows too)');
+  assert.equal(r.calls[0].str, '/c ready');
+  assert.equal(r.calls[0].o.color, CB.Pal.C.gold);
+  assert.equal(r.calls[0].o.align, 'center');
+  assert.equal(r.calls[0].x, p.x);
+  assert.equal(r.calls[0].y, p.y - 17 - 3, 'where the keycap would be');
+  w.seenCompact = true;
+  r = fakeR();
+  CB.Compact.drawPrompt(w, r, 0);
+  assert.equal(r.calls.length, 1, 'the marker stays after the first cast: it is the only cue on a phone');
+});
+
+test('drawPrompt: the prompt stays in the arena: it flips below Clawd near the top wall, and the label flips left near the right edge', () => {
+  const { CB, w } = setup();
+  w.context.value = 45;
+  const p = w.player;
+  const A = CB.ARENA;
+  CB.Prompts = { device: 'kbm' };
+  p.x = 160;
+  p.y = A.y + 10;
+  assert.equal(CB.Compact.promptBelow(p), true);
+  let r = fakeR();
+  CB.Compact.drawPrompt(w, r, 0);
+  assert.equal(r.calls.find((c) => c.kind === 'sprite').y, p.y + 14, 'below her feet');
+  p.y = A.y + 60;
+  assert.equal(CB.Compact.promptBelow(p), false);
+  r = fakeR();
+  CB.Compact.drawPrompt(w, r, 0);
+  assert.equal(r.calls.find((c) => c.kind === 'sprite').y, p.y - 17);
+  for (const y of [A.y + 5, A.y + 20, A.y + 30, A.y + 45, A.y + 80]) {
+    p.y = y;
+    r = fakeR();
+    CB.Compact.drawPrompt(w, r, Math.PI / 8); // the bob at its highest
+    const key = r.calls.find((c) => c.kind === 'sprite');
+    assert.ok(key.y - 4.5 >= A.y + 2 - 1, `keycap top inside the arena at y ${y}: ${key.y}`);
+  }
+  p.x = 300;
+  p.y = A.y + 80;
+  w.seenCompact = false;
+  r = fakeR();
+  CB.Compact.drawPrompt(w, r, 0);
+  const label = r.calls.find((c) => c.kind === 'text');
+  assert.equal(label.o.align, 'right', 'no room on the right');
+  assert.ok(label.x <= p.x, 'to the left of the key');
+  CB.Prompts = { device: 'touch' };
+  p.x = 316;
+  r = fakeR();
+  CB.Compact.drawPrompt(w, r, 0);
+  const m = r.calls.find((c) => c.kind === 'text');
+  assert.ok(m.x + 48 / 2 <= CB.W - 2, 'the touch marker is clamped to the screen');
 });
 
 test('drawPrompt: the pad and touch prompts hide in the same conditions as the keyboard one', () => {
@@ -680,4 +729,40 @@ test('drawPrompt: with the real Prompts module the device switch is picked up at
   assert.equal(first('pad'), 'keycap_rb');
   assert.equal(first('touch'), null);
   assert.equal(first('kbm'), 'keycap_e');
+});
+
+// ---- H5: a refused /compact says so -------------------------------------------------------------------------------------------
+
+test('refused /compact: a press on a meter that is not full gives a refuse event and a 0.15 s flash; a cast, or any other refusal, does not', () => {
+  const { w } = setup();
+  const p = w.player;
+  const refusals = () => w.events.filter((e) => e.type === 'refuse');
+  w.context.value = 10;
+  H.stepN(w, 1, () => H.makeInput({ compact: true }));
+  assert.equal(refusals().length, 1);
+  assert.equal(refusals()[0].what, 'compact');
+  assert.ok(p.refuseCompactT > 0.1 && p.refuseCompactT <= 0.15);
+  assert.equal(w.stats.compacts, 0);
+  H.stepN(w, 12, idle);
+  assert.equal(p.refuseCompactT, 0, 'the flash is over after 0.15 s');
+  w.context.value = w.context.max;
+  H.stepN(w, 1, () => H.makeInput({ compact: true }));
+  assert.equal(w.stats.compacts, 1, 'a full meter casts');
+  assert.equal(refusals().length, 1, 'and gives no refusal');
+  w.context.value = w.context.max; // full again, but the first wave is still out: refused for another reason
+  H.stepN(w, 1, () => H.makeInput({ compact: true }));
+  assert.equal(refusals().length, 1, 'no cue when the meter was not the problem');
+  w.compactWave = null;
+  w.context.value = 5;
+  p.dead = true;
+  H.stepN(w, 1, () => H.makeInput({ compact: true }));
+  assert.equal(refusals().length, 1, 'a dead Clawd presses nothing');
+});
+
+test('refused /compact: an E pressed during hitstop and cast late is never a refusal', () => {
+  const { w } = setup();
+  w.context.value = 10;
+  w.compactBuffered = true; // the buffered press, not a fresh input.compact
+  H.stepN(w, 1, idle);
+  assert.equal(w.events.filter((e) => e.type === 'refuse').length, 0);
 });

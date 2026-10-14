@@ -55,13 +55,13 @@ test('audio: the sound table and the event table cover everything the game emits
   assert.deepEqual(
     sounds,
     ['beam', 'beamCharge', 'blast', 'bossDie', 'bossPhase', 'bossWarn', 'bounce', 'clink', 'compact', 'compactReady', 'dash', 'enemyDie', 'enemyShoot',
-      'heartbeat', 'hit', 'lob', 'patchPick', 'perfect', 'pickup', 'playerDie', 'playerHurt', 'revive', 'shoot', 'splat', 'spawn', 'teleport',
+      'heartbeat', 'hit', 'lob', 'patchPick', 'perfect', 'pickup', 'playerDie', 'playerHurt', 'refuse', 'revive', 'shoot', 'splat', 'spawn', 'teleport',
       'uiSelect', 'unlock', 'victory'].sort()
   );
   assert.ok(!('graze' in CB.Audio.SOUNDS), 'the graze sound is gone (rev 3)');
   for (const ev of ['shoot', 'hit', 'clink', 'enemyDie', 'spawn', 'playerHurt', 'playerDie', 'dash', 'bounce', 'enemyShoot', 'bossPhase', 'bossDie', 'bossWarn',
     'teleport', 'beamCharge', 'beam', 'lob', 'splat', 'revive', 'patchPick', 'uiSelect', 'heartbeat', 'compact', 'compactReady', 'graze', 'pickup', 'blast',
-    'victory', 'unlock', 'bossEnter']) assert.ok(ev in CB.Audio.EVENT_SOUND, `EVENT_SOUND.${ev}`);
+    'victory', 'unlock', 'bossEnter', 'refuse']) assert.ok(ev in CB.Audio.EVENT_SOUND, `EVENT_SOUND.${ev}`);
   assert.equal(CB.Audio.EVENT_SOUND.bossEnter, 'teleport');
   assert.equal(CB.Audio.EVENT_SOUND.graze, 'perfect');
 });
@@ -348,7 +348,7 @@ test('audio: heartbeat is not throttled', () => {
 
 test('audio: throttles are measured on ctx.currentTime and the first sound is never swallowed', () => {
   // [sound, gap, oscillators + noise bursts one play starts]
-  for (const [name, gap, voices] of [['shoot', 0.07, 1], ['enemyShoot', 0.09, 1], ['hit', 0.04, 1], ['perfect', 0.05, 2], ['blast', 0.06, 2], ['clink', 0.05, 1]]) {
+  for (const [name, gap, voices] of [['shoot', 0.07, 1], ['enemyShoot', 0.09, 1], ['hit', 0.04, 1], ['perfect', 0.05, 2], ['blast', 0.06, 2], ['clink', 0.05, 1], ['refuse', 0.15, 1]]) {
     const { CB, ctx } = boot();
     ctx.currentTime = 0;
     CB.Audio.play(name);

@@ -9,6 +9,7 @@
     memoryLeak: ['green', 'greenDark'], offByOne: ['purple', 'purpleDark'],
   };
   const KIND_FALLBACK = ['spark', 'greyDark'];
+  const DECAL_COLOR = { memoryLeak: 'greyDark' }; // the boss's puddles are green: a slime kill's stain must not read as one
   const PATCH_COLOR = { spread: 'cyan', rapid: 'yellow', pierce: 'purple', heavy: 'ember', heart: 'red', dash: 'cyan', ricochet: 'green' };
   const MAX_DECALS = 40;
   const DECAL_LIFE = 6;
@@ -24,6 +25,10 @@
   const QUIP_COOLDOWN = 5;
   const BIG_RING = 40; // rings wider than this are plotted pixel by pixel; the renderer's cached rings are for small radii
   const TEXT_PAD = 4;
+  const LANE_H = 9; // a pop is 7 px tall: pops closer than this in y, with overlapping x, would print over each other
+  const LANE_TRIES = [0, -1, -2, -3, 1, 2, 3, 4]; // lane offsets tried in order (negative is up)
+  const PRIORITY_TEXT = { 'last heart!': true, '+1 ♥': true, perfect: true }; // pops about Clawd's own state beat quips for a slot
+  const BLOCKED_GAP = 1.2; // world seconds between two 'blocked' pops
 
   // Over the cap the oldest entry goes first, but floor stains (at most 40) outlive a particle flood.
   function push(w, f) {
@@ -70,14 +75,47 @@
     return Number.isFinite(px) ? px / 2 : 0;
   }
 
-  // A pop kept on screen: centred text slides in from the edges, and its rise never carries it above the arena top.
+  const textBox = (x, y, text) => {
+    const h = textHalfWidth(text);
+    return { x0: x - h, x1: x + h, y0: y };
+  };
+  const lanesClash = (a, b) => a.x0 < b.x1 + 1 && b.x0 < a.x1 + 1 && Math.abs(a.y0 - b.y0) < LANE_H;
+  // Clawd's own box (her sprite spans about x-8..x+8, y-10..y+4): no pop sits on it.
+  const onClawd = (w, box) => {
+    const p = w.player;
+    return !!p && !p.dead && box.x0 < p.x + 8 && box.x1 > p.x - 8 && box.y0 < p.y + 4 && box.y0 + 7 > p.y - 10;
+  };
+
+  // A pop kept on screen: centred text slides in from the edges, and its rise never carries it above the arena top. It takes the first lane
+  // (up, then down) that clears Clawd and every live pop. A priority pop takes its slot and clears the quips under it; a quip that would
+  // land on a live priority pop, or finds no free lane, is dropped (null).
   function popText(w, x, y, text, color, life, vy) {
     const A = CB.ARENA;
     const half = textHalfWidth(text);
     const px = Math.min(CB.W - TEXT_PAD - half, Math.max(TEXT_PAD + half, x));
     const rise = vy == null ? -14 : vy; // Fx.text's default
-    const py = Math.min(A.y + A.h - 8, Math.max(A.y + Math.abs(rise) * life, y));
-    return Fx.text(w, px, py, text, color, life, rise);
+    const top = A.y + Math.abs(rise) * life;
+    const lowest = A.y + A.h - 8;
+    const clampY = (v) => Math.min(lowest, Math.max(top, v));
+    const prio = PRIORITY_TEXT[text] === true;
+    const live = w.fx.filter((f) => f.kind === 'text' && !f.dead && f.life > 0);
+    const clash = (box, list) => list.filter((f) => lanesClash(box, textBox(f.x, f.y, f.text)));
+    let py = null;
+    for (const k of LANE_TRIES) {
+      const cy = clampY(y + k * LANE_H);
+      const box = textBox(px, cy, text);
+      if (onClawd(w, box)) continue;
+      if (!prio && k === 0 && clash(box, live.filter((f) => f.prio)).length) return null; // a priority pop already holds this spot
+      if (!clash(box, prio ? live.filter((f) => f.prio) : live).length) { // a priority pop only dodges other priority pops
+        py = cy;
+        break;
+      }
+    }
+    if (py == null) return prio ? Fx.text(w, px, clampY(y), text, color, life, rise) : null;
+    if (prio) for (const f of clash(textBox(px, py, text), live)) if (!f.prio) f.life = 0; // the quips under it give way
+    const f = Fx.text(w, px, py, text, color, life, rise);
+    if (f && prio) f.prio = true;
+    return f;
   }
 
   function kindColors(kind) {
@@ -110,7 +148,7 @@
       const sp = w.fxRng.range(40, 90);
       push(w, { kind: 'p', x: e.x, y: e.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.5, max: 0.5, color: i % 3 === 2 ? dark : bright, size: 2 });
     }
-    addDecal(w, e.x, e.y, rr * 0.9, dark);
+    addDecal(w, e.x, e.y, rr * 0.9, DECAL_COLOR[e.kind] ? C()[DECAL_COLOR[e.kind]] : dark);
   }
 
   // Kill pop: a CB.Quips line when there is one, else the old per-kind word, at the old 50% chance.
@@ -124,12 +162,24 @@
 
   // Hurt pop: 35% per hit, never in god mode, at most one per QUIP_COOLDOWN seconds (w.quipT).
   function hurtQuip(w, e) {
-    if (e.god || w.quipT > 0 || (w.player && w.player.dead) || !(CB.Quips && Array.isArray(CB.Quips.hurt))) return;
+    if (e.god || w.quipT > 0 || (w.player && (w.player.dead || w.player.hearts <= 1)) || !(CB.Quips && Array.isArray(CB.Quips.hurt))) return; // the hit that leaves one heart says "last heart!" instead
     if (!w.fxRng.chance(HURT_QUIP_CHANCE)) return;
     const text = pickQuip(w, CB.Quips.hurt);
     if (!text) return;
     w.quipT = QUIP_COOLDOWN;
     popText(w, e.x, e.y - 16, text, C().pale, 1.0, -12);
+  }
+
+  // A bolt turned away (a Loop segment, a boss's phase invulnerability): a bigger grey spark, and on the Loop a rate-limited "blocked" pop.
+  const LAST_BLOCKED = new WeakMap();
+  function clink(w, e) {
+    Fx.spark(w, e.x, e.y, C().grey, 5, 55, 0.2, 2);
+    Fx.spark(w, e.x, e.y, C().white, 1, 20, 0.1);
+    if (!(w.boss && w.boss.id === 'infiniteLoop')) return;
+    const last = LAST_BLOCKED.has(w) ? LAST_BLOCKED.get(w) : -Infinity;
+    if (w.time - last < BLOCKED_GAP) return;
+    LAST_BLOCKED.set(w, w.time);
+    popText(w, e.x, e.y - 10, 'blocked', C().grey, 0.6, -10);
   }
 
   // Boss phase pop: CB.Quips.bossPhase[boss id][phase], gold, above the boss.
@@ -322,7 +372,7 @@
         const e = ev[i];
         switch (e.type) {
           case 'hit': Fx.spark(w, e.x, e.y, C().white, 3, 40, 0.18); break;
-          case 'clink': Fx.spark(w, e.x, e.y, C().grey, 2, 30, 0.12); break;
+          case 'clink': clink(w, e); break;
           case 'shoot':
             push(w, { kind: 'muzzle', x: e.x, y: e.y, vx: 0, vy: 0, a: Number.isFinite(e.angle) ? e.angle : 0, life: 0.06, max: 0.06 });
             break;
@@ -365,7 +415,7 @@
             scheduleFinale(w, e);
             break;
           case 'teleport': Fx.spark(w, e.x, e.y, C().cyan, 8, 50, 0.3); break;
-          case 'text': Fx.text(w, e.x, e.y, e.text, e.color, 0.9); break;
+          case 'text': popText(w, e.x, e.y, String(e.text), e.color, 0.9); break;
           case 'splat': Fx.spark(w, e.x, e.y, C().green, 8, 40, 0.35); break;
           case 'revive': Fx.ring(w, e.x, e.y, 2, 24, C().purple, 0.5); break;
           case 'beam': Fx.impact(w, 'beam'); break;

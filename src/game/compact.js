@@ -29,6 +29,11 @@
     '.kkkkkkkkkkk.',
   ]);
 
+  const PROMPT_UP = 17; // the prompt's centre sits this far above Clawd's centre (or PROMPT_DOWN below it, near the top wall)
+  const PROMPT_DOWN = 14;
+  const PROMPT_HALF = 6; // half the keycap's height (4.5) plus the 1 px bob, rounded up: its top edge must stay inside the arena
+  const MARKER = '/c ready'; // touch's stand-in for the keycap
+
   // The device the prompts are written for: the controller shows RB, a phone shows nothing (its /compact button glows instead).
   const promptDevice = () => {
     const d = CB.Prompts && CB.Prompts.device;
@@ -165,17 +170,32 @@
       return !(c.value < c.max || p.dead || w.compactWave || (w.boss && w.boss.defeated));
     },
 
+    // True when Clawd is so near the top wall that the prompt above her would leave the arena: it flips below her.
+    promptBelow(p) {
+      return p.y - PROMPT_UP - PROMPT_HALF < CB.ARENA.y + 2;
+    },
+
     // The "press E" keycap bobbing above Clawd while a cast is available; WorldDraw calls it right after Player.draw.
     // Until the first cast ever it also spells out `/compact` in gold beside the key. A controller gets an RB keycap; touch gets
-    // neither (the on-screen /compact button glows instead).
+    // a small gold "/c ready" marker in the keycap's place (the on-screen /compact button glows too). Always inside the arena.
     drawPrompt(w, r, t) {
       if (!Compact.ready(w)) return;
       const dev = promptDevice();
-      if (dev === 'touch') return;
       const p = w.player;
-      const y = p.y - 17 + Math.round(Math.sin(t * 4));
+      const bob = Math.round(Math.sin(t * 4));
+      const y = (Compact.promptBelow(p) ? p.y + PROMPT_DOWN : p.y - PROMPT_UP) + bob;
+      if (dev === 'touch') {
+        const tw = CB.Font && typeof CB.Font.measure === 'function' ? CB.Font.measure(MARKER, 1) : MARKER.length * 6;
+        const x = Math.min(CB.W - 2 - tw / 2, Math.max(2 + tw / 2, p.x));
+        r.text(MARKER, x, y - 3, { align: 'center', color: CB.Pal.C.gold, shadow: CB.Pal.C.ink });
+        return;
+      }
       r.sprite(dev === 'pad' ? 'keycap_rb' : 'keycap_e', p.x, y);
-      if (!w.seenCompact) r.text('/compact', p.x + (dev === 'pad' ? 9 : 7), y - 3, { color: CB.Pal.C.gold, shadow: CB.Pal.C.ink });
+      if (w.seenCompact) return;
+      const off = dev === 'pad' ? 9 : 7;
+      const lw = CB.Font && typeof CB.Font.measure === 'function' ? CB.Font.measure('/compact', 1) : 48;
+      if (p.x + off + lw > CB.W - 2) r.text('/compact', p.x - off, y - 3, { align: 'right', color: CB.Pal.C.gold, shadow: CB.Pal.C.ink }); // no room on the right: it flips left
+      else r.text('/compact', p.x + off, y - 3, { color: CB.Pal.C.gold, shadow: CB.Pal.C.ink });
     },
   };
   CB.Compact = Compact;

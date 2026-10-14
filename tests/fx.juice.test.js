@@ -139,7 +139,8 @@ test('juice: every bug kind has its own colours; an unknown kind still gets a st
   for (const [kind, [main, dark]] of Object.entries(want)) {
     w.fx.length = 0;
     feed(CB, w, [{ type: 'enemyDie', x: 50, y: 50, kind, r: 5, boss: false, silent: false }]);
-    assert.equal(kinds(w, 'decal')[0].color, dark, kind);
+    // A slime's stain is neutral grey: the Memory Leak boss's puddles are green, and a kill's decal must never read as one.
+    assert.equal(kinds(w, 'decal')[0].color, kind === 'memoryLeak' ? c.greyDark : dark, kind);
     const cols = new Set(w.fx.filter((f) => f.kind === 'p' && f.size === 2).map((f) => f.color));
     assert.deepEqual([...cols].sort(), [main, dark].sort(), kind);
   }
@@ -656,8 +657,12 @@ function stubQuips(CB) {
 test('juice: kill, hurt and boss-phase pops use the strings from CB.Quips.pick', () => {
   const { CB, w } = setup();
   stubQuips(CB);
-  for (let i = 0; i < 40; i++) feed(CB, w, [{ type: 'enemyDie', x: 100, y: 60, kind: 'dummy', r: 4, boss: false, silent: false }]);
-  let texts = kinds(w, 'text');
+  let texts = [];
+  for (let i = 0; i < 40; i++) {
+    w.fx.length = 0; // one kill at a time: pops that overlap a live one change lane (see the lane test)
+    feed(CB, w, [{ type: 'enemyDie', x: 100, y: 60, kind: 'dummy', r: 4, boss: false, silent: false }]);
+    texts = texts.concat(kinds(w, 'text'));
+  }
   assert.ok(texts.length >= 8 && texts.length <= 32, `about half of 40 kills pop: ${texts.length}`);
   assert.ok(texts.every((f) => f.text === 'KILL-STUB'));
 
@@ -835,4 +840,129 @@ test('juice: 300 boss deaths in one step still respect the fx cap', () => {
   feed(CB, w, evs);
   assert.ok(w.fx.length <= CB.CAPS.fx);
   assert.ok(kinds(w, 'decal').length <= 40);
+});
+
+// ---- H1: pops that do not pile up ---------------------------------------------------------------------------------------------
+
+const textsOf = (w) => w.fx.filter((f) => f.kind === 'text' && f.life > 0);
+
+test('pops: two text events at the same spot take different lanes at least 9 px apart', () => {
+  const { CB, w } = setup();
+  w.player.x = 40;
+  w.player.y = 150;
+  feed(CB, w, [{ type: 'text', x: 200, y: 100, text: 'perfect' }, { type: 'text', x: 200, y: 100, text: 'perfect' }, { type: 'text', x: 205, y: 102, text: 'free()' }]);
+  const t = textsOf(w);
+  assert.ok(t.length >= 2);
+  for (let i = 0; i < t.length; i++) {
+    for (let j = i + 1; j < t.length; j++) assert.ok(Math.abs(t[i].y - t[j].y) >= 9, `pops ${i} and ${j}: ${t[i].y} vs ${t[j].y}`);
+  }
+  assert.equal(t[0].y, 100, 'the first keeps its place');
+  assert.ok(t[1].y < t[0].y, 'the next moves up a lane');
+});
+
+test('pops: pops far apart in x, or already apart in y, do not move', () => {
+  const { CB, w } = setup();
+  w.player.x = 40;
+  w.player.y = 150;
+  feed(CB, w, [{ type: 'text', x: 100, y: 100, text: 'perfect' }, { type: 'text', x: 250, y: 100, text: 'perfect' }, { type: 'text', x: 100, y: 120, text: 'perfect' }]);
+  assert.deepEqual(textsOf(w).map((f) => [f.x, f.y]), [[100, 100], [250, 100], [100, 120]]);
+});
+
+test('pops: a pop never sits on Clawd, wherever it was asked for', () => {
+  const { CB, w } = setup();
+  const p = w.player;
+  for (const [px, py] of [[160, 100], [160, 28], [20, 60], [300, 150]]) {
+    w.fx.length = 0;
+    p.x = px;
+    p.y = py;
+    feed(CB, w, [{ type: 'text', x: px, y: py - 4, text: 'last heart!' }, { type: 'text', x: px, y: py, text: '+1 ♥' }]);
+    assert.ok(textsOf(w).length >= 1);
+    for (const f of textsOf(w)) {
+      const half = (f.text.length * 6) / 2;
+      const hit = f.x - half < p.x + 8 && f.x + half > p.x - 8 && f.y < p.y + 4 && f.y + 7 > p.y - 10;
+      assert.equal(hit, false, `${f.text} at (${f.x}, ${f.y}) over Clawd at (${px}, ${py})`);
+    }
+  }
+});
+
+test('pops: last heart!, +heart and perfect beat quips: a priority pop clears the quips under it, and a quip never lands on a live one', () => {
+  const { CB, w } = setup();
+  w.player.x = 40;
+  w.player.y = 150;
+  const text = (s, x, y) => feed(CB, w, [{ type: 'text', x, y, text: s }]);
+  text('free()', 200, 100); // a quip is up...
+  text('perfect', 200, 100); // ...and a priority pop arrives on it
+  const t = textsOf(w);
+  assert.deepEqual(t.map((f) => f.text), ['perfect'], 'the quip gave way');
+  assert.equal(t[0].y, 100, 'the priority pop kept its place');
+  text('free()', 202, 101);
+  assert.deepEqual(textsOf(w).map((f) => f.text), ['perfect'], 'a quip meeting a priority pop is dropped');
+  text('free()', 200, 30); // far away: fine
+  assert.equal(textsOf(w).length, 2);
+});
+
+test('pops: no hurt quip on the hit that leaves one heart', () => {
+  const { CB, w } = setup();
+  stubQuips(CB);
+  for (let i = 0; i < 60; i++) {
+    w.fx.length = 0;
+    w.quipT = 0;
+    w.player.hearts = 1; // the hit has already landed when Fx sees playerHurt
+    feed(CB, w, [{ type: 'playerHurt', x: 160, y: 126 }]);
+    assert.equal(textsOf(w).length, 0);
+  }
+  let shown = 0;
+  for (let i = 0; i < 80 && !shown; i++) {
+    w.fx.length = 0;
+    w.quipT = 0;
+    w.player.hearts = 3;
+    feed(CB, w, [{ type: 'playerHurt', x: 160, y: 126 }]);
+    shown = textsOf(w).length;
+  }
+  assert.equal(shown, 1, 'with hearts left the quip still shows');
+});
+
+test('pops: the pop stays inside the screen and the arena whatever lane it is moved to', () => {
+  const { CB, w } = setup();
+  w.player.x = 300;
+  w.player.y = 150;
+  for (let i = 0; i < 12; i++) feed(CB, w, [{ type: 'text', x: 5, y: 24, text: 'perfect' }]);
+  assert.ok(textsOf(w).length >= 3);
+  for (const f of textsOf(w)) {
+    assert.ok(f.x - 21 >= 3 && f.y >= CB.ARENA.y, `${f.x}, ${f.y}`);
+    assert.ok(f.y <= CB.ARENA.y + CB.ARENA.h, 'and above the bottom wall');
+  }
+});
+
+// ---- H4 / H6: decals and blocked shots -------------------------------------------------------------------------------------------
+
+test('decals: a slime kill never leaves a stain in the puddle green', () => {
+  const { CB, w } = setup();
+  const c = C(CB);
+  for (const kind of ['syntaxError', 'nullPointer', 'raceCondition', 'memoryLeak', 'offByOne', 'mystery']) {
+    w.fx.length = 0;
+    feed(CB, w, [{ type: 'enemyDie', x: 50, y: 50, kind, r: 5, boss: false, silent: false }]);
+    const col = kinds(w, 'decal')[0].color;
+    assert.ok(col !== c.green && col !== c.greenDark, `${kind} stain ${col}`);
+  }
+});
+
+test('blocked: a clink throws a bigger grey spark, and on the Infinite Loop a "blocked" pop at most every 1.2 s', () => {
+  const { CB, w } = setup();
+  w.player.x = 40;
+  w.player.y = 150;
+  feed(CB, w, [{ type: 'clink', x: 200, y: 100 }]);
+  const sparks = w.fx.filter((f) => f.kind === 'p' && f.color === C(CB).grey);
+  assert.ok(sparks.length >= 5 && sparks.every((f) => f.size === 2), 'five 2 px grey sparks, not two 1 px ones');
+  assert.equal(textsOf(w).length, 0, 'no pop away from the Loop');
+  w.boss = { id: 'infiniteLoop', x: 160, y: 96, radius: 40 };
+  feed(CB, w, [{ type: 'clink', x: 200, y: 100 }]);
+  const pops = textsOf(w).filter((f) => f.text === 'blocked');
+  assert.equal(pops.length, 1);
+  assert.equal(pops[0].color, C(CB).grey);
+  for (let i = 0; i < 5; i++) feed(CB, w, [{ type: 'clink', x: 200, y: 100 }]);
+  assert.equal(textsOf(w).filter((f) => f.text === 'blocked').length, 1, 'rate-limited');
+  w.time += 1.3;
+  feed(CB, w, [{ type: 'clink', x: 260, y: 60 }]);
+  assert.equal(textsOf(w).filter((f) => f.text === 'blocked').length, 2, 'and back after the gap');
 });

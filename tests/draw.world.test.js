@@ -306,6 +306,7 @@ test('arena: the three-phase overlays stay at alpha <= 0.2 (left-wall furniture 
           if (c.fn === 'drawImage') continue;
           const wallFurniture = (c.fn === 'rect' || c.fn === 'frame') && c.args[0] + c.args[2] <= 8;
           if (wallFurniture) continue; // the heap gauge and the cycled line numbers are part of the wall
+          if (c.fn === 'text' && /^(<<<<<<< HEAD|>>>>>>> incoming)$/.test(c.args[0])) continue; // the conflict labels are text, read at 0.5 (checked in the Merge Conflict test)
           assert.ok(alphaOf(c) <= 0.2 + 1e-9, `${id} p${phase} t${t}: ${c.fn} ${JSON.stringify(c.args)} at alpha ${alphaOf(c)}`);
         }
       }
@@ -395,12 +396,14 @@ test('arena: the Merge Conflict split tints the halves blue and green at 0.07, d
   assert.ok(dashes.length >= 20 && dashes.every((c) => c.args[1] >= 20 && c.args[1] + c.args[3] <= 172), 'a dashed divider across the floor');
   const head = rec.texts().find((b) => b.str === '<<<<<<< HEAD');
   const inc = rec.texts().find((b) => b.str === '>>>>>>> incoming');
-  assert.deepEqual([head.x, head.y], [12, 22]);
-  assert.deepEqual([inc.x + inc.w, inc.y], [308, 166], 'right-aligned at (308, 166)');
+  assert.deepEqual([head.x, head.y], [16, 25], 'on the floor top row, off the wall');
+  assert.deepEqual([inc.x + inc.w, inc.y], [288, 25], 'right-aligned, left of the touch pause button (x 296+)');
+  assert.ok(head.y >= CB.ARENA.y + 2 && inc.x + inc.w <= 296, 'both clear of the walls');
   const colour = (str) => s.of('text').find((c) => c.args[0] === str).args[3];
   assert.equal(colour('<<<<<<< HEAD').color, C.blue);
   assert.equal(colour('>>>>>>> incoming').color, C.green);
-  assert.ok(colour('<<<<<<< HEAD').alpha <= 0.2 && colour('>>>>>>> incoming').alpha <= 0.2);
+  assert.equal(colour('<<<<<<< HEAD').alpha, 0.5, 'readable: it was 0.18');
+  assert.equal(colour('>>>>>>> incoming').alpha, 0.5);
 });
 
 test('arena: Heisenbug glitch bands appear from phase 2, 0.12 s every 1.7 s, placed by a hash and not by RNG; ghosts only in phase 3', () => {
@@ -685,8 +688,8 @@ test('hud: the heart just lost blinks while Clawd is hurt (through CB.Comfort.bl
   assert.deepEqual(heartsOf(hud()), Array(6).fill('heart_full'), 'nothing was lost (god mode): no blink');
 });
 
-test('hud: at 1 heart the last heart throbs to 2x on the beat and the screen edge gets three red frames at 0.10 + 0.20 x beatPulse', () => {
-  const { CB, w, hud } = hudSetup();
+test('hud: at 1 heart the last heart throbs to 2x on the beat and the screen edge gets a 6 px red glow, 0.2 + 0.25 x beatPulse at the rim', () => {
+  const { CB, run, w, hud } = hudSetup();
   const C = CB.Pal.C;
   w.player.hearts = 1;
   w.player.beatPulse = 1;
@@ -696,15 +699,28 @@ test('hud: at 1 heart the last heart throbs to 2x on the beat and the screen edg
   assert.equal(big.args[3].scale, 2);
   assert.deepEqual(heartsOf(s).slice(-1), ['heart_full*2'], 'drawn last, over its neighbour');
   const frames = s.of('frame');
-  assert.deepEqual(frames.map((c) => c.args), [[0, 0, 320, 180, C.hurt], [1, 1, 318, 178, C.hurt], [2, 2, 316, 176, C.hurt]]);
-  assert.ok(frames.every((c) => near(c.a, 0.3)));
+  assert.deepEqual(frames.map((c) => c.args), [0, 1, 2, 3, 4, 5].map((i) => [i, i, 320 - 2 * i, 180 - 2 * i, C.hurt]), 'a 6 px edge');
+  assert.ok(near(frames[0].a, 0.45), 'strongest at the screen edge on the beat');
+  assert.ok(frames.every((c, i) => i === 0 || c.a < frames[i - 1].a), 'fading inward');
   w.player.beatPulse = 0.4;
   s = hud();
   assert.equal(s.of('sprite').filter((c) => c.args[0] === 'heart_full').length, 1);
   assert.equal(s.of('sprite').find((c) => c.args[0] === 'heart_full').args[3], undefined, 'normal size below the 0.5 threshold');
-  assert.ok(near(s.of('frame')[0].a, 0.18));
+  assert.ok(near(s.of('frame')[0].a, 0.3));
   w.player.beatPulse = 0;
-  assert.ok(near(hud().of('frame')[0].a, 0.1));
+  assert.ok(near(hud().of('frame')[0].a, 0.2), 'even between beats the edge is clearly there (it was 0.1)');
+  CB.Comfort = { calm: () => true, blink: () => true };
+  w.player.beatPulse = 1;
+  const calm = hud().of('frame').map((c) => c.a);
+  w.player.beatPulse = 0;
+  assert.deepEqual(hud().of('frame').map((c) => c.a), calm, 'calm mode: steady, no pulse');
+  CB.Comfort = undefined;
+  run.stageIndex = 3; // the red ~/prod/ palette: a red edge would vanish on it
+  w.stage = CB.STAGES[3];
+  assert.equal(CB.STAGES[3].palette, 'prod');
+  assert.ok(hud().of('frame').every((c) => c.args[4] === C.gold), 'gold on the prod floor');
+  run.stageIndex = 0;
+  w.stage = CB.STAGES[0];
   w.player.hearts = 2;
   assert.equal(hud().of('frame').length, 0, 'only at exactly 1 heart');
   w.player.hearts = 1;
@@ -732,26 +748,79 @@ test('hud: the dash pip is lit when ready, dim while cooling and fills from the 
   assert.equal(fillRows(hud()).length, 0, 'follows the Quick Dash cooldown');
 });
 
-test('hud: the context meter is 48x3 at (4, 13), cyan, and flashes gold at full; the old [E] prompt and chain label are gone', () => {
+test('hud: the context meter is a 48x4 track at (4, 13), cyan fill, flashes gold at full, with a /c tag; the old [E] prompt and chain label are gone', () => {
   const { CB, w, hud } = hudSetup();
   const C = CB.Pal.C;
-  const meter = (s) => s.of('rect').filter((c) => c.args[0] === 4 && c.args[1] >= 13 && c.args[1] <= 15 && c.args[3] <= 3);
+  const TRACK = '#66708A';
+  const meter = (s) => s.of('rect').filter((c) => c.args[0] >= 4 && c.args[0] <= 5 && c.args[1] >= 13 && c.args[1] <= 16);
   w.context = { value: 0, max: 45, announced: false };
-  assert.deepEqual(meter(hud()).map((c) => c.args), [[4, 13, 48, 3, C.ink]], 'an empty meter is just the ink well');
+  assert.deepEqual(meter(hud()).map((c) => c.args), [[4, 13, 48, 4, TRACK], [5, 14, 46, 2, C.ink]], 'an empty meter is still a visible track, 4 px tall');
   w.context.value = 22.5;
-  assert.deepEqual(meter(hud()).map((c) => c.args), [[4, 13, 48, 3, C.ink], [4, 13, 24, 2, C.cyan], [4, 15, 24, 1, C.cyanDark]]);
+  assert.deepEqual(meter(hud()).map((c) => c.args), [[4, 13, 48, 4, TRACK], [5, 14, 46, 2, C.ink], [4, 13, 24, 3, C.cyan], [4, 16, 24, 1, C.cyanDark]]);
   w.context.value = 45;
   w.chain = { n: 25 };
   const flashing = [];
   CB.Comfort = { blink: (t, hz) => { flashing.push(hz); return t < 0.5; } };
   const on = meter(hud(0)).map((c) => c.args[4]);
   const off = meter(hud(0.7)).map((c) => c.args[4]);
-  assert.deepEqual(on, [C.ink, C.gold, C.ember]);
-  assert.deepEqual(off, [C.ink, C.cyan, C.cyanDark]);
+  assert.deepEqual(on, [TRACK, C.ink, C.gold, C.ember]);
+  assert.deepEqual(off, [TRACK, C.ink, C.cyan, C.cyanDark]);
   assert.ok(flashing.includes(6), '3 Hz = 6 flips a second, through Calm mode');
-  assert.deepEqual(meter(hud(0)).map((c) => c.args[2]), [48, 48, 48], 'full width');
+  assert.deepEqual(meter(hud(0)).map((c) => c.args[2]), [48, 46, 48, 48], 'full width');
   const strings = hud(0).of('text').map((c) => c.args[0]);
   assert.ok(!strings.some((q) => /\[E\]|ULTRATHINK|^x\d+$|\/compact/.test(q)), `no prompt or chain text: ${strings}`);
+});
+
+test('hud: the empty /c track clears 3:1 against the HUD strip, and the /c tag lights when the meter is full', () => {
+  const { CB, w, hud } = hudSetup();
+  const C = CB.Pal.C;
+  const lum = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  w.context = { value: 0, max: 45, announced: false };
+  const s = hud();
+  const track = s.of('rect').find((c) => c.args[0] === 4 && c.args[1] === 13 && c.args[3] === 4).args[4];
+  assert.ok((lum(track) + 0.05) / (lum('#0D0D12') + 0.05) >= 3, 'track against the strip');
+  const tag = s.of('text').find((c) => c.args[0] === '/c');
+  assert.deepEqual([tag.args[1], tag.args[3].color], [55, track], 'a dim tag right of the meter');
+  w.context.value = 45;
+  CB.Comfort = { blink: () => false };
+  assert.equal(hud().of('text').find((c) => c.args[0] === '/c').args[3].color, C.white, 'lit once ready');
+  CB.Comfort = { blink: () => true };
+  assert.equal(hud().of('text').find((c) => c.args[0] === '/c').args[3].color, C.gold, 'and gold on the blink');
+});
+
+test('hud: a refused dash or /compact flashes the pip or the meter outline for as long as the player says', () => {
+  const { CB, w, hud } = hudSetup();
+  const C = CB.Pal.C;
+  w.context = { value: 10, max: 45, announced: false };
+  assert.equal(hud().of('frame').length, 0, 'nothing at rest');
+  w.player.refuseDashT = 0.1;
+  let f = hud().of('frame');
+  assert.deepEqual(f.map((c) => c.args), [[w.player.stats.maxHearts * 9 + 4 + 2 - 1, 4, 7, 7, C.hurt]], 'a frame round the pip');
+  w.player.refuseDashT = 0;
+  w.player.refuseCompactT = 0.1;
+  f = hud().of('frame');
+  assert.deepEqual(f.map((c) => c.args), [[3, 12, 50, 6, C.hurt]], 'a frame round the meter');
+});
+
+test('hud: bubbleQuiet is true for the wave break and the first 2 s of a wave, and expires when the HUD stops drawing', () => {
+  const { CB, run, hud } = hudSetup();
+  const H = CB.Screens.hud;
+  assert.equal(H.bubbleQuiet(1), false, 'before any frame');
+  run.state = 'wave';
+  run.stateT = 0.5;
+  hud(1);
+  assert.equal(H.bubbleQuiet(1.016), true, 'the first seconds of a wave');
+  run.stateT = 2.01;
+  hud(1.1);
+  assert.equal(H.bubbleQuiet(1.116), false, 'two seconds in');
+  run.state = 'waveBreak';
+  hud(2);
+  assert.equal(H.bubbleQuiet(2.016), true, 'the wave break is quiet too');
+  assert.equal(H.bubbleQuiet(2.5), false, 'a stale answer expires');
+  assert.equal(H.bubbleQuiet(NaN), false);
 });
 
 test('hud: YOLO tag, stage path in the accent colour, WAVE n/2 in grey, and the /compact banner fading in its last third of a second', () => {
@@ -1075,4 +1144,53 @@ test('hud: YOLO is drawn after the boss bar (so it stays legible over the bar en
   assert.equal(hud().of('text').filter((c) => c.args[0] === 'YOLO').length, 0);
   w.mode = { yolo: true };
   assert.equal(hud().of('text').filter((c) => c.args[0] === 'YOLO').length, 1);
+});
+
+// ---- H4: a puddle is a hazard you can see on every floor ---------------------------------------------------------------------------
+
+test('worldDraw: a puddle is a green fill with a 2 px yellow rim at 0.8, bright enough (3:1) against every stage floor', () => {
+  const { CB, r } = setup({ extra: EXTRA });
+  const s = spy(r);
+  const C = CB.Pal.C;
+  const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const lin = (c) => ((c / 255) <= 0.03928 ? c / 255 / 12.92 : Math.pow((c / 255 + 0.055) / 1.055, 2.4));
+  const lum = (rgb) => 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
+  const run = CB.createRun({ seed: 2 });
+  const w = run.world;
+  w.addHazard({ kind: 'puddle', x: 120, y: 100, r: 12, life: 4 });
+  s.clear();
+  CB.WorldDraw.draw(r, w, 1.5, {});
+  const disc = s.of('disc').find((c) => c.args[0] === 120 && c.args[1] === 100);
+  assert.ok(disc, 'the fill');
+  assert.equal(disc.args[3], C.green);
+  const rim = s.of('ring').filter((c) => c.args[0] === 120 && c.args[1] === 100 && c.args[3] === C.yellow);
+  assert.deepEqual(rim.map((c) => c.args[2]).sort((a, b) => b - a), [12, 11], 'two pixels thick');
+  assert.ok(rim.every((c) => Math.abs(c.a - 0.8) < 1e-9), 'about 0.8 alpha');
+  for (const [name, pal] of Object.entries(CB.Pal.STAGES)) {
+    const floor = hex(pal.floor);
+    const fill = hex(C.green).map((v, i) => floor[i] * (1 - disc.a) + v * disc.a);
+    const ratio = (Math.max(lum(fill), lum(floor)) + 0.05) / (Math.min(lum(fill), lum(floor)) + 0.05);
+    assert.ok(ratio >= 3, `${name}: ${ratio.toFixed(2)}:1`);
+  }
+  w.hazards[0].life = 0.25; // the last half second fades out with it
+  s.clear();
+  CB.WorldDraw.draw(r, w, 1.5, {});
+  assert.ok(s.of('disc').find((c) => c.args[0] === 120).a < disc.a);
+});
+
+test('worldDraw: hands the world and the bubble switch to Player.draw (the stage palette and the prompt flip read them)', () => {
+  const { CB, r } = setup({ extra: EXTRA });
+  const run = CB.createRun({ seed: 2 });
+  const w = run.world;
+  let got = null;
+  const orig = CB.Player.draw;
+  CB.Player.draw = function (p, rr, t, o) {
+    got = o;
+    return orig.apply(this, arguments);
+  };
+  CB.WorldDraw.draw(r, w, 1.5, { noBubble: true });
+  assert.equal(got.w, w);
+  assert.equal(got.noBubble, true);
+  CB.WorldDraw.draw(r, w, 1.5, {});
+  assert.equal(got.noBubble, false);
 });

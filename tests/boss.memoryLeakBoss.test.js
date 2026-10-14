@@ -673,17 +673,17 @@ test('memoryLeakBoss: the body draws a translucent hitbox disc under the sprite 
   assert.equal(sprite.o.white, false);
   assert.ok(r.calls.indexOf(disc) < r.calls.indexOf(sprite), 'the disc is under the sprite');
   const label = r.calls.find((c) => c.kind === 'text');
-  assert.equal(label.str, 'heap 50%');
+  assert.equal(label.str, 'heap 0%', 'the label reads the wall gauge: empty at size 1');
   assert.ok(label.y < b.y - b.r, 'above the body');
   assert.equal(w.player.dead, false);
 });
 
-test('memoryLeakBoss: the heap label follows size from 50% to 99% and the disc grows with the body', () => {
+test("memoryLeakBoss: the heap label follows size from 0% to 100% (the wall gauge's own number) and the disc grows with the body", () => {
   const { CB, boss } = start();
   const b = boss.body;
   b.x = 150;
   b.y = 100;
-  for (const [size, pct] of [[1, 50], [1.5, 75], [2, 99], [1.25, 62]]) {
+  for (const [size, pct] of [[1, 0], [1.5, 50], [2, 100], [1.25, 25]]) {
     boss.size = size;
     b.r = 14 * size;
     const r = stubRenderer();
@@ -782,6 +782,27 @@ test('memoryLeakBoss: a blob draws a droplet above its shadow and the puddle pre
   const rects = r.calls.filter((c) => c.kind === 'rect');
   const cx = rects.reduce((s, c) => s + c.a[0] + c.a[2] / 2, 0) / rects.length;
   assert.ok(Math.abs(cx - blob.data.tx) < 1.5, `shadow centred at the target x (${cx} vs ${blob.data.tx})`);
+});
+
+test('memoryLeakBoss: a blob marks its landing with a 2 px yellow rim and an inner ring that shrinks onto the spot', () => {
+  const { CB, w } = start();
+  H.stepN(w, 2.5 * 60 + 1, idle);
+  const blob = alive(w, 'leakBlob')[0];
+  const rings = (k) => {
+    blob.data.t = k * blob.data.dur;
+    const r = stubRenderer();
+    CB.Enemies.leakBlob.draw(blob, r, 0);
+    return r.calls.filter((c) => c.kind === 'ring');
+  };
+  for (const k of [0.1, 0.9]) {
+    const rim = rings(k).filter((c) => c.color === CB.Pal.C.yellow);
+    assert.deepEqual(rim.map((c) => c.rad).sort((a, b) => b - a), [12, 11], `a rim two pixels thick at k ${k}`);
+    assert.ok(rim.every((c) => c.alpha >= 0.55), 'visible from the first moment of the flight');
+  }
+  const inner = (k) => rings(k).find((c) => c.color === CB.Pal.C.white).rad;
+  assert.ok(inner(0.1) > inner(0.5) && inner(0.5) > inner(0.95), 'the inner ring shrinks as the blob comes down');
+  CB.Comfort = { calm: () => true };
+  assert.equal(inner(0.1), inner(0.9), 'calm mode: the inner ring stays put');
 });
 
 test('memoryLeakBoss: the blob arc is a parabola that touches the ground at both ends', () => {

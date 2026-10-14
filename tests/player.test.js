@@ -186,3 +186,70 @@ test('player: sprites are all defined at 16x12', () => {
     assert.equal(d.h, 12);
   }
 });
+
+// ---- input feel: the dash buffer and the refusal cues ---------------------------------------------------------------------------
+
+const refusals = (w, what) => w.events.filter((e) => e.type === 'refuse' && (!what || e.what === what));
+const dashes = (w) => w.events.filter((e) => e.type === 'dash').length;
+const still = () => H.makeInput({ aimX: 300, aimY: 30 });
+
+test('player: a dash pressed up to 0.15 s before the cooldown ends fires the moment it does', () => {
+  const { w } = world();
+  const p = w.player;
+  H.stepN(w, 1, mv(1, 0, { dash: true }));
+  assert.equal(dashes(w), 1);
+  // Wait until 0.1 s of cooldown are left, then press.
+  while (p.dashCd > 0.1) H.stepN(w, 1, still);
+  const t0 = p.dashCd;
+  H.stepN(w, 1, mv(1, 0, { dash: true }));
+  assert.equal(dashes(w), 1, 'still cooling on the press tick');
+  assert.equal(refusals(w).length, 0, 'an early press that will be honoured is not a refusal');
+  let at = -1;
+  for (let i = 1; i <= 12 && at < 0; i++) {
+    H.stepN(w, 1, still);
+    if (dashes(w) === 2) at = i;
+  }
+  assert.ok(at > 0 && at * (1 / 60) <= t0 + 2 / 60, `fired ${at} ticks later, with ${t0.toFixed(3)} s of cooldown left`);
+});
+
+test('player: a dash pressed more than 0.15 s early is refused, not buffered', () => {
+  const { w } = world();
+  const p = w.player;
+  H.stepN(w, 1, mv(1, 0, { dash: true }));
+  while (p.dashCd > 0.3) H.stepN(w, 1, still);
+  H.stepN(w, 1, mv(1, 0, { dash: true }));
+  assert.equal(refusals(w, 'dash').length, 1);
+  assert.ok(p.refuseDashT > 0.1 && p.refuseDashT <= 0.15, 'the HUD flashes the pip for 0.15 s');
+  for (let i = 0; i < 60; i++) H.stepN(w, 1, still);
+  assert.equal(dashes(w), 2 - 1 + 0, 'the refused press never fires later on its own (one dash so far)');
+  assert.equal(p.refuseDashT, 0);
+});
+
+test('player: the dash buffer lapses after 0.15 s and never banks two dashes', () => {
+  const { w } = world();
+  const p = w.player;
+  p.dashCd = 0.5;
+  p.dashBufT = 0.1;
+  H.stepN(w, 3, still);
+  assert.ok(p.dashBufT < 0.06);
+  H.stepN(w, 20, still);
+  assert.equal(p.dashBufT, 0);
+  assert.equal(dashes(w), 0, 'a buffered press that ran out does nothing');
+  p.dashCd = 0;
+  p.dashBufT = 0.1;
+  H.stepN(w, 1, still);
+  assert.equal(dashes(w), 1, 'a live buffer fires on the first ready tick');
+  assert.equal(p.dashBufT, 0, 'and is spent');
+  H.stepN(w, 5, still);
+  assert.equal(dashes(w), 1);
+});
+
+test('player: refusal timers never go negative and a hand-built player without them still updates', () => {
+  const { w } = world();
+  const p = w.player;
+  delete p.dashBufT;
+  delete p.refuseDashT;
+  delete p.refuseCompactT;
+  assert.doesNotThrow(() => H.stepN(w, 5, mv(1, 0, { dash: true, compact: true })));
+  assert.ok(p.refuseDashT >= 0 && p.refuseCompactT >= 0 && p.dashBufT >= 0);
+});

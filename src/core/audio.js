@@ -8,7 +8,7 @@
 
   // Seconds between two plays of the same sound, measured on ctx.currentTime. `perfect` carries the old graze throttle; `clink` stops a stream
   // of bolts bouncing off a Heisenbug wave from machine-gunning.
-  const THROTTLE = { shoot: 0.07, enemyShoot: 0.09, hit: 0.04, perfect: 0.05, blast: 0.06, clink: 0.05 };
+  const THROTTLE = { shoot: 0.07, enemyShoot: 0.09, hit: 0.04, perfect: 0.05, blast: 0.06, clink: 0.05, refuse: 0.15 };
   // Pitch multipliers cycled per sound, so a stream of identical blips does not machine-gun. A throttled play does not advance them.
   const VARIANTS = { shoot: [1, 1.06, 0.97, 1.09], hit: [1, 0.92, 1.1], enemyDie: [1, 0.85, 1.15, 0.93] };
   // Music ducking per event: [amount, hold seconds, release seconds].
@@ -122,6 +122,9 @@
     clink(t) {
       tone('square', 1400, 1400, t, 0.025, 0.06);
     },
+    refuse(t) {
+      tone('triangle', 150, 110, t, 0.04, 0.09); // a dull tick: a dash or /compact that is not ready
+    },
     enemyDie(t, m = 1) {
       noise('lowpass', 2000 * m, 2000 * m, t, 0.11, 0.16);
       tone('square', 240 * m, 70 * m, t, 0.12, 0.12);
@@ -225,7 +228,7 @@
     dash: 'dash', bounce: 'bounce', enemyShoot: 'enemyShoot', bossPhase: 'bossPhase', bossDie: 'bossDie', bossWarn: 'bossWarn',
     bossEnter: 'teleport', teleport: 'teleport', beamCharge: 'beamCharge', beam: 'beam', lob: 'lob', splat: 'splat', revive: 'revive',
     patchPick: 'patchPick', uiSelect: 'uiSelect', heartbeat: 'heartbeat', compact: 'compact', compactReady: 'compactReady',
-    graze: 'perfect', pickup: 'pickup', blast: 'blast', victory: 'victory', unlock: 'unlock',
+    graze: 'perfect', pickup: 'pickup', blast: 'blast', victory: 'victory', unlock: 'unlock', refuse: 'refuse',
   };
 
   // ---- context ------------------------------------------------------------------------------------------------------------

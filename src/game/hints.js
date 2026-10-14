@@ -4,7 +4,15 @@
   'use strict';
   const C = CB.Pal.C;
   const KEYS = { dash: 'hintDash', compact: 'hintCompact', perfect: 'hintPerfect', look: 'hintLook' }; // hint id -> CB.Prompts key
+  // The boss rules, told once on the first fight with each boss: hint id -> the boss id it belongs to and its line (the same on every device).
+  const RULES = {
+    loop: { boss: 'infiniteLoop', text: 'only the head takes damage' },
+    leak: { boss: 'memoryLeakBoss', text: 'keep hitting it or it heals' },
+    conflict: { boss: 'mergeConflict', text: 'kill one twin, then finish the other in 6 s' },
+  };
+  const RULE_AT = 1.2; // seconds into the fight (the boss name and bar have settled) before its rule is asked for
   const LIVE = { wave: true, boss: true }; // the only states a hint is shown in
+  const BOSS_STATES = { bossWarn: true, boss: true, bossDead: true };
   const SHOW_T = 3.0; // seconds a hint stays up; it counts the play scene's steps, so a pause (no steps) freezes it
   const FADE_IN = 0.25;
   const FADE_OUT = 0.5;
@@ -19,11 +27,15 @@
   const BOX_H = 13; // 1 px frame, 2 px air, the 7 px glyphs, 2 px air, 1 px frame
   const PAD_X = 4; // 1 px frame and 3 px air either side of the text
   const BOX_ALPHA = 0.8;
+  const ROW_AIR = 3; // px of clear space the banner keeps from any boss part before it moves to the other row
+  // The lower row: the arena's bottom edge, or on a phone just above the stick rings (they begin at y 124).
+  const bottomY = () => (CB.Prompts && CB.Prompts.device === 'touch' ? 106 : CB.ARENA.y + CB.ARENA.h - BOX_H - 4);
 
   let lastRun = null; // the run the state below belongs to: a new run starts clean
   let queue = []; // ids waiting for their turn, in the order they were asked for
   let cur = null; // { id, t }: the hint on show and how long it has been up
   let gapT = 0;
+  let row = 0; // 0: the top row, 1: the lower row (see rowFor); a new hint starts on the top again
   let session = []; // ids seen this session, for when CB.Save is missing
 
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
@@ -47,7 +59,7 @@
   }
 
   // The hint's line for the device in use; '' when CB.Prompts is missing (then there is nothing to show).
-  const textOf = (id) => (CB.Prompts && typeof CB.Prompts.text === 'function' ? CB.Prompts.text(KEYS[id]) : '');
+  const textOf = (id) => (RULES[id] ? RULES[id].text : CB.Prompts && typeof CB.Prompts.text === 'function' ? CB.Prompts.text(KEYS[id]) : '');
 
   // A hint can be asked for when it is not already waiting, unseen and has text to show (the cheap check first: this runs every step).
   const canWant = (id) => queue.indexOf(id) < 0 && !isSeen(id) && !!textOf(id);
@@ -107,11 +119,12 @@
       const id = queue.shift();
       markSeen(id);
       cur = { id, t: 0 };
+      row = 0;
     }
   }
 
   const Hints = {
-    IDS: Object.keys(KEYS),
+    IDS: Object.keys(KEYS).concat(Object.keys(RULES)),
     SHOW_T, NEAR, LOOK_AT, BOX_Y, BOX_H,
 
     // After each play step: `evs` are the step's events, `run` the run, `game` the host (its debug.active silences every hint).
@@ -122,7 +135,9 @@
       if (game && game.debug && game.debug.active) return;
       for (const e of Array.isArray(evs) ? evs : []) {
         if (!e) continue;
-        if (e.type === 'compactReady') want('compact');
+        if (e.type === 'compactReady') {
+          if (!BOSS_STATES[run.state]) want('compact'); // every boss starts with a full meter: that fill is no news, the first one earned in a wave is
+        }
         else if (e.type === 'graze' && e.perfect === true) want('perfect');
         else if (e.type === 'text' && e.text === OPTIMIZED) want('look');
         else if (e.type === 'dash') done('dash'); // she already knows how
@@ -141,15 +156,43 @@
       if (!(w.player && w.player.dead)) {
         if (canWant('dash') && bulletNear(w)) queue.push('dash');
         if (run.state === 'boss' && num(run.stateT, 0) >= LOOK_AT && isHeisenbug(w) && canWant('look')) queue.push('look');
+        if (run.state === 'boss' && num(run.stateT, 0) >= RULE_AT && w.boss && !w.boss.defeated) {
+          for (const id of Object.keys(RULES)) if (RULES[id].boss === w.boss.id && canWant(id)) queue.push(id);
+        }
       }
       advance(w);
     },
 
     // The banner's box for a line of text: centred, with the font's width. `r` is only used for its measure.
-    box(text, r) {
+    box(text, r, y) {
       const tw = r && typeof r.measure === 'function' ? r.measure(text, 1) : CB.Font.measure(text, 1);
       const w = tw + 2 * PAD_X;
-      return { x: Math.round((CB.W - w) / 2), y: BOX_Y, w, h: BOX_H, textX: Math.round((CB.W - w) / 2) + PAD_X, textY: BOX_Y + 3 };
+      const by = Number.isFinite(y) ? y : BOX_Y;
+      return { x: Math.round((CB.W - w) / 2), y: by, w, h: BOX_H, textX: Math.round((CB.W - w) / 2) + PAD_X, textY: by + 3 };
+    },
+
+    // The row the banner sits on this frame. It stays on the row it has (top by default) until a boss part gets under it, then takes the
+    // other row (the bottom of the arena, clear of the touch sticks on a phone); if both are covered, the one with more air around it.
+    rowFor(text, r, w) {
+      const rows = [BOX_Y, bottomY()];
+      const parts = w && Array.isArray(w.enemies) ? w.enemies.filter((e) => e && e.boss && !e.dead && e.visible !== false) : [];
+      const p = w && w.player && !w.player.dead ? w.player : null;
+      // With Clawd (and the prompt bobbing over her) counted, a banner that must leave the boss's row picks the row she is not in.
+      const air = (y, withClawd) => {
+        const b = Hints.box(text, r, y);
+        let best = Infinity;
+        for (const e of withClawd && p ? parts.concat([{ x: p.x, y: p.y - 12, r: 20 }]) : parts) {
+          const dx = Math.max(b.x - e.x, 0, e.x - (b.x + b.w));
+          const dy = Math.max(b.y - e.y, 0, e.y - (b.y + b.h));
+          best = Math.min(best, Math.hypot(dx, dy) - num(e.r, 6));
+        }
+        return best;
+      };
+      if (!parts.length) return rows[row];
+      if (air(rows[row]) > ROW_AIR) return rows[row];
+      const other = 1 - row;
+      row = air(rows[other], true) > air(rows[row], true) ? other : row;
+      return rows[row];
     },
 
     // After the HUD, before the overlays. `run` defaults to the last run onEvents saw. Nothing while paused: the play scene does not call it then.
@@ -162,7 +205,7 @@
       if (!text) return;
       const a = clamp(Math.min(cur.t / FADE_IN, (SHOW_T - cur.t) / FADE_OUT), 0, 1);
       if (a <= 0) return;
-      const b = Hints.box(text, r);
+      const b = Hints.box(text, r, Hints.rowFor(text, r, w));
       // Clawd under the banner (her sprite spans about y-9..y+3): it dims to 0.3 so she and the bullet she means to dash through show. It fades, never blinks, so calm mode is unaffected.
       const p = w && w.player;
       const under = !!p && !p.dead && p.x + 8 >= b.x && p.x - 8 <= b.x + b.w && p.y + 8 >= b.y && p.y - 10 <= b.y + b.h;

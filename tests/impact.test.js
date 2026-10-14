@@ -102,13 +102,13 @@ test('impact: with no flash left, any flash sets its colour', () => {
   assert.ok(Math.abs(w.flash - 0.1) < 1e-9);
 });
 
-test('heartbeat: at 1 heart beats at ~0.3 s then every 0.85 s; "context low" fires once', () => {
+test('heartbeat: at 1 heart beats at ~0.3 s then every 0.85 s; "last heart!" fires once', () => {
   const { w } = setup();
   w.player.hearts = 1;
   H.stepN(w, 180, H.makeInput());
   const beats = w.events.filter((e) => e.type === 'heartbeat').length;
   assert.ok(beats >= 3 && beats <= 4, `beats ${beats}`);
-  assert.equal(w.events.filter((e) => e.type === 'text' && e.text === 'context low').length, 1);
+  assert.equal(w.events.filter((e) => e.type === 'text' && e.text === 'last heart!').length, 1);
 });
 
 test('heartbeat: none at 2 hearts; re-arms after healing', () => {
@@ -122,7 +122,7 @@ test('heartbeat: none at 2 hearts; re-arms after healing', () => {
   H.stepN(w, 5, H.makeInput());
   w.player.hearts = 1;
   H.stepN(w, 5, H.makeInput());
-  assert.equal(w.events.filter((e) => e.type === 'text' && e.text === 'context low').length, 2);
+  assert.equal(w.events.filter((e) => e.type === 'text' && e.text === 'last heart!').length, 2);
 });
 
 test('impact: hurt sets a red flash colour', () => {

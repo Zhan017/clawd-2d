@@ -6,7 +6,10 @@
   const HEART_Y = 5;
   const HEART_STEP = 9;
   const MAX_DRAWN_HEARTS = 12; // the strip has room for about this many before the pip and the tags
-  const METER = { x: 4, y: 13, w: 48, h: 3 };
+  const METER = { x: 4, y: 13, w: 48, h: 4 };
+  const TRACK = '#66708A'; // the empty meter: about 3.9:1 against the strip (greyDark is 2.4:1)
+  const VIGNETTE_PX = 6;
+  const QUIET_WAVE_T = 2; // seconds after a wave starts with no idle bubble over Clawd
   const BAR = { x: 90, y: 10, w: 140, h: 5 }; // boss bar frame; the fill sits inside it
   const BAR_FILL_T = 0.8; // the bar fills up to the boss's health over this long when the fight starts
   const NAME_CPS = 40; // the boss name types in at this many characters a second
@@ -15,6 +18,7 @@
   const PIP_MASK = [[1, 3], [0, 4], [0, 4], [0, 4], [1, 3]]; // [first, last] lit column in each row of the 5x5 pip
   const BANNER_TEXT = 'Compacting conversation...';
   let looking = false; // this frame's boss reports a moth being looked at: set by draw(), read by cursor() right after it
+  let quietAt = -Infinity; // the clock of the last frame that was in the quiet stretch around a wave start (read by Player's idle bubble)
 
   // Hearts: R is the rim (ink would vanish on the HUD strip), r the body, w the shine. The empty heart is a slate hollow in a grey rim.
   CB.Art.defineSprite('heart_full', ['.RR.RR.', 'RrwRrrR', 'RrrrrrR', '.RrrrR.', '..RrR..', '...R...']);
@@ -72,12 +76,17 @@
     return (stage && (P[stage.palette] || P[stage.id])) || P.src;
   }
 
-  // At 1 heart the screen edge pulses red: three nested 1 px frames, brighter on the beat.
-  function drawVignette(r, p) {
-    const a = 0.1 + 0.2 * clamp(num(p.beatPulse, 0), 0, 1);
-    r.alpha(a, () => {
-      for (let i = 0; i < 3; i++) r.frame(i, i, CB.W - 2 * i, CB.H - 2 * i, C.hurt);
-    });
+  const isCalm = () => !!(CB.Comfort && typeof CB.Comfort.calm === 'function' && CB.Comfort.calm());
+
+  // At 1 heart the screen edge glows: six nested 1 px frames fading inward, brighter on the beat (steady in calm mode).
+  // The red ~/prod/ floor would swallow a red edge, so there it is gold.
+  function drawVignette(r, p, stage) {
+    const pulse = isCalm() ? 0.5 : clamp(num(p.beatPulse, 0), 0, 1);
+    const base = 0.2 + 0.25 * pulse;
+    const color = stage && stage.palette === 'prod' ? C.gold : C.hurt;
+    for (let i = 0; i < VIGNETTE_PX; i++) {
+      r.alpha(base * (1 - i / (VIGNETTE_PX + 1)), () => r.frame(i, i, CB.W - 2 * i, CB.H - 2 * i, color));
+    }
   }
 
   function drawHearts(r, p, t, max) {
@@ -100,28 +109,33 @@
   // Cyan and lit when the dash is ready; dim while cooling, filling from the bottom.
   function drawPip(r, p, x) {
     const cd = num(p.stats && p.stats.dashCooldown, 0.8);
-    if (num(p.dashCd, 0) <= 0 || cd <= 0) {
-      blit(r, 'dash_ready', x, HEART_Y);
-      return;
+    if (num(p.dashCd, 0) <= 0 || cd <= 0) blit(r, 'dash_ready', x, HEART_Y);
+    else {
+      blit(r, 'dash_cool', x, HEART_Y);
+      const rows = Math.round(5 * clamp(1 - p.dashCd / cd, 0, 1));
+      for (let j = 5 - rows; j < 5; j++) r.rect(x + PIP_MASK[j][0], HEART_Y + j, PIP_MASK[j][1] - PIP_MASK[j][0] + 1, 1, C.cyan);
     }
-    blit(r, 'dash_cool', x, HEART_Y);
-    const rows = Math.round(5 * clamp(1 - p.dashCd / cd, 0, 1));
-    for (let j = 5 - rows; j < 5; j++) r.rect(x + PIP_MASK[j][0], HEART_Y + j, PIP_MASK[j][1] - PIP_MASK[j][0] + 1, 1, C.cyan);
+    if (num(p.refuseDashT, 0) > 0) r.frame(x - 1, HEART_Y - 1, 7, 7, C.hurt); // a dash pressed while it cools: the pip flashes
   }
 
-  // The context bar: cyan with a darker bottom row, flashing gold when /compact is ready.
+  // The context bar: a visible track, cyan fill with a darker bottom row, flashing gold when /compact is ready, and a `/c` tag that lights with it.
+  // A /compact pressed before it is full flashes the outline.
   function drawMeter(r, w, t) {
     const c = w.context;
     if (!c || !(num(c.max, 0) > 0)) return;
     const m = METER;
     const frac = clamp(num(c.value, 0) / c.max, 0, 1);
-    r.rect(m.x, m.y, m.w, m.h, C.ink);
-    const fw = Math.round(m.w * frac);
-    if (fw <= 0) return;
     const full = frac >= 1;
     const gold = full && blink(t, 6);
-    r.rect(m.x, m.y, fw, m.h - 1, gold ? C.gold : C.cyan);
-    r.rect(m.x, m.y + m.h - 1, fw, 1, gold ? C.ember : C.cyanDark);
+    r.rect(m.x, m.y, m.w, m.h, TRACK);
+    r.rect(m.x + 1, m.y + 1, m.w - 2, m.h - 2, C.ink);
+    const fw = Math.round(m.w * frac);
+    if (fw > 0) {
+      r.rect(m.x, m.y, fw, m.h - 1, gold ? C.gold : C.cyan);
+      r.rect(m.x, m.y + m.h - 1, fw, 1, gold ? C.ember : C.cyanDark);
+    }
+    r.text('/c', m.x + m.w + 3, m.y - 2, { color: full ? (gold ? C.gold : C.white) : TRACK });
+    if (num(w.player && w.player.refuseCompactT, 0) > 0) r.frame(m.x - 1, m.y - 1, m.w + 2, m.h + 2, C.hurt);
   }
 
   // ---- boss bar -------------------------------------------------------------------------------------------------------
@@ -184,6 +198,12 @@
       return frac;
     },
 
+    // True while the idle "Thinking..." bubble should hold back: the wave break and the first 2 s of a wave. The world draws before the HUD,
+    // so this reads the last HUD frame; `t` is the screen clock, and a stale answer (the HUD stopped drawing) expires after a tenth of a second.
+    bubbleQuiet(t) {
+      return Number.isFinite(t) && t - quietAt >= -0.1 && t - quietAt < 0.1;
+    },
+
     draw(r, run, t) {
       const w = run && run.world;
       looking = !!(w && w.boss && !w.boss.defeated && w.boss.observing === true);
@@ -191,7 +211,9 @@
       const p = w.player;
       const stage = stageOf(run);
       const tt = num(t, 0);
-      if (p.hearts === 1 && !p.dead) drawVignette(r, p);
+      const quiet = run.state === 'waveBreak' || (run.state === 'wave' && num(run.stateT, 0) < QUIET_WAVE_T);
+      if (quiet) quietAt = tt;
+      if (p.hearts === 1 && !p.dead) drawVignette(r, p, stage);
 
       const max = clamp(Math.floor(num(p.stats && p.stats.maxHearts, 5)), 1, MAX_DRAWN_HEARTS);
       drawHearts(r, p, tt, max);

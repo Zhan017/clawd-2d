@@ -7,6 +7,8 @@
   const DASH_TIME = 0.15;
   const DASH_INVULN = 0.25;
   const HURT_INVULN = 1.0;
+  const DASH_BUFFER = 0.15; // a dash pressed this early (or less) before the cooldown ends fires the moment it does
+  const REFUSE_T = 0.15; // how long the HUD flashes after a refused dash or /compact
   const AIM_R = 48; // stick aim: the aim point sits this far out along the stick direction
   const ASSIST_DEG = 10; // stick aim assist: a bug this close to the stick direction...
   const ASSIST_COS = Math.cos((ASSIST_DEG * Math.PI) / 180);
@@ -152,7 +154,8 @@
 
   // "✻ Thinking..." above Clawd (and above the /compact keycap). The glyph cycles; the words stay put (laid out for the widest glyph).
   const THINK_GLYPHS = ['·', '*', '✻'];
-  function drawThinking(p, r, t) {
+  // `keycapBelow`: a /compact prompt already sits under Clawd, so a flipped bubble goes below that.
+  function drawThinking(p, r, t, keycapBelow) {
     const C = CB.Pal.C;
     const width = (s) => (CB.Font && typeof CB.Font.measure === 'function' ? CB.Font.measure(s, 1) : s.length * 6);
     const calm = !!(CB.Comfort && typeof CB.Comfort.calm === 'function' && CB.Comfort.calm());
@@ -161,10 +164,32 @@
     const word = 'Thinking...';
     const total = gw + 4 + width(word);
     const x = Math.round(M.clamp(p.x - total / 2, 2, CB.W - total - 2));
-    const y = Math.max(2, Math.round(p.y - 31));
+    // Above Clawd, unless that would leave the arena: near the top wall it flips below her.
+    const A = CB.ARENA;
+    let y = Math.round(p.y - 31);
+    if (y < A.y + 2) y = Math.min(A.y + A.h - 9, Math.round(p.y + (keycapBelow ? 22 : 10)));
     const o = { color: C.pale, shadow: C.ink };
     r.text(glyph, x + Math.round((gw - width(glyph)) / 2), y, o); // centred in the widest glyph's cell
     r.text(word, x + gw + 4, y, o);
+  }
+
+  // The first seconds of a wave stay quiet: the HUD (which knows the run's state) says so. Optional: without it the bubble is never held back.
+  function waveStartQuiet(t) {
+    const H = CB.Screens && CB.Screens.hud;
+    return !!(H && typeof H.bubbleQuiet === 'function' && H.bubbleQuiet(t));
+  }
+
+  // At one heart a ring pulses under Clawd's feet on the beat (steady in calm mode). Gold on the red ~/prod/ floor, where red would vanish.
+  function drawLastHeartRing(p, r, w) {
+    const C = CB.Pal.C;
+    const calm = !!(CB.Comfort && typeof CB.Comfort.calm === 'function' && CB.Comfort.calm());
+    const pulse = calm ? 0.4 : M.clamp(Number.isFinite(p.beatPulse) ? p.beatPulse : 0, 0, 1);
+    const prod = !!(w && w.stage && w.stage.palette === 'prod');
+    const rad = 9 + Math.round(3 * pulse);
+    r.alpha(0.55 + 0.35 * pulse, () => {
+      r.ring(p.x, p.y + 2, rad, prod ? C.gold : C.hurt);
+      r.ring(p.x, p.y + 2, rad - 1, prod ? C.gold : C.hurt);
+    });
   }
 
   // Cosine between the stick direction `u` and the line to bug `e`; -2 when the bug cannot be assisted: not hittable right now,
@@ -234,6 +259,7 @@
         invuln: 0, dashInvulnT: 0, hurtT: 0, hurtInvuln: yolo ? 0.7 : HURT_INVULN, dead: false, slow: 1, moving: false, walkT: 0, t: 0, trail: [],
         beatT: 0.3, beatPulse: 0, lowWarned: false,
         kick: 0, idleT: 0, cheerT: 0, dashN: 0, // cosmetic: recoil, idle clock, celebration, dash ticks so far
+        dashBufT: 0, refuseDashT: 0, refuseCompactT: 0, // input feel: the early-dash buffer, and the HUD's refusal flashes
       };
     },
 
@@ -250,7 +276,7 @@
       if (p.hearts === 1 && !w.god) {
         if (!p.lowWarned) {
           p.lowWarned = true;
-          w.emit('text', { x: p.x, y: p.y - 12, text: 'context low', color: CB.Pal.C.hurt });
+          w.emit('text', { x: p.x, y: p.y - 12, text: 'last heart!', color: CB.Pal.C.hurt });
         }
         p.beatT -= dt;
         if (p.beatT <= EPS) {
@@ -268,9 +294,15 @@
       p.invuln -= dt;
       p.dashInvulnT -= dt;
       p.hurtT -= dt;
+      p.refuseDashT = Math.max(0, (p.refuseDashT || 0) - dt);
+      p.refuseCompactT = Math.max(0, (p.refuseCompactT || 0) - dt);
+      p.dashBufT = Math.max(0, (p.dashBufT || 0) - dt);
       const wantCompact = input.compact || w.compactBuffered; // an E pressed during hitstop is cast on the first live tick
       w.compactBuffered = false;
-      if (wantCompact && CB.Compact) CB.Compact.cast(w);
+      if (wantCompact && CB.Compact && !CB.Compact.cast(w) && input.compact && w.context && w.context.value < w.context.max) {
+        p.refuseCompactT = REFUSE_T; // a press on a meter that is not full: the HUD flashes the meter and a dull tick plays
+        w.emit('refuse', { x: p.x, y: p.y, what: 'compact' });
+      }
       const sa = stickAim(p, w, input);
       p.aimStick = !!sa;
       p.aimX = sa ? sa.x : input.aimX;
@@ -278,10 +310,18 @@
       p.facing = p.aimX >= p.x ? 1 : -1;
       const mv = M.norm(input.moveX || 0, input.moveY || 0);
 
-      const wantDash = input.dash || w.dashBuffered;
+      const wantDash = input.dash || w.dashBuffered || p.dashBufT > EPS; // a press up to DASH_BUFFER early fires when the cooldown ends
       w.dashBuffered = false;
       p.idleT = mv.x !== 0 || mv.y !== 0 || input.fire || wantDash ? 0 : (p.idleT || 0) + dt; // any move, fire or dash input restarts the idle clock
-      if (wantDash && p.dashCd <= EPS && p.dashT <= EPS) {
+      const canDash = p.dashCd <= EPS && p.dashT <= EPS;
+      if (input.dash && !canDash) {
+        if (p.dashCd > DASH_BUFFER + EPS) {
+          p.refuseDashT = REFUSE_T; // too early to buffer: a dull tick and a flash on the pip
+          w.emit('refuse', { x: p.x, y: p.y, what: 'dash' });
+        } else p.dashBufT = DASH_BUFFER;
+      }
+      if (wantDash && canDash) {
+        p.dashBufT = 0;
         let d = mv;
         if (d.x === 0 && d.y === 0) d = M.norm(p.aimX - p.x, p.aimY - p.y);
         if (d.x === 0 && d.y === 0) d = { x: p.facing, y: 0 };
@@ -376,6 +416,7 @@
         r.alpha(Math.max(0, g.life / 0.2) * 0.45, () => r.sprite('clawd_idle0', g.x, g.y - 2, { flip: g.facing < 0, white: true }));
       }
       r.alpha(0.35, () => r.rect(p.x - 5, p.y + 4, 10, 2, C.ink));
+      if (p.hearts === 1 && !p.dead) drawLastHeartRing(p, r, o.w);
       if (p.dead) {
         r.sprite('clawd_idle0_hurt', p.x, p.y - 2, { flipY: true, flip: p.facing < 0 });
         return;
@@ -406,7 +447,10 @@
       const sq = pose(p);
       if ((sq.sx !== 1 || sq.sy !== 1) && typeof r.squash === 'function') r.squash(Math.round(p.x), Math.round(p.y + 4), sq.sx, sq.sy, body);
       else body();
-      if ((p.idleT || 0) >= IDLE_T && !(opts && opts.noBubble)) drawThinking(p, r, tt); // no bubble under the stage/boss cards
+      if ((p.idleT || 0) >= IDLE_T && !o.noBubble && !waveStartQuiet(tt)) { // no bubble under the stage/boss cards, nor as a wave begins
+        const below = !!(o.w && CB.Compact && typeof CB.Compact.ready === 'function' && typeof CB.Compact.promptBelow === 'function' && CB.Compact.ready(o.w) && CB.Compact.promptBelow(p));
+        drawThinking(p, r, tt, below);
+      }
     },
   };
 })(window.CB);

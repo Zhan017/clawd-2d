@@ -4,10 +4,14 @@
   // Blinks faster than 4 Hz go through Calm mode when it is loaded.
   const blink = (t, hz) => (CB.Comfort && CB.Comfort.blink ? CB.Comfort.blink(t, hz) : Math.floor(t * hz) % 2 === 0);
 
-  function drawHazard(r, h, t) {
+  // A puddle: a bright green fill (3:1 or better against every stage's floor) with a 2 px yellow rim, so it reads as a hazard on any palette.
+  function drawHazard(r, h) {
     const k = Math.min(1, h.life / 0.5);
-    r.alpha(0.45 * k, () => r.disc(h.x, h.y, h.r, CB.Pal.C.greenDark));
-    r.alpha(0.6 * k, () => r.ring(h.x, h.y, h.r - (Math.floor(t * 6) % 3), CB.Pal.C.green));
+    r.alpha(0.65 * k, () => r.disc(h.x, h.y, h.r, CB.Pal.C.green));
+    r.alpha(0.8 * k, () => {
+      r.ring(h.x, h.y, h.r, CB.Pal.C.yellow);
+      r.ring(h.x, h.y, h.r - 1, CB.Pal.C.yellow);
+    });
   }
 
   function drawTelegraph(r, s, t) {
@@ -42,7 +46,7 @@
         else mod.draw(e, r, t);
         if (e.elite) drawElite(r, e, t);
       }
-      CB.Player.draw(w.player, r, t, opts && opts.noBubble ? { noBubble: true } : undefined);
+      CB.Player.draw(w.player, r, t, { noBubble: !!(opts && opts.noBubble), w });
       if (CB.Compact && CB.Compact.drawPrompt) CB.Compact.drawPrompt(w, r, t);
       CB.Projectiles.draw(w, r, t, 'player');
       if (w.boss && !w.boss.defeated && w.boss.draw) w.boss.draw(r, t);
