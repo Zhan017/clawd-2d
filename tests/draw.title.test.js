@@ -917,7 +917,7 @@ test('title: the real font keeps every card line inside the card with room to sp
   const lines = [
     'WASD move · Mouse aim · Click shoot', 'Space dash · E /compact · Esc pause',
     'Left thumb move · Right thumb aim + shoot', 'DASH and /c buttons · II pause',
-    'L-stick move · R-stick aim + shoot', 'A dash · RB /compact · Start pause',
+    'L-stick move · R-stick aim · RT fire', 'A/LB dash · RB/B /compact · Start pause',
     'all four bosses back to back', 'one seeded run a day, the same for everyone', '3 hearts, faster bullets: bragging rights',
     'LB Branch beanie RB',
   ];
@@ -1026,7 +1026,7 @@ test('title: a pad focus (title.focus) lights its button and shows its descripti
     assert.equal(frameAt(env, env.title.BUTTONS.find((b) => b.id === id)).color, C.gold);
   }
   env.title.focus = null;
-  assert.ok(hasText(frame(env), 'L-stick move · R-stick aim + shoot'), 'the pad legend');
+  assert.ok(hasText(frame(env), 'L-stick move · R-stick aim · RT fire'), 'the pad legend');
   env.title.focus = 'rush';
   env.title.enter(env.game, {});
   assert.equal(env.title.focus, null);
@@ -1334,12 +1334,12 @@ for (const dev of ['kbm', 'touch', 'pad']) {
       let gaps = 0;
       for (let x = b.x; x < b.x + b.w; x++) if (!px.has(x + ',' + b.y)) gaps++;
       assert.ok(gaps >= 10, id + ': the top edge has real gaps: ' + gaps);
-      // The label: greyDark, centred in the box, on the same row as the unlocked labels.
+      // The label: grey (greyDark was too faint to read), centred in the box, on the same row as the unlocked labels.
       const label = textOf(rec, LOCKED_LABEL[dev][id]);
       assert.ok(label, dev + ': ' + LOCKED_LABEL[dev][id]);
       assert.ok(inBox(label, b) && Math.abs(label.x + label.w / 2 - (b.x + b.w / 2)) <= 1, id + ': label centred inside');
       assert.equal(label.y, b.y + 2);
-      assert.equal(colour(LOCKED_LABEL[dev][id]), C.greyDark, id + ': greyDark text');
+      assert.equal(colour(LOCKED_LABEL[dev][id]), C.grey, id + ': grey text');
     }
     // The daily build next to them is the ordinary framed button.
     assert.ok(frameAt(env, daily), 'daily: framed');
@@ -1368,7 +1368,7 @@ test('title (locked modes): hovering a locked button (mouse) shows "win a full r
     assert.equal(d.colour(LOCKED_DESC), C.pale);
     for (const l of LEGEND) assert.ok(!hasText(rec, l), id + ' hides the legend');
     assert.ok(!Object.values(DESCRIPTIONS).some((t) => hasText(rec, t)), 'and says nothing about what the mode does');
-    assert.equal(d.colour(LOCKED_LABEL.kbm[id]), C.greyDark, 'still greyDark under the pointer');
+    assert.equal(d.colour(LOCKED_LABEL.kbm[id]), C.grey, 'still grey under the pointer');
     assert.ok(env.rects.filter((q) => inBox(q, b) && (q.w === 1 || q.h === 1)).every((q) => q.color === C.greyDark), 'and the dashes stay dark');
     assert.ok(!env.frames.some((f) => f.color === C.gold && inBox(f, b)), 'no gold frame');
     assertCardLayout(env, rec, 'hover locked ' + id);
@@ -1422,19 +1422,16 @@ for (const dev of ['kbm', 'touch']) {
       assert.equal(toast.y, 173, 'on the footer row');
       assert.equal(d.colour(LOCKED_TOAST[id]), env.CB.Pal.C.gold);
       assert.ok(!hasText(d.rec, DISCLAIMER_TEXT), 'it takes the disclaimer\'s row');
-      assert.ok(hasText(d.rec, LOCKED_DESC), 'the description stays up for a finger');
+      assert.ok(!hasText(d.rec, LOCKED_DESC), 'a poke shows only the toast, not the description too');
       assert.ok(!hasText(d.rec, '--yolo: ON') && !hasText(d.rec, '--yolo: off'));
       assertCardLayout(env, d.rec, dev + ' toast ' + id);
-      // The toast goes after 1.6 s, the description after 2 s; the controls and the disclaimer come back.
+      // The toast goes after 1.6 s; the controls and the disclaimer come back.
       run(env, 90);
       assert.ok(hasText(frame(env), LOCKED_TOAST[id]), 'still up at 1.5 s');
       run(env, 10);
-      let rec = frame(env);
+      const rec = frame(env);
       assert.ok(!hasText(rec, LOCKED_TOAST[id]) && hasText(rec, DISCLAIMER_TEXT), 'gone by 1.7 s');
-      assert.ok(hasText(rec, LOCKED_DESC), 'the description is still up');
-      run(env, 30);
-      rec = frame(env);
-      assert.ok(!hasText(rec, LOCKED_DESC), 'gone after 2 s');
+      assert.ok(!hasText(rec, LOCKED_DESC));
       assert.ok(hasText(rec, env.title.say('legend1', LEGEND[0])) && hasText(rec, env.title.say('legend2', LEGEND[1])), 'the controls are back');
     }
   });
@@ -1447,7 +1444,10 @@ for (const dev of ['kbm', 'touch']) {
         run(env, 1, tapAt(x, y));
         assert.equal(env.visits.length, 0, id + ' at ' + x + ',' + y);
       }
-      for (const [x, y] of [[b.x - 0.6, b.y + 5], [b.x + b.w, b.y + 5], [b.x + 10, b.y - 0.6], [b.x + 10, b.y + b.h]]) {
+      // A finger lands on the nearest control up to 6 px away (M3), so on touch "outside" means 7 px, and only on the sides that have no neighbour.
+      const out = dev === 'touch' ? (id === 'rush' ? [[b.x - 7, b.y + 5]] : [[b.x + b.w + 7, b.y + 5]]).concat([[b.x + 10, b.y - 7], [b.x + 10, b.y + b.h + 7]])
+        : [[b.x - 0.6, b.y + 5], [b.x + b.w, b.y + 5], [b.x + 10, b.y - 0.6], [b.x + 10, b.y + b.h]];
+      for (const [x, y] of out) {
         env.title.enter(env.game, {});
         unlocked(env);
         run(env, 1, tapAt(x, y));
@@ -1481,7 +1481,7 @@ test('title (locked modes, pad): Y and X toast what unlocks them with uiSelect a
   assert.equal(env.visits.length, 0);
   assert.deepEqual(env.sounds, ['uiSelect']);
   let rec = frame(env);
-  assert.ok(hasText(rec, LOCKED_TOAST.rush) && hasText(rec, LOCKED_DESC), 'Y: toast and description');
+  assert.ok(hasText(rec, LOCKED_TOAST.rush) && !hasText(rec, LOCKED_DESC), 'Y: the toast only');
   run(env, 1, H.makeInput({ pad: { x: true } }));
   assert.equal(env.title.yolo, false);
   assert.deepEqual(env.sounds, ['uiSelect', 'uiSelect']);
@@ -1534,6 +1534,8 @@ test('title (unlocked): with the modes and a hat unlocked there are no teasers a
   assert.deepEqual(s.cycles, [1]);
   assert.equal(env.visits.length, 0);
   env.CB.Prompts.setDevice('pad');
+  run(env, 1, H.makeInput({ pad: { y: true } }));
+  assert.equal(env.visits.length, 0, 'the press that switches the device to the pad only wakes it');
   run(env, 1, H.makeInput({ pad: { y: true } }));
   assert.deepEqual(env.visits.pop(), ['play', { runOpts: { bossRush: true, yolo: false } }]);
   assert.ok(env.sounds.every((n) => n === 'uiSelect'));

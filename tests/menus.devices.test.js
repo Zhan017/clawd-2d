@@ -302,7 +302,7 @@ test('toggles: every label fits its chip with room to spare, in every state and 
 const TITLE_TEXT = {
   kbm: { start: 'Click to start', l1: 'WASD move · Mouse aim · Click shoot', l2: 'Space dash · E /compact · Esc pause', hat: 'Loop cap', hints: ['Q', 'E'], rush: 'boss rush', daily: 'daily build', yolo: '--yolo: off', chips: ['M sound: on', 'N music: on', 'V calm: off'] },
   touch: { start: 'Tap to start', l1: 'Left thumb move · Right thumb aim + shoot', l2: 'DASH and /c buttons · II pause', hat: 'Loop cap', hints: [], rush: 'boss rush', daily: 'daily build', yolo: '--yolo: off', chips: ['sound: on', 'music: on', 'calm: off'] },
-  pad: { start: 'Press A to start', l1: 'L-stick move · R-stick aim + shoot', l2: 'A dash · RB /compact · Start pause', hat: 'Loop cap', hints: ['LB', 'RB'], rush: 'Y boss rush', daily: 'B daily build', yolo: 'X --yolo: off', chips: ['sound: on', 'music: on', 'calm: off'] },
+  pad: { start: 'Press A to start', l1: 'L-stick move · R-stick aim · RT fire', l2: 'A/LB dash · RB/B /compact · Start pause', hat: 'Loop cap', hints: ['LB', 'RB'], rush: 'Y boss rush', daily: 'B daily build', yolo: 'X --yolo: off', chips: ['sound: on', 'music: on', 'calm: off'] },
 };
 
 for (const dev of DEVICES) {
@@ -377,7 +377,7 @@ for (const dev of DEVICES) {
       const t = box(rec, label);
       assert.ok(t && inBox(t, b), dev + ': ' + label + ' inside its box');
       assert.equal(t.y, 127);
-      assert.equal(env.texts.find((x) => x[0] === label)[1].color, env.C.greyDark, label + ' is greyDark');
+      assert.equal(env.texts.find((x) => x[0] === label)[1].color, env.C.grey, label + ' is grey');
       assert.ok(!env.frames.some((f) => f.x === b.x && f.y === b.y && f.w === b.w && f.h === b.h), label + ': dashed, not framed');
     }
     assert.ok(box(rec, want.daily) && inBox(box(rec, want.daily), dailyB), 'the daily build is the ordinary button');
@@ -392,8 +392,8 @@ for (const dev of DEVICES) {
   });
 }
 
-// A tap on a locked button on a phone: no hover to show the description, so the tap puts it up with the toast.
-test('title (touch): a tap on a locked button toasts and describes it; a tap beside it starts', () => {
+// A tap on a locked button on a phone: the toast says what unlocks it (and only the toast: the description under the row would repeat it).
+test('title (touch): a tap on a locked button toasts it; a tap beside it starts', () => {
   const env = setup('touch');
   enterTitle(env, { modes: false });
   const [rush, yolo] = env.title.BUTTONS;
@@ -404,7 +404,7 @@ test('title (touch): a tap on a locked button toasts and describes it; a tap bes
   assert.equal(env.title.yolo, false);
   const rec = titleFrame(env);
   assert.ok(box(rec, 'win a full run to unlock --yolo'));
-  assert.ok(box(rec, 'win a full run to unlock'));
+  assert.ok(!box(rec, 'win a full run to unlock'), 'no second line saying the same');
   assertLayout(rec, 'touch poke');
   tick(env, 1, tapInput(160, 60));
   assert.equal(env.visits.length, 1);
@@ -600,13 +600,15 @@ test('title (pad): every pad edge waits out the 0.3 s input lock', () => {
   }
 });
 
-test('title (pad): the other pad buttons do nothing here', () => {
+test('title (pad): Back does nothing here, and Start begins a normal run', () => {
   const env = setup('pad');
   enterTitle(env, { modes: true, hats: ['loopcap'], worn: null });
-  for (const edge of ['start', 'back']) tick(env, 1, padInput(edge));
+  tick(env, 1, padInput('back'));
   assert.equal(env.visits.length, 0);
   assert.deepEqual(env.unlocks.cycles, []);
   assert.equal(env.title.yolo, false);
+  tick(env, 1, padInput('start'));
+  assert.deepEqual(env.visits, [['play', { runOpts: { yolo: false } }]], 'Start begins a normal run');
 });
 
 // ---- title: clicks and taps ---------------------------------------------------------------------------------------------------------
@@ -632,8 +634,8 @@ test('title: a tap on a chip toggles that setting and does not start; a tap anyw
   }
 });
 
-test('title: the gap between chips and the strip around them start the game, like any other tap', () => {
-  const env = setup('touch');
+test('title: the gap between chips and the strip around them start the game for a mouse, like any other click (a finger lands on the nearest chip: see the near-miss tests)', () => {
+  const env = setup('kbm');
   enterTitle(env);
   tick(env, 1, tapInput(121, 163)); // the 4 px gap between sound and music
   assert.equal(env.visits.length, 1);
@@ -652,7 +654,7 @@ test('title: a click or tap inside the lock window does nothing, chips included'
 });
 
 test('title: a tap on the hat row (when a hat is unlocked) wears a hat: the left arrow the previous one, the rest of the row the next; with no hat it starts the game', () => {
-  const env = setup('touch');
+  const env = setup('kbm'); // exact edges are a mouse's: a finger's near misses land on the hat row too (see the near-miss tests)
   enterTitle(env, { hats: ['loopcap', 'halo'], worn: 'loopcap' });
   const B = env.title.HAT_BOX;
   const L = env.title.HAT_LEFT;
@@ -675,7 +677,7 @@ test('title: a tap on the hat row (when a hat is unlocked) wears a hat: the left
   assert.equal(env.visits.length, 1);
   assert.deepEqual(env.unlocks.cycles, [-1, -1, 1, 1]);
 
-  const bare = setup('touch');
+  const bare = setup('kbm');
   enterTitle(bare, { hats: [] });
   tick(bare, 1, tapInput(B.x + 5, B.y + 5));
   assert.equal(bare.visits.length, 1, 'no hats: the hat row is not a button');
@@ -845,9 +847,9 @@ test('title: the worst case per device (hats, modes, daily done, yolo on, toast,
 // ---- pause ----------------------------------------------------------------------------------------------------------------------------
 
 const PAUSE_TEXT = {
-  kbm: { line: 'Esc: resume · Q: quit to title', armed: 'Press Q again to quit', l1: 'WASD move · Mouse aim · Click shoot', l2: 'Space dash · E /compact (meter full)', chips: ['M sound: on', 'N music: on', 'V calm: off'] },
+  kbm: { line: 'Esc: resume · Q: quit to title', armed: 'Press Q again to quit', l1: 'WASD move · Mouse aim · Click shoot', l2: 'Space/Shift dash · E /compact (meter full)', chips: ['M sound: on', 'N music: on', 'V calm: off'] },
   touch: { line: 'Tap resume to keep playing', armed: 'Tap quit again to quit', l1: 'Left thumb: move · Right thumb: aim + shoot', l2: 'DASH · /compact (meter full)', chips: ['sound: on', 'music: on', 'calm: off'] },
-  pad: { line: 'Start: resume · Back: quit to title', armed: 'Press Back again to quit', l1: 'L-stick move · R-stick aim + shoot', l2: 'A/LB dash · RB/B /compact (meter full)', chips: ['sound: on', 'music: on', 'calm: off'] },
+  pad: { line: 'Start: resume · Back: quit to title', armed: 'Press Back again to quit', l1: 'L-stick move · R-stick aim · RT fire', l2: 'A/LB dash · RB/B /compact · Start pause', chips: ['sound: on', 'music: on', 'calm: off'] },
 };
 
 for (const dev of DEVICES) {
@@ -1162,4 +1164,341 @@ test('every touch and pad prompt this task draws fits the 312 px column in the r
     assert.ok(w(t.daily + ' ✓') + 8 <= 74, dev + ' the ticked daily label fits its button');
     assert.ok(w('--yolo: ON') + 8 <= 74 && w('X --yolo: ON') + 8 <= 74);
   }
+});
+
+// ---- title: the pad's focus ring (M1) ------------------------------------------------------------------------------------------------
+
+// A pad poll with a D-pad or stick flick: the pad edges object (so the title reads it as the pad) plus the merged nav the real sample() ORs in.
+const navInput = (navX, navY) => H.makeInput({ pad: Object.assign({}, PAD0), navX, navY });
+const settle = () => new Promise((resolve) => setImmediate(resolve)); // lets the stub's promise (a different realm's) reach the title's then()
+const stubInstall = (env, kind, extra) => {
+  const calls = { prompt: 0, help: 0 };
+  env.installCalls = calls;
+  env.CB.Install = Object.assign({
+    kind: () => kind,
+    standalone: () => false,
+    prompt: () => { calls.prompt++; return Promise.resolve('accepted'); },
+    showIosHelp: () => { calls.help++; },
+  }, extra || {});
+};
+
+test('title (pad): the first D-pad press lights START without moving; then up and down walk hat, START, modes, chips and keep the column', () => {
+  const env = setup('pad');
+  enterTitle(env, { modes: true, hats: ['loopcap', 'halo'], worn: 'loopcap' });
+  assert.equal(env.title.focus, null);
+  tick(env, 1, navInput(0, 1));
+  assert.equal(env.title.focus, 'start', 'the first press only lights START');
+  tick(env, 1, navInput(0, 1));
+  assert.equal(env.title.focus, 'daily', 'down from START lands on the middle mode');
+  tick(env, 1, navInput(-1, 0));
+  assert.equal(env.title.focus, 'rush');
+  tick(env, 1, navInput(0, 1));
+  assert.equal(env.title.focus, 'sound', 'the chips share the modes\' columns');
+  tick(env, 1, navInput(0, 1));
+  assert.equal(env.title.focus, 'sound', 'the last row stops');
+  tick(env, 1, navInput(1, 0));
+  tick(env, 1, navInput(1, 0));
+  assert.equal(env.title.focus, 'calm');
+  tick(env, 1, navInput(1, 0));
+  assert.equal(env.title.focus, 'sound', 'left and right wrap along a row');
+  tick(env, 1, navInput(0, -1));
+  tick(env, 1, navInput(0, -1));
+  assert.equal(env.title.focus, 'start');
+  tick(env, 1, navInput(0, -1));
+  assert.equal(env.title.focus, 'hat');
+  tick(env, 1, navInput(0, -1));
+  assert.equal(env.title.focus, 'hat', 'the top stops');
+  assert.equal(env.visits.length, 0, 'walking starts nothing');
+});
+
+test('title (pad): left and right on the hat row wear another hat; A on it wears the next', () => {
+  const env = setup('pad');
+  enterTitle(env, { modes: true, hats: ['loopcap', 'halo'], worn: 'loopcap' });
+  tick(env, 1, navInput(0, -1));
+  tick(env, 1, navInput(0, -1));
+  assert.equal(env.title.focus, 'hat');
+  tick(env, 1, navInput(-1, 0));
+  tick(env, 1, navInput(1, 0));
+  tick(env, 1, padInput('a'));
+  assert.deepEqual(env.unlocks.cycles, [-1, 1, 1]);
+  assert.equal(env.title.focus, 'hat', 'the focus stays on the hat row');
+  assert.equal(env.visits.length, 0, 'and A there starts nothing');
+});
+
+test('title (pad): A activates the focused item (a mode starts, --yolo flips, a chip flips) and with no focus it starts as ever; Start always begins a normal run', () => {
+  const env = setup('pad');
+  enterTitle(env, { modes: true, hats: [] });
+  tick(env, 1, padInput('a'));
+  assert.deepEqual(env.visits.pop(), ['play', { runOpts: { yolo: false } }], 'no focus: A starts');
+  const focused = (id) => {
+    env.title.enter(env.game, {});
+    tick(env, 20);
+    env.title.focus = id;
+  };
+  focused('rush');
+  tick(env, 1, padInput('a'));
+  assert.deepEqual(env.visits.pop(), ['play', { runOpts: { bossRush: true, yolo: false } }]);
+  focused('daily');
+  tick(env, 1, padInput('a'));
+  assert.ok(env.visits.pop()[1].runOpts.daily, 'the daily build');
+  focused('yolo');
+  tick(env, 1, padInput('a'));
+  assert.equal(env.title.yolo, true);
+  assert.equal(env.visits.length, 0, 'flipping --yolo starts nothing');
+  assert.equal(env.title.focus, 'yolo', 'and the focus stays');
+  focused('calm');
+  tick(env, 1, padInput('a'));
+  assert.equal(env.state.calm, true);
+  assert.equal(env.visits.length, 0);
+  focused('start');
+  tick(env, 1, padInput('a'));
+  assert.deepEqual(env.visits.pop(), ['play', { runOpts: { yolo: false } }], 'A on START');
+  focused('calm');
+  tick(env, 1, padInput('start'));
+  assert.deepEqual(env.visits.pop(), ['play', { runOpts: { yolo: false } }], 'Start begins a normal run from anywhere on the ring');
+});
+
+test('title (pad): A on a locked mode button only toasts what unlocks it', () => {
+  const env = setup('pad');
+  enterTitle(env, { modes: false });
+  env.title.focus = 'rush';
+  tick(env, 1, padInput('a'));
+  assert.equal(env.visits.length, 0);
+  assert.ok(box(titleFrame(env), 'win a full run to unlock boss rush'));
+});
+
+test('title (pad): the press that switches the device from the keyboard to the pad only wakes it', () => {
+  const env = setup('kbm');
+  enterTitle(env, { modes: true });
+  device(env, 'pad'); // input.js has just seen the pad's press and switched the device
+  tick(env, 1, padInput('a'));
+  assert.equal(env.visits.length, 0, 'A is swallowed');
+  tick(env, 1, navInput(0, 1));
+  assert.equal(env.title.focus, 'start', 'the next press is an ordinary one');
+  const env2 = setup('kbm');
+  enterTitle(env2, { modes: true });
+  device(env2, 'pad');
+  tick(env2, 1, navInput(0, 1));
+  assert.equal(env2.title.focus, null, 'a D-pad flick that wakes the pad does not move the focus either');
+  tick(env2, 1, padInput('a'));
+  assert.equal(env2.visits.length, 1, 'then A starts');
+});
+
+test('title: the arrow keys\' nav edge moves no focus on the keyboard, and the focus clears when another device takes over', () => {
+  const env = setup('kbm');
+  enterTitle(env, { modes: true });
+  tick(env, 1, H.makeInput({ navY: 1, pad: Object.assign({}, PAD0) }));
+  assert.equal(env.title.focus, null);
+  device(env, 'pad');
+  tick(env, 1);
+  tick(env, 1, navInput(0, 1));
+  assert.equal(env.title.focus, 'start');
+  device(env, 'kbm');
+  tick(env, 1);
+  assert.equal(env.title.focus, null);
+});
+
+test('title (pad): the focused item wears a gold ring, and the dim D-pad hint shows until the focus is on', () => {
+  const env = setup('pad');
+  enterTitle(env, { modes: true, hats: ['loopcap'], worn: 'loopcap' });
+  let rec = titleFrame(env);
+  const hint = box(rec, 'D-pad: options');
+  assert.ok(hint, 'the hint');
+  assert.equal(env.texts.find((t) => t[0] === 'D-pad: options')[1].color, env.C.grey);
+  assertLayout(rec, 'pad hint');
+  const gold = (b) => env.frames.some((f) => f.color === env.C.gold && f.x <= b.x && f.y <= b.y && f.x + f.w >= b.x + b.w && f.y + f.h >= b.y + b.h);
+  const S = env.title.START_BOX;
+  assert.ok(!gold(S));
+  env.title.focus = 'start';
+  rec = titleFrame(env);
+  assert.ok(gold(S), 'START rings');
+  assert.ok(!box(rec, 'D-pad: options'), 'the hint steps aside once there is a focus');
+  assertLayout(rec, 'pad start focus');
+  env.title.focus = 'hat';
+  titleFrame(env);
+  assert.ok(env.frames.some((f) => f.color === env.C.gold && f.x === env.title.HAT_BOX.x && f.w === env.title.HAT_BOX.w), 'the hat row rings');
+  env.title.focus = 'music';
+  titleFrame(env);
+  const musicBox = env.CB.Screens.toggles.boxes(160).find((b) => b.id === 'music');
+  assert.ok(env.frames.some((f) => f.color === env.C.gold && f.x === musicBox.x && f.y === musicBox.y), 'a chip lights through the toggles');
+  for (const dev of ['kbm', 'touch']) {
+    const e = setup(dev);
+    enterTitle(e, { modes: true });
+    assert.ok(!box(titleFrame(e), 'D-pad: options'), dev + ' has no D-pad');
+  }
+});
+
+// ---- title: install (M5) --------------------------------------------------------------------------------------------------------------
+
+for (const dev of DEVICES) {
+  test('title (' + dev + '): the install button sits top-right, clear of the logo and the bugs, only while CB.Install says so', () => {
+    const env = setup(dev);
+    enterTitle(env, { modes: true });
+    assert.ok(!box(titleFrame(env), 'install'), 'no CB.Install: no button');
+    stubInstall(env, null);
+    assert.ok(!box(titleFrame(env), 'install'), 'kind() null: no button');
+    stubInstall(env, 'prompt', { standalone: () => true });
+    assert.ok(!box(titleFrame(env), 'install'), 'standalone: hidden');
+    stubInstall(env, 'ios');
+    const rec = titleFrame(env);
+    const label = box(rec, 'install');
+    const B = env.title.INSTALL_BOX;
+    assert.ok(label && inBox(label, B), 'the label sits in its box');
+    assert.ok(env.frames.some((f) => f.x === B.x && f.y === B.y && f.w === B.w && f.h === B.h), 'framed');
+    assert.ok(B.x + B.w <= 320 && B.y >= 0 && B.x >= 220 && B.y + B.h < 30, 'top-right, above the bugs\' cells (y 30)');
+    for (const t of rec.texts()) if (t !== label) assert.ok(!touches(t, B), 'nothing else touches it: ' + t.str);
+    assertLayout(rec, 'install ' + dev);
+  });
+}
+
+test('title: a tap on the install button runs the prompt and toasts the outcome, never starting a run; iOS opens the help card instead', async () => {
+  const env = setup('touch');
+  enterTitle(env, { modes: true });
+  stubInstall(env, 'prompt');
+  const B = env.title.INSTALL_BOX;
+  tick(env, 1, tapInput(B.x + 5, B.y + 5));
+  assert.equal(env.installCalls.prompt, 1);
+  assert.equal(env.visits.length, 0);
+  await settle();
+  assert.ok(box(titleFrame(env), 'installing Clawd ✓'), 'accepted');
+  for (const [res, text] of [['dismissed', 'install skipped'], ['unavailable', 'use your browser menu to install']]) {
+    stubInstall(env, 'prompt', { prompt: () => Promise.resolve(res) });
+    tick(env, 1, tapInput(B.x + 5, B.y + 5));
+    await settle();
+    assert.ok(box(titleFrame(env), text), res);
+  }
+  stubInstall(env, 'prompt', { prompt: () => Promise.reject(new Error('no')) });
+  assert.doesNotThrow(() => tick(env, 1, tapInput(B.x + 5, B.y + 5)));
+  await settle();
+  stubInstall(env, 'ios');
+  tick(env, 1, tapInput(B.x + 5, B.y + 5));
+  assert.equal(env.installCalls.help, 1);
+  assert.equal(env.installCalls.prompt, 0);
+  assert.equal(env.visits.length, 0);
+});
+
+test('title (pad): install is the top of the focus ring', () => {
+  const env = setup('pad');
+  enterTitle(env, { modes: true, hats: ['loopcap'], worn: 'loopcap' });
+  stubInstall(env, 'ios');
+  tick(env, 1, navInput(0, 1));
+  tick(env, 1, navInput(0, -1));
+  tick(env, 1, navInput(0, -1));
+  assert.equal(env.title.focus, 'install');
+  const rec = titleFrame(env);
+  assert.ok(env.frames.some((f) => f.color === env.C.gold && f.x === env.title.INSTALL_BOX.x && f.y === env.title.INSTALL_BOX.y), 'lit gold');
+  assertLayout(rec, 'install focus');
+  tick(env, 1, padInput('a'));
+  assert.equal(env.installCalls.help, 1);
+  assert.equal(env.visits.length, 0);
+  tick(env, 1, navInput(0, 1));
+  assert.equal(env.title.focus, 'hat');
+});
+
+test('title: a CB.Install that throws is a title without the button', () => {
+  const env = setup('kbm');
+  enterTitle(env, { modes: true });
+  env.CB.Install = { kind: () => { throw new Error('boom'); } };
+  assert.doesNotThrow(() => titleFrame(env));
+  assert.ok(!box(titleFrame(env), 'install'));
+});
+
+// ---- title: touch near-misses (M3) ----------------------------------------------------------------------------------------------------
+
+test('title (touch): a tap that misses a control by up to 6 px lands on the nearest one; farther starts, and a mouse gets no such help', () => {
+  const env = setup('touch');
+  enterTitle(env, { modes: true, hats: ['loopcap', 'halo'], worn: 'loopcap' });
+  const [rush, yolo] = env.title.BUTTONS;
+  tick(env, 1, tapInput(yolo.x + yolo.w + 5, yolo.y + 5));
+  assert.equal(env.title.yolo, true, '5 px right of --yolo flips it');
+  assert.equal(env.visits.length, 0);
+  tick(env, 1, tapInput(rush.x - 4, rush.y + 14));
+  assert.deepEqual(env.visits.pop(), ['play', { runOpts: { bossRush: true, yolo: true } }], 'below and left of boss rush counts as boss rush');
+  const farther = setup('touch');
+  enterTitle(farther, { modes: true });
+  tick(farther, 1, tapInput(yolo.x + yolo.w + 8, yolo.y + 5));
+  assert.equal(farther.title.yolo, false, '8 px is too far for --yolo');
+  assert.deepEqual(farther.visits.pop(), ['play', { runOpts: { yolo: false } }], 'and a tap anywhere else still starts');
+  const mouse = setup('kbm');
+  enterTitle(mouse, { modes: true });
+  tick(mouse, 1, tapInput(yolo.x + yolo.w + 5, yolo.y + 5));
+  assert.equal(mouse.title.yolo, false, 'a mouse click 5 px off is a click on the card: it starts');
+  assert.equal(mouse.visits.length, 1);
+});
+
+test('title (touch): a tap just under START, nearer to it than to the modes, still starts', () => {
+  const env = setup('touch');
+  enterTitle(env, { modes: true });
+  const S = env.title.START_BOX;
+  tick(env, 1, tapInput(160, S.y + S.h)); // 1 px under START, 3 px over the daily build
+  assert.deepEqual(env.visits.pop(), ['play', { runOpts: { yolo: false } }]);
+});
+
+test('title (touch): a tap just off the hat row, a chip or a locked button lands on it', () => {
+  const env = setup('touch');
+  enterTitle(env, { modes: false, hats: ['loopcap', 'halo'], worn: 'loopcap' });
+  const B = env.title.HAT_BOX;
+  tick(env, 1, tapInput(B.x - 4, B.y + 5));
+  tick(env, 1, tapInput(B.x + B.w + 4, B.y + 5));
+  assert.deepEqual(env.unlocks.cycles, [-1, 1], 'the hat arrows get the padding');
+  const chip = env.CB.Screens.toggles.boxes(160).find((b) => b.id === 'music');
+  tick(env, 1, tapInput(chip.x + chip.w / 2, chip.y + chip.h + 4));
+  assert.equal(env.state.music, false, 'a chip, 4 px below');
+  const [rush] = env.title.BUTTONS;
+  tick(env, 1, tapInput(rush.x - 5, rush.y + 5));
+  assert.equal(env.visits.length, 0);
+  assert.ok(box(titleFrame(env), 'win a full run to unlock boss rush'), 'a locked button, 5 px left');
+});
+
+test('title (touch): the chips are asked with the touch padding (toggles.hit\'s fourth argument), the mouse with none', () => {
+  for (const [dev, want] of [['touch', 3], ['kbm', undefined]]) {
+    const env = setup(dev);
+    enterTitle(env, { modes: true });
+    const seen = [];
+    const T = env.CB.Screens.toggles;
+    const hit = T.hit;
+    T.hit = function (x, y, y0, pad) {
+      seen.push(pad);
+      return hit.apply(this, arguments);
+    };
+    tick(env, 1, tapInput(160, 60));
+    assert.deepEqual(seen, [want], dev);
+  }
+});
+
+// ---- title: new-unlock pips and the teaser (M4) ---------------------------------------------------------------------------------------
+
+test('title: freshly unlocked rush and --yolo wear a gold "new" pip until each is used, and it is remembered', () => {
+  const env = setup('kbm');
+  enterTitle(env, { modes: true });
+  const pips = () => titleFrame(env).texts().filter((b) => b.str === 'new');
+  const p = pips();
+  assert.equal(p.length, 2);
+  const [rush, yolo] = env.title.BUTTONS;
+  assert.ok(p.some((b) => b.x >= rush.x && b.x + b.w <= rush.x + rush.w && b.y + b.h <= rush.y), 'one above boss rush');
+  assert.ok(p.some((b) => b.x >= yolo.x && b.x + b.w <= yolo.x + yolo.w && b.y + b.h <= yolo.y), 'one above --yolo');
+  assertLayout(titleFrame(env), 'pips');
+  assert.equal(env.texts.find((t) => t[0] === 'new')[1].color, env.C.ink);
+  tick(env, 1, tapInput(yolo.x + 3, yolo.y + 3));
+  assert.equal(pips().length, 1, 'using --yolo clears its pip');
+  assert.deepEqual(env.CB.Save.get('seenModes', {}), { yolo: true });
+  tick(env, 1, tapInput(rush.x + 3, rush.y + 3));
+  assert.equal(env.visits.length, 1);
+  assert.deepEqual(env.CB.Save.get('seenModes', {}), { yolo: true, rush: true });
+  env.title.enter(env.game, {});
+  tick(env, 20);
+  assert.equal(pips().length, 0, 'both seen: no pips, and not on a later visit either');
+});
+
+test('title: no pips while the modes are locked, and a missing CB.Save only keeps them for the session', () => {
+  const env = setup('kbm');
+  enterTitle(env, { modes: false });
+  assert.ok(!titleFrame(env).texts().some((b) => b.str === 'new'));
+  const bare = setup('kbm');
+  delete bare.CB.Save;
+  enterTitle(bare, { modes: true });
+  assert.equal(titleFrame(bare).texts().filter((b) => b.str === 'new').length, 2);
+  const yolo = bare.title.BUTTONS[1];
+  assert.doesNotThrow(() => tick(bare, 1, tapInput(yolo.x + 3, yolo.y + 3)));
+  assert.equal(titleFrame(bare).texts().filter((b) => b.str === 'new').length, 1);
 });

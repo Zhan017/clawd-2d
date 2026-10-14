@@ -740,7 +740,9 @@ test('title: a tap or click on the daily button starts it on kbm and touch; touc
       assert.equal(env.visits.length, 1);
       assert.ok(env.visits[0][1].runOpts.daily, 'the corner is inside the button');
     }
-    for (const [x, y] of [[b.x - 1, b.y + 3], [b.x + b.w, b.y + 3], [b.x + 3, b.y - 1], [b.x + 3, b.y + b.h]]) {
+    // On touch a miss within 6 px lands on the nearest control (M3): the daily button's neighbours are all that near, so only a mouse starts from 1 px away.
+    const outside = dev === 'touch' ? [[b.x + 3, b.y + b.h + 12]] : [[b.x - 1, b.y + 3], [b.x + b.w, b.y + 3], [b.x + 3, b.y - 1], [b.x + 3, b.y + b.h]];
+    for (const [x, y] of outside) {
       env.visits.length = 0;
       env.title.enter(env.game, {});
       tick(env, 20);

@@ -251,7 +251,7 @@ test('font: the longest lines the screens draw fit the 320 px screen, and 46-cha
     'WASD move · Mouse aim · Click shoot · Space dash',
     'E /compact · N music · M mute · V calm · Esc pause',
     'Esc: resume · Q: quit to title',
-    'Space dash · E /compact (meter full)',
+    'Space/Shift dash · E /compact (meter full)',
     'M sound: on · N music: on · V calm: off',
     'Fan game. Not affiliated with Anthropic.',
     '✻ Thinking... (compacting conversation)',

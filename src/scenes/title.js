@@ -2,6 +2,7 @@
 // --yolo buttons, a description-or-controls line and the sound / music / calm chips; typed secrets. What is still locked shows as a teaser: a dim
 // "beat a boss" line where the hat picker will be, dashed boss rush and --yolo buttons that only say what unlocks them.
 // Prompts follow the device in use (keyboard + mouse, touch or pad); a click or tap and the pad's buttons all work here.
+// The pad also walks a gold focus over install, the hat, START, the modes and the chips (D-pad or L-stick, A activates); a tap that misses by a few px on a phone still lands.
 (function (CB) {
   'use strict';
   const C = CB.Pal.C;
@@ -43,6 +44,11 @@
   const HAT_BOX = Object.freeze({ x: 76, y: Y.hat - 2, w: 168, h: 11 });
   const HAT_LEFT = Object.freeze({ x: 76, y: Y.hat - 2, w: 46, h: 11 });
   const HAT_RIGHT = Object.freeze({ x: 122, y: Y.hat - 2, w: 122, h: 11 }); // the name, the right chevron and its key hint
+  // The install button (only while CB.Install says the game can be installed): top-right, clear of the logo (it ends near x 213) and of the bugs (they start at y 30).
+  const INSTALL_BOX = Object.freeze({ id: 'install', x: 262, y: 4, w: 52, h: 11 });
+  const NEAR_PX = 6; // a touch that misses every control by up to this many px still lands on the nearest one
+  const TOUCH_PAD = 3; // invisible padding the chips get on touch (toggles.hit's optional argument)
+  const HINT_PAD = { x: 6, y: 6 }; // the pad's dim "D-pad: options" hint, top-left
   const HAT_FIELD = 74; // px the name may take (the longest hat name is 59)
   const CHEV_GAP = 5; // px between the name field and each chevron
   const CHEV_W = 4;
@@ -61,6 +67,7 @@
   const DESC_LOCKED = 'win a full run to unlock';
   const LOCKED_NAME = Object.freeze({ rush: 'boss rush', yolo: '--yolo' });
   const DISCLAIMER = 'Fan game. Not affiliated with Anthropic.';
+  const PAD_HINT = 'D-pad: options';
   const SECRETS = {
     konami: { id: 'halo', text: 'cheat codes are just undocumented features' },
     ultrathink: { id: 'rainbow', text: '✻ ultrathink enabled' },
@@ -153,6 +160,34 @@
     return T && typeof T.hit === 'function' && typeof T.apply === 'function' && typeof T.draw === 'function' ? T : null;
   }
 
+  // CB.Install (src/core/install.js) is optional too: its kind() is 'prompt', 'ios' or null, and standalone reads as installed. A module that throws reads as none.
+  function installKind() {
+    const I = CB.Install;
+    try {
+      if (!I || typeof I.kind !== 'function') return null;
+      if (typeof I.standalone === 'function' && I.standalone()) return null;
+      return I.kind() || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // The mode buttons the player has used (`seenModes` under CB.Save); the new ones wear a "new" pip. Without CB.Save it lasts for the session.
+  let sessionSeen = {};
+  function seenModes() {
+    const S = CB.Save;
+    if (!(S && typeof S.get === 'function')) return sessionSeen;
+    const v = S.get('seenModes', {});
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  }
+  function markSeen(id) {
+    const seen = seenModes();
+    if (seen[id] === true) return;
+    const next = Object.assign({}, seen, { [id]: true });
+    if (CB.Save && typeof CB.Save.set === 'function') CB.Save.set('seenModes', next);
+    else sessionSeen = next;
+  }
+
   const inside = (b, x, y) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
 
   // A dashed frame, 1 px thick: 2 px lit, 2 px dark along each side, counted in from both ends so the corners are always lit and the sides mirror. It spans exactly `b`.
@@ -183,6 +218,7 @@
     HAT_BOX,
     HAT_LEFT,
     HAT_RIGHT,
+    INSTALL_BOX,
     CARD,
     game: null,
     t: 0, // scene time (drawing uses the game clock it is given)
@@ -199,7 +235,8 @@
     aimX: 0,
     aimY: 0,
     musicToggledAt: -Infinity,
-    focus: null, // the pad's focused mode button ('rush', 'daily', 'yolo') or null; the pad plays the buttons directly, so only a pad menu cursor would set it
+    focus: null, // the pad's focus: 'install', 'hat', 'start', a mode button ('rush', 'daily', 'yolo'), a chip ('sound', 'music', 'calm') or null (A then starts, as ever)
+    lastDevice: 'kbm', // the device at the last update: the press that switches kbm to pad only wakes the pad
     descId: null, // the mode button whose description a tap or the pad's X keeps up, for descT more seconds
     descT: 0,
 
@@ -220,6 +257,7 @@
       this.aimY = 0;
       this.musicToggledAt = -Infinity;
       this.focus = null;
+      this.lastDevice = this.device();
       this.descId = null;
       this.descT = 0;
       this.bugs = BUGS.map((def) => {
@@ -285,6 +323,7 @@
 
     start(runOpts) {
       sfx('uiSelect');
+      if (runOpts && runOpts.bossRush) markSeen('rush');
       // A phone goes fullscreen (and landscape) on the next finger lift: a touch press alone is not a user activation.
       const input = this.game && this.game.input;
       if (this.device() === 'touch' && input && typeof input.requestFullscreenOnRelease === 'function') input.requestFullscreenOnRelease();
@@ -302,6 +341,7 @@
     // --yolo flips, chimes, and its description stays up for a moment (a finger or a pad has no hover to keep it there).
     toggleYolo() {
       this.yolo = !this.yolo;
+      markSeen('yolo');
       this.descId = 'yolo';
       this.descT = DESC_T;
       sfx('uiSelect');
@@ -320,11 +360,9 @@
       return null;
     },
 
-    // A click, tap or pad press on a locked button: nothing starts and nothing toggles, it says what unlocks it. The description stays up as well (a finger or a pad has no hover).
+    // A click, tap or pad press on a locked button: nothing starts and nothing toggles, the toast says what unlocks it (and only the toast: the same words twice was noise).
     pokeLocked(id) {
       this.setToast('win a full run to unlock ' + LOCKED_NAME[id], TOAST_LOCKED_T);
-      this.descId = id;
-      this.descT = DESC_T;
       sfx('uiSelect');
     },
 
@@ -349,10 +387,74 @@
       return true;
     },
 
-    // A mouse click or a touch tap at (x, y), past the input lock: a chip, the hat arrows and row, a locked mode button, a mode button, else start (the START button is just a part of "else"). True when it started a run.
-    tapAt(x, y) {
+    // The install button: iOS has no prompt to show, so a card says where Share and Add to Home Screen are; elsewhere the browser's own prompt answers with a toast.
+    install() {
+      const kind = installKind();
+      const I = CB.Install;
+      if (!kind) return;
+      sfx('uiSelect');
+      try {
+        if (kind === 'ios') {
+          if (typeof I.showIosHelp === 'function') I.showIosHelp();
+          return;
+        }
+        if (typeof I.prompt !== 'function') return;
+        Promise.resolve(I.prompt()).then((res) => {
+          if (res === 'accepted') this.setToast('installing Clawd ✓', TOAST_NOTIFY_T);
+          else if (res === 'dismissed') this.setToast('install skipped', TOAST_CALM_T);
+          else this.setToast('use your browser menu to install', TOAST_NOTIFY_T);
+        }, () => {});
+      } catch (e) {
+        // an install that fails is a button that did nothing, never a broken title
+      }
+    },
+
+    // Every control a tap can land on, as a box, for the near-miss rule: install, the hat row, the mode buttons (locked ones too), START and the chips.
+    controls() {
+      const out = [];
+      if (installKind()) out.push(INSTALL_BOX);
+      if (hatIds().length > 0 && CB.Unlocks && typeof CB.Unlocks.cycleHat === 'function') out.push(HAT_BOX);
+      if (dailyOn()) out.push(this.hit(DAILY_BOX));
+      out.push(this.hit(RUSH_BOX), this.hit(YOLO_BOX), START_BOX);
       const T = chips();
-      const id = T ? T.hit(x, y, Y.status) : null;
+      if (T && typeof T.boxes === 'function') for (const b of T.boxes(Y.status)) out.push(b);
+      return out;
+    },
+
+    // A touch that is on no control but within NEAR_PX of one counts as a touch on the nearest (ties go to the first listed); the point moves just inside that control.
+    // Null when the touch is on a control already or nothing is near, and the tap then goes on as it always has (anywhere else starts).
+    snap(x, y) {
+      let best = null;
+      let bestD = NEAR_PX + 1e-6;
+      for (const b of this.controls()) {
+        const px = Math.max(b.x, Math.min(b.x + b.w - 1, x));
+        const py = Math.max(b.y, Math.min(b.y + b.h - 1, y));
+        const d = Math.hypot(px - x, py - y);
+        if (d === 0) return null;
+        if (d < bestD) {
+          bestD = d;
+          best = { x: px, y: py };
+        }
+      }
+      return best;
+    },
+
+    // A mouse click or a touch tap at (x, y), past the input lock: install, a chip, the hat arrows and row, a locked mode button, a mode button, else start (the START button is just a part of "else"). True when it started a run.
+    tapAt(x, y) {
+      const touch = this.device() === 'touch';
+      if (touch) {
+        const near = this.snap(x, y);
+        if (near) {
+          x = near.x;
+          y = near.y;
+        }
+      }
+      if (installKind() && inside(INSTALL_BOX, x, y)) {
+        this.install();
+        return false;
+      }
+      const T = chips();
+      const id = T ? T.hit(x, y, Y.status, touch ? TOUCH_PAD : undefined) : null;
       if (id) {
         T.apply(id);
         return false;
@@ -369,8 +471,104 @@
       return this.confirm(x, y);
     },
 
+    // The pad's focus ring, top to bottom: install, the hat, START, the modes (left to right), the chips; each item with the x of its centre, so up and down keep the column.
+    rows() {
+      const mid = (b) => b.x + b.w / 2;
+      const rows = [];
+      if (installKind()) rows.push([{ id: 'install', cx: mid(INSTALL_BOX) }]);
+      if (hatIds().length > 0) rows.push([{ id: 'hat', cx: CB.W / 2 }]);
+      rows.push([{ id: 'start', cx: mid(START_BOX) }]);
+      const modes = [{ id: 'rush', cx: mid(RUSH_BOX) }];
+      if (dailyOn()) modes.push({ id: 'daily', cx: mid(DAILY_BOX) });
+      modes.push({ id: 'yolo', cx: mid(YOLO_BOX) });
+      rows.push(modes);
+      const T = chips();
+      const cs = T && typeof T.boxes === 'function' ? T.boxes(Y.status).map((b) => ({ id: b.id, cx: mid(b) })) : [];
+      if (cs.length) rows.push(cs);
+      return rows;
+    },
+
+    // One D-pad or stick press. The first one lights START without moving (like the pause menu's first chip); then left and right walk a row (on the hat row they wear another hat),
+    // up and down change rows and land on the item nearest in x.
+    navigate(dx, dy) {
+      const rows = this.rows();
+      let ri = -1;
+      let ci = -1;
+      rows.forEach((row, i) => row.forEach((it, j) => {
+        if (it.id === this.focus) {
+          ri = i;
+          ci = j;
+        }
+      }));
+      if (ri < 0) {
+        this.focus = 'start';
+        sfx('uiSelect');
+        return;
+      }
+      if (dy) {
+        const to = Math.max(0, Math.min(rows.length - 1, ri + dy));
+        if (to === ri) return;
+        const cx = rows[ri][ci].cx;
+        let pick = rows[to][0];
+        for (const it of rows[to]) if (Math.abs(it.cx - cx) < Math.abs(pick.cx - cx)) pick = it;
+        this.focus = pick.id;
+      } else if (dx) {
+        if (this.focus === 'hat') {
+          if (CB.Unlocks && typeof CB.Unlocks.cycleHat === 'function') this.cycleHat(dx);
+          return;
+        }
+        const row = rows[ri];
+        this.focus = row[(ci + dx + row.length) % row.length].id;
+      } else return;
+      sfx('uiSelect');
+    },
+
+    // A on the focused item. True when it started a run.
+    activate(id) {
+      const T = chips();
+      switch (id) {
+        case 'install':
+          this.install();
+          return false;
+        case 'hat':
+          if (CB.Unlocks && typeof CB.Unlocks.cycleHat === 'function') this.cycleHat(1);
+          return false;
+        case 'rush':
+          if (!modesOn()) {
+            this.pokeLocked('rush');
+            return false;
+          }
+          this.start({ bossRush: true, yolo: this.yolo });
+          return true;
+        case 'daily':
+          if (!dailyOn()) return false;
+          this.startDaily();
+          return true;
+        case 'yolo':
+          if (!modesOn()) {
+            this.pokeLocked('yolo');
+            return false;
+          }
+          this.toggleYolo();
+          return false;
+        case 'sound':
+        case 'music':
+        case 'calm':
+          if (T) T.apply(id);
+          return false;
+        default:
+          this.start({ yolo: this.yolo });
+          return true;
+      }
+    },
+
     update(dt, input) {
-      const inp = input || {};
+      let inp = input || {};
+      // The press that switches the device from keyboard or mouse to the pad only wakes the pad: nothing it carries (A, a D-pad flick) acts. Going back to another device drops the focus.
+      const dev = this.device();
+      if (dev === 'pad' && this.lastDevice !== 'pad') inp = Object.assign({}, inp, { pad: null, confirm: false, dash: false, compact: false, quit: false, navX: 0, navY: 0 });
+      else if (dev !== 'pad' && this.lastDevice === 'pad') this.focus = null;
+      this.lastDevice = dev;
       this.t += dt;
       if (Number.isFinite(inp.aimX) && Number.isFinite(inp.aimY)) {
         this.aimX = inp.aimX;
@@ -415,8 +613,23 @@
       }
       // Pad: A starts (its confirm edge is not also read as a click at the old pointer spot), B the daily build, Y boss rush, X --yolo (locked, Y and X say what unlocks them).
       if (pad) {
-        if (pad.a) {
+        // The D-pad and the L-stick walk the focus (a keyboard's arrows also say navX, so only the pad's own device does); A then activates it, with none it starts. Start always begins a normal run.
+        if (dev === 'pad') {
+          const nx = Number.isFinite(inp.navX) ? Math.sign(inp.navX) : 0;
+          const ny = Number.isFinite(inp.navY) ? Math.sign(inp.navY) : 0;
+          if (nx || ny) this.navigate(ny ? 0 : nx, ny);
+        }
+        if (pad.start) {
           this.start({ yolo: this.yolo });
+          return;
+        }
+        if (pad.a) {
+          if (!this.focus) {
+            this.start({ yolo: this.yolo });
+            return;
+          }
+          if (this.activate(this.focus)) return;
+          this.animate(dt);
           return;
         }
         if (pad.b && dailyOn()) {
@@ -607,11 +820,19 @@
       r.text(label, b.x + b.w / 2, b.y + 2, { color: on ? C.red : lit ? C.white : C.pale, align: 'center' });
     },
 
-    // A locked mode button: its box, filled like the others, but framed with dashes and written in greyDark, so the shape and not only the colour says "locked". It never lights up; the description line and the toast do the talking.
+    // A locked mode button: its box, filled like the others, but framed with dashes and written in grey, so the shape and not only the colour says "locked". It never lights up; the description line and the toast do the talking.
     drawLocked(r, b, label) {
       r.alpha(0.6, () => r.rect(b.x, b.y, b.w, b.h, C.ink));
       dashFrame(r, b, C.greyDark);
-      r.text(label, b.x + b.w / 2, b.y + 2, { color: C.greyDark, align: 'center' });
+      r.text(label, b.x + b.w / 2, b.y + 2, { color: C.grey, align: 'center' }); // grey: greyDark was too faint to read what unlocks it
+    },
+
+    // A small gold "new" pip sitting on a corner of a mode button the player has not used yet (`left` puts it on the left corner, so neither pip crowds START).
+    drawPip(r, b, left) {
+      const w = r.measure('new', 1) + 4;
+      const x = left ? b.x : b.x + b.w - w;
+      r.rect(x, b.y - 7, w, 7, C.gold); // a tag sitting on the button's top edge, touching nothing: its text cell ends on the row above the frame
+      r.text('new', x + 2, b.y - 8, { color: C.ink });
     },
 
     // The START button: clawd orange, its frame swapping between two shades through Comfort.blink (steady in calm mode); the text never blinks.
@@ -621,6 +842,7 @@
       const bright = !calm && (CB.Comfort && typeof CB.Comfort.blink === 'function' ? CB.Comfort.blink(t, PULSE_HZ) : Math.floor(t * PULSE_HZ) % 2 === 0);
       r.alpha(lit ? 0.75 : bright ? 0.55 : 0.4, () => r.rect(b.x, b.y, b.w, b.h, C.clawdDark));
       r.frame(b.x, b.y, b.w, b.h, lit ? C.white : bright ? C.clawdLight : C.clawd);
+      if (this.focus === 'start') r.frame(b.x - 1, b.y - 1, b.w + 2, b.h + 2, C.gold); // the pad's focus: a gold ring just outside the frame
       r.text(this.say('start', 'Click to start'), b.x + b.w / 2, b.y + 3, { color: C.white, shadow: C.ink, align: 'center' });
     },
 
@@ -636,9 +858,10 @@
       const cy = Y.hat + 3.5;
       const left = mouse && inside(HAT_LEFT, aim.x, aim.y);
       const right = mouse && inside(HAT_RIGHT, aim.x, aim.y);
+      if (this.focus === 'hat') r.frame(HAT_BOX.x, HAT_BOX.y, HAT_BOX.w, HAT_BOX.h, C.gold);
       r.text(name, mid, Y.hat, { color: C.pale, align: 'center' });
-      r.sprite('title_chev', lx + CHEV_W / 2, cy, { white: left });
-      r.sprite('title_chev', rx + CHEV_W / 2, cy, { flip: true, white: right });
+      r.sprite('title_chev', lx + CHEV_W / 2, cy, { white: left || this.focus === 'hat' });
+      r.sprite('title_chev', rx + CHEV_W / 2, cy, { flip: true, white: right || this.focus === 'hat' });
       if (hint) {
         r.text(hint[0], lx - HINT_GAP, Y.hat, { color: C.grey, align: 'right' });
         r.text(hint[1], rx + CHEV_W + HINT_GAP, Y.hat, { color: C.grey });
@@ -667,6 +890,9 @@
       r.alpha(0.7, () => r.rect(CARD.x, CARD.top, CARD.w, CARD.bottom - CARD.top, C.ink));
       r.frame(CARD.x, CARD.top, CARD.w, CARD.bottom - CARD.top, C.greyDark);
 
+      if (installKind()) this.drawButton(r, INSTALL_BOX, 'install', { lit: hover(INSTALL_BOX) || this.focus === 'install' });
+      if (pad && !this.focus) r.alpha(0.8, () => r.text(PAD_HINT, HINT_PAD.x, HINT_PAD.y, { color: C.grey }));
+
       if (hats) this.drawHatRow(r, aim, mouse);
       else r.text(HATS_LOCKED, mid, Y.hat, { color: C.grey, align: 'center' }); // the picker's place until a hat is earned: dim, no arrows, no keys, no taps
       this.drawStart(r, t, hover(START_BOX));
@@ -676,6 +902,9 @@
       if (modesOn()) {
         this.drawButton(r, RUSH_BOX, tag('Y', 'boss rush'), { lit: hover(RUSH_BOX) || this.focus === 'rush' });
         this.drawButton(r, YOLO_BOX, tag('X', '--yolo: ' + (this.yolo ? 'ON' : 'off')), { lit: hover(this.hit(YOLO_BOX)) || this.focus === 'yolo', on: this.yolo });
+        const seen = seenModes();
+        if (seen.rush !== true) this.drawPip(r, RUSH_BOX, true);
+        if (seen.yolo !== true) this.drawPip(r, this.hit(YOLO_BOX), false);
       } else {
         this.drawLocked(r, RUSH_BOX, tag('Y', LOCKED_NAME.rush));
         this.drawLocked(r, YOLO_BOX, tag('X', LOCKED_NAME.yolo));
@@ -691,7 +920,7 @@
 
       // The sound / music / calm chips close the card.
       const T = chips();
-      if (T) T.draw(r, Y.status, -1, mouse ? aim : null);
+      if (T) T.draw(r, Y.status, Array.isArray(T.IDS) ? T.IDS.indexOf(this.focus) : -1, mouse ? aim : null);
 
       // The last row, under the card, sits on a dark band so the dim text stays readable over the arena's wall. The disclaimer has it; a toast takes it
       // (a heavier band, fading with the toast) and never covers a button.

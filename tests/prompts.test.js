@@ -23,7 +23,7 @@ const KBM = {
   legend1: 'WASD move · Mouse aim · Click shoot',
   legend2: 'Space dash · E /compact · Esc pause',
   pauseLegend1: 'WASD move · Mouse aim · Click shoot',
-  pauseLegend2: 'Space dash · E /compact (meter full)',
+  pauseLegend2: 'Space/Shift dash · E /compact (meter full)',
   hat: '(Q/E)',
   reload: 'Press R to reload',
   share: '[ copy result ] (C)',
@@ -67,10 +67,10 @@ const PAD = {
   quitDead: 'Back: quit to title',
   pauseLine: 'Start: resume · Back: quit to title',
   quitArm: 'Press Back again to quit',
-  legend1: 'L-stick move · R-stick aim + shoot',
-  legend2: 'A dash · RB /compact · Start pause',
-  pauseLegend1: 'L-stick move · R-stick aim + shoot',
-  pauseLegend2: 'A/LB dash · RB/B /compact (meter full)',
+  legend1: 'L-stick move · R-stick aim · RT fire',
+  legend2: 'A/LB dash · RB/B /compact · Start pause',
+  pauseLegend1: 'L-stick move · R-stick aim · RT fire',
+  pauseLegend2: 'A/LB dash · RB/B /compact · Start pause',
   hat: '(LB/RB)',
   reload: 'Press R to reload',
   share: '[ X: copy result ]',
@@ -235,10 +235,12 @@ test('prompts: the title legend is two short lines that fit its 250 px menu card
   assert.doesNotMatch(kbm, /\b[MNV] (music|mute|calm|sound)/, 'the chips show those keys');
   assert.match(kbm, /Space dash/);
   assert.match(CB.Prompts.text('legend2', 'touch'), /\/c\b/, 'the phone button is labelled /c');
-  assert.match(CB.Prompts.text('legend2', 'pad'), /^A dash/);
-  // The pause screen's legend is untouched.
+  assert.match(CB.Prompts.text('legend2', 'pad'), /^A\/LB dash/);
+  assert.match(CB.Prompts.text('legend1', 'pad'), /RT fire/, 'the pad legend names the trigger that fires');
+  // The pad has one legend for the title and the pause screen; the keyboard's pause legend names both dash keys.
+  for (const k of [1, 2]) assert.equal(CB.Prompts.text('pauseLegend' + k, 'pad'), CB.Prompts.text('legend' + k, 'pad'), 'one pad legend, line ' + k);
   assert.equal(CB.Prompts.text('pauseLegend1', 'kbm'), 'WASD move · Mouse aim · Click shoot');
-  assert.equal(CB.Prompts.text('pauseLegend2', 'pad'), 'A/LB dash · RB/B /compact (meter full)');
+  assert.equal(CB.Prompts.text('pauseLegend2', 'kbm'), 'Space/Shift dash · E /compact (meter full)');
 });
 
 test('prompts: the rows screens build around a prompt still fit (long hat name, game-over retry row)', () => {

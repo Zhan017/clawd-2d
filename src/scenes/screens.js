@@ -369,7 +369,7 @@
     if (armed) r.text(say('quitArm', 'Press Q again to quit'), W / 2, 34, { color: C.gold, align: 'center' });
     else r.text(isTouch() ? 'Tap resume to keep playing' : say('pauseLine', 'Esc: resume · Q: quit to title'), W / 2, 34, { color: C.pale, align: 'center' });
     r.text(say('pauseLegend1', 'WASD move · Mouse aim · Click shoot'), W / 2, 48, { color: C.pale, align: 'center' });
-    r.text(say('pauseLegend2', 'Space dash · E /compact (meter full)'), W / 2, 57, { color: C.pale, align: 'center' });
+    r.text(say('pauseLegend2', 'Space/Shift dash · E /compact (meter full)'), W / 2, 57, { color: C.pale, align: 'center' });
     toggles.draw(r, CHIPS_Y, ui && ui.pauseNav ? ui.pauseFocus : -1, aim);
     r.text('patches', W / 2, 82, { color: C.gold, align: 'center' });
     const lines = patchLines(run);

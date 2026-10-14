@@ -621,7 +621,7 @@ test('pause: the Rev 3 layout table, with every patch owned', () => {
   assert.ok(Math.abs(centreX(paused) - 160) <= 1);
   assert.equal(T('Esc: resume · Q: quit to title').y, 34);
   assert.equal(T('WASD move · Mouse aim · Click shoot').y, 48);
-  assert.equal(T('Space dash · E /compact (meter full)').y, 57);
+  assert.equal(T('Space/Shift dash · E /compact (meter full)').y, 57);
   // The status line is now three chips, each its own text on row 66 and centred in its fixed box (x 45 / 123 / 201, 74 wide).
   [['M sound: on', 45], ['N music: on', 123], ['V calm: off', 201]].forEach(([s, x]) => {
     assert.equal(T(s).y, 68, s);
