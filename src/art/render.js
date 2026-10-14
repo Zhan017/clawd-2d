@@ -22,12 +22,52 @@
     const buf = document.createElement('canvas');
     buf.width = CB.W;
     buf.height = CB.H;
-    const b = buf.getContext('2d');
-    b.imageSmoothingEnabled = false;
+    const buffer = buf.getContext('2d');
+    buffer.imageSmoothingEnabled = false;
+    let b = buffer; // the context every primitive draws on: the buffer, or the screen canvas itself during the overlay pass
     const out = canvas.getContext('2d');
     const textCache = new Map();
     const shapeCache = new Map();
     const R = Math.round;
+    let overlays = []; // drawing queued for the full-resolution pass after the blit (see overlay())
+
+    // The safe-area insets (the notch and the home indicator), in canvas px. CSS env() can only be read through an element that uses it as
+    // padding, so a hidden probe carries it. Read again whenever the canvas size or the orientation changes; zeros where there is no env().
+    let probe = null;
+    let probeFailed = false;
+    let safe = { l: 0, t: 0, r: 0, b: 0 };
+    let safeKey = '';
+    function readSafe(dpr) {
+      if (probeFailed) return;
+      try {
+        if (!probe) {
+          probe = document.createElement('div');
+          probe.setAttribute('aria-hidden', 'true');
+          probe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;box-sizing:content-box;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)';
+          (document.body || document.documentElement).appendChild(probe);
+        }
+        const cs = typeof W.getComputedStyle === 'function' ? W.getComputedStyle(probe) : getComputedStyle(probe);
+        const px = (v) => {
+          const n = parseFloat(v);
+          return Number.isFinite(n) && n > 0 ? n * dpr : 0;
+        };
+        safe = { l: px(cs.paddingLeft), t: px(cs.paddingTop), r: px(cs.paddingRight), b: px(cs.paddingBottom) };
+      } catch (e) {
+        probeFailed = true; // no DOM to ask (a test window): the insets stay zero
+        safe = { l: 0, t: 0, r: 0, b: 0 };
+      }
+    }
+    let safeRecheck = 0; // frames left to read the insets again after a change: env() can lag the size by a frame or two
+    // Turning the phone from one landscape to the other swaps the notch side without changing the canvas size, so the angle is part of the key.
+    function angle() {
+      try {
+        const o = W.screen && W.screen.orientation;
+        if (o && typeof o.angle === 'number') return o.angle;
+      } catch (e) {
+        // fall through to the old property
+      }
+      return typeof W.orientation === 'number' ? W.orientation : 0;
+    }
 
     function shape(radius, color, outline) {
       const rr = Math.max(0, R(radius));
@@ -78,7 +118,7 @@
     }
 
     const r = {
-      canvas, buf, ctx: b, scale: 1, ox: 0, oy: 0, dpr: 1,
+      canvas, buf, ctx: buffer, scale: 1, ox: 0, oy: 0, dpr: 1,
 
       resize() {
         const dpr = W.devicePixelRatio || 1;
@@ -91,6 +131,36 @@
         r.ox = Math.floor((cw - CB.W * r.scale) / 2);
         r.oy = Math.floor((ch - CB.H * r.scale) / 2);
         r.dpr = dpr;
+        const key = cw + 'x' + ch + '@' + dpr + '/' + angle();
+        if (key !== safeKey) {
+          safeKey = key;
+          safeRecheck = 20;
+        }
+        if (safeRecheck > 0) {
+          safeRecheck--;
+          readSafe(dpr);
+        }
+      },
+
+      // What the screen shows, in game px: x0..x1 and y0..y1 (x0 < 0 when there is a letterbox bar on the left, x1 > 320 on the right, and the same
+      // above and below), and the safe-area insets, also in game px. Touch lays its controls out from this.
+      metrics() {
+        const s = r.scale || 1;
+        return {
+          x0: -r.ox / s,
+          y0: -r.oy / s,
+          x1: (canvas.width - r.ox) / s,
+          y1: (canvas.height - r.oy) / s,
+          safe: { l: safe.l / s, t: safe.t / s, r: safe.r / s, b: safe.b / s },
+        };
+      },
+
+      // Queues fn(r) for the full-resolution pass: present() runs it after the blit with every primitive drawing straight on the screen canvas in
+      // game px, so it can reach into the letterbox bars. Still chunky: the same integer-scaled pixels, never smoothed. Cleared by every present().
+      overlay(fn) {
+        if (typeof fn !== 'function') return;
+        if (overlays.length >= 64) overlays.shift();
+        overlays.push(fn);
       },
 
       present() {
@@ -98,6 +168,19 @@
         out.fillStyle = '#000000';
         out.fillRect(0, 0, canvas.width, canvas.height);
         out.drawImage(buf, 0, 0, CB.W, CB.H, r.ox, r.oy, CB.W * r.scale, CB.H * r.scale);
+        if (!overlays.length) return;
+        const queue = overlays;
+        overlays = [];
+        b = out;
+        out.save();
+        out.setTransform(r.scale, 0, 0, r.scale, r.ox, r.oy);
+        out.imageSmoothingEnabled = false;
+        try {
+          for (const fn of queue) fn(r);
+        } finally {
+          out.restore();
+          b = buffer;
+        }
       },
 
       toInternal(clientX, clientY) {

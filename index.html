@@ -6,6 +6,8 @@
 <meta name="theme-color" content="#0B0B10">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Clawd">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Clawd vs Bugs</title>
 <meta name="description" content="A pixel boss rush: Clawd shoots his way through four software-bug bosses. Free in your browser, with keyboard, controller or touch.">
 <link rel="canonical" href="https://clawd-2d.vercel.app/">
@@ -33,13 +35,24 @@
   #game:focus { outline: none; }
   noscript { position: absolute; inset: 0; display: grid; place-items: center; padding-inline: 16px; color: var(--fg); }
   #rotate { display: none; position: fixed; inset: 0; z-index: 10; place-items: center; padding-inline: 16px; background: var(--bg); color: var(--fg); text-align: center; touch-action: none; pointer-events: auto; }
+  #rotate .card { display: grid; justify-items: center; gap: 12px; max-width: 320px; }
+  #rotate svg { width: 96px; height: 96px; color: var(--accent); }
+  #rotate .big { margin: 0; font-size: 18px; font-weight: bold; }
+  #rotate .small { margin: 0; font-size: 12px; color: var(--muted); }
+  #install-help { display: none; position: fixed; inset: 0; z-index: 9; place-items: center; padding: 16px; background: rgba(11, 11, 16, 0.8); color: var(--fg); text-align: center; touch-action: none; pointer-events: auto; cursor: pointer; }
+  #install-help.open { display: grid; }
+  #install-help .card { display: grid; justify-items: center; gap: 12px; max-width: 320px; padding: 20px 24px; background: var(--bg); border: 2px solid var(--accent); }
+  #install-help svg { width: 40px; height: 40px; color: var(--accent); }
+  #install-help .big { margin: 0; font-size: 16px; font-weight: bold; }
+  #install-help .small { margin: 0; font-size: 12px; color: var(--muted); }
   @media (orientation: portrait) and (pointer: coarse) { #rotate { display: grid; } }
 </style>
 </head>
 <body>
 <canvas id="game" tabindex="0" aria-label="Clawd vs Bugs game screen"></canvas>
 <noscript>Clawd vs Bugs needs JavaScript to run.</noscript>
-<div id="rotate">↻ Rotate your phone to play</div>
+<div id="rotate"><div class="card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="2"></rect><path d="M11 18h2"></path><path d="M20.5 8.5a9 9 0 0 1 0 7"></path><path d="M20.5 15.5l-.2-2.6M20.5 15.5l-2.5-.5"></path></svg><p class="big">Turn your device sideways to play</p><p class="small">Rotation locked? Turn off Portrait Orientation Lock in Control Center.</p></div></div>
+<div id="install-help" role="dialog" aria-label="Add to Home Screen"><div class="card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"></path><path d="M8 7l4-4 4 4"></path><path d="M7 11H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"></path></svg><p class="big">Tap Share, then Add to Home Screen</p><p class="small">Tap anywhere to close.</p></div></div>
 <script src="src/core/ns.js"></script>
 <script src="src/core/math.js"></script>
 <script src="src/core/rng.js"></script>
@@ -57,6 +70,7 @@
 <script src="src/core/audio.js"></script>
 <script src="src/core/music.js"></script>
 <script src="src/core/loop.js"></script>
+<script src="src/core/install.js"></script>
 <script src="src/game/world.js"></script>
 <script src="src/game/projectiles.js"></script>
 <script src="src/game/patches.js"></script>

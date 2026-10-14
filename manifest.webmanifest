@@ -1,6 +1,7 @@
 {
+  "id": "/",
   "name": "Clawd vs Bugs",
-  "short_name": "Clawd vs Bugs",
+  "short_name": "Clawd",
   "description": "A pixel boss rush: Clawd shoots his way through four software-bug bosses. Free in your browser, with keyboard, controller or touch.",
   "start_url": "/",
   "scope": "/",

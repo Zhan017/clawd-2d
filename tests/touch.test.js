@@ -18,6 +18,10 @@ function sticks() {
   e.T.setMode(e.st, 'sticks');
   return e;
 }
+// A finger that has been down long enough (10 sim ticks) is a stick, no longer a possible tap.
+const age = (T, st, n) => {
+  for (let i = 0; i < (n || T.TAP_TICKS); i++) T.sample(st);
+};
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, (msg || 'value') + ': ' + a + ' vs ' + b);
 const unit = (o, kx, ky) => Math.hypot(o[kx], o[ky]);
 
@@ -63,7 +67,7 @@ test('touch: a fresh state is in menu mode and idle', () => {
   const { T, st } = menu();
   assert.deepEqual(plain(T.view(st)), { mode: 'menu', move: null, aim: null, dashDown: false, compactDown: false, pauseDown: false });
   const out = T.sample(st);
-  assert.deepEqual(plain(out), { active: false, moveX: 0, moveY: 0, aimDirX: null, aimDirY: null, fire: false, edges: { dash: false, compact: false, pause: false, confirm: false }, tap: null });
+  assert.deepEqual(plain(out), { active: false, moveX: 0, moveY: 0, aimDirX: null, aimDirY: null, aimAt: null, fire: false, edges: { dash: false, compact: false, pause: false, confirm: false }, tap: null });
 });
 
 test('touch: in menu mode a press is a tap plus a confirm edge, consumed by sample', () => {
@@ -273,6 +277,7 @@ test('touch: the aim stick sets the last aim direction outside a 4 px deadzone a
   assert.equal(out.aimDirY, -1);
   assert.equal(out.fire, false);
   T.down(st, 1, 236, 140);
+  age(T, st); // long enough to be a stick (a shorter touch is a tap that aims at its own point)
   out = T.sample(st);
   assert.equal(out.aimDirX, 0, 'a press on the origin keeps the direction');
   assert.equal(out.aimDirY, -1);
@@ -298,9 +303,15 @@ test('touch: the aim stick sets the last aim direction outside a 4 px deadzone a
   near(out.aimDirY, 0.8);
   assert.equal(out.fire, false, 'and no longer firing');
   assert.equal(T.view(st).aim, null);
-  T.down(st, 2, 236, 140); // a tap fires along the kept direction
+  T.down(st, 2, 236, 140); // a new touch fires at its own point until it proves to be a stick, then along the kept direction
   out = T.sample(st);
   assert.equal(out.fire, true);
+  assert.equal(out.aimDirX, null);
+  assert.deepEqual(plain(out.aimAt), { x: 236, y: 140 });
+  age(T, st);
+  out = T.sample(st);
+  assert.equal(out.fire, true);
+  assert.equal(out.aimAt, null);
   near(out.aimDirX, 0.6);
   near(out.aimDirY, 0.8);
 });
@@ -308,6 +319,7 @@ test('touch: the aim stick sets the last aim direction outside a 4 px deadzone a
 test('touch: landing the aim stick keeps the last direction until the finger slides', () => {
   const { T, st } = sticks();
   T.down(st, 1, 310, 100);
+  age(T, st);
   let out = T.sample(st);
   near(out.aimDirX, 0);
   near(out.aimDirY, -1);
@@ -342,8 +354,10 @@ test('touch: fire is on while the aim stick is held, and only then', () => {
   T.down(st, 3, 236, 140);
   assert.equal(T.sample(st).fire, true);
   assert.equal(T.sample(st).fire, true, 'still held');
+  age(T, st); // held long enough to be a stick, not a tap
+  assert.equal(T.sample(st).fire, true, 'a stick held');
   T.up(st, 3);
-  assert.equal(T.sample(st).fire, false);
+  assert.equal(T.sample(st).fire, false, 'a lift after a hold leaves no shot behind');
 });
 
 // ---- several fingers ------------------------------------------------------------------------------------------------------
@@ -412,29 +426,61 @@ test('touch: changing the mode drops every live pointer until it lifts, and stic
   T.move(st, 3, 90, 90);
   T.up(st, 2);
 
+  // Back to the sticks: finger 1 (still down, last seen at 90,90) is picked up as a fresh move stick right there. Finger 3, also on the move
+  // side, finds the stick taken and is a spare.
   T.setMode(st, 'sticks');
-  T.move(st, 1, 70, 100);
-  assert.equal(T.view(st).move, null, 'finger 1 was never lifted, so it is still ignored');
-  T.down(st, 4, 50, 120);
-  assert.deepEqual(plain(T.view(st).move), { ox: 50, oy: 120, x: 50, y: 120 }, 'new fingers work at once');
-  T.up(st, 1);
-  T.down(st, 1, 90, 100); // finger 1 lifted and pressed again: it is a new pointer, but the stick is taken
-  assert.equal(T.view(st).move.ox, 50);
+  assert.deepEqual(plain(T.view(st).move), { ox: 90, oy: 90, x: 90, y: 90 }, 'a finger still down is picked up where it is');
+  T.move(st, 1, 100, 90);
   out = T.sample(st);
-  near(out.moveX, 0);
+  near(out.moveX, 1);
+  T.move(st, 3, 20, 90);
+  near(T.sample(st).moveX, 1, 'the spare steers nothing');
+  T.down(st, 4, 50, 120);
+  assert.equal(T.view(st).move.ox, 90, 'the stick is taken, so a new finger on that side is a spare');
+  T.up(st, 1);
+  assert.equal(T.view(st).move, null);
+  T.down(st, 5, 50, 120);
+  assert.deepEqual(plain(T.view(st).move), { ox: 50, oy: 120, x: 50, y: 120 }, 'once it is free a new finger takes it');
 });
 
-test('touch: a finger that was down for a menu tap does not become a stick when the mode flips to sticks', () => {
+test('touch: a finger that was down for a menu tap is picked up as a stick when the mode flips to sticks (a thumb never goes dead)', () => {
   const { T, st } = menu();
-  T.down(st, 1, 100, 100); // e.g. tapping a patch card
+  T.down(st, 1, 100, 100); // e.g. tapping a resume button, and keeping the thumb down
   T.sample(st);
   T.setMode(st, 'sticks');
+  assert.deepEqual(plain(T.view(st).move), { ox: 100, oy: 100, x: 100, y: 100 }, 'a fresh stick at the finger');
+  assert.equal(T.sample(st).moveX, 0, 'landing moves nothing by itself');
   T.move(st, 1, 130, 100);
-  assert.equal(T.view(st).move, null);
-  assert.equal(T.sample(st).moveX, 0);
+  near(T.sample(st).moveX, 1, 'and it steers from there');
   T.up(st, 1);
   T.down(st, 1, 100, 100);
-  assert.ok(T.view(st).move, 'after it lifts, the next press counts');
+  assert.ok(T.view(st).move, 'and the next press counts as before');
+});
+
+test('touch: a finger picked up by a mode change on the aim half is a stick at once, never a tap', () => {
+  const { T, st } = menu();
+  T.down(st, 1, 250, 100);
+  T.sample(st);
+  T.setMode(st, 'sticks');
+  assert.deepEqual(plain(T.view(st).aim), { ox: 250, oy: 100, x: 250, y: 100 });
+  const out = T.sample(st);
+  assert.equal(out.aimAt, null, 'no shot at the finger');
+  assert.equal(out.fire, true);
+  near(out.aimDirY, -1);
+  T.up(st, 1);
+  assert.equal(T.sample(st).fire, false, 'and its lift leaves no shot');
+});
+
+test('touch: switching to the menu still makes steering fingers inert until they lift', () => {
+  const { T, st } = sticks();
+  T.down(st, 1, 60, 100);
+  T.setMode(st, 'menu');
+  T.sample(st);
+  T.move(st, 1, 70, 100);
+  const out = T.sample(st);
+  assert.equal(out.tap, null);
+  assert.equal(out.edges.confirm, false);
+  assert.equal(T.view(st).move, null);
 });
 
 test('touch: setting the mode that is already active, or junk, keeps every pointer', () => {
@@ -589,7 +635,7 @@ test('touch draw: paints DASH, /c and II once each, on screen, inside their butt
   const env = drawEnv();
   env.T.draw(env.r, IDLE, 0, { compactFrac: 0.5, compactReady: false, dashReady: true });
   const texts = env.rec.texts();
-  assert.deepEqual(texts.map((b) => b.str).sort(), ['/c', 'DASH', 'II']);
+  assert.deepEqual(texts.map((b) => b.str).sort(), ['/c', 'AIM + FIRE', 'DASH', 'II', 'MOVE'], 'the two first-run labels ride the ghost rings');
   assert.deepEqual(env.rec.outside(320, 180), []);
   assert.deepEqual(env.rec.overlaps(), []);
   const t = (s) => texts.find((b) => b.str === s);
@@ -628,9 +674,9 @@ test('touch draw: only renderer methods that exist are called, with a frame stan
 
 test('touch draw: idle sticks are faint ghost rings at REST, live sticks a ring at the origin and a knob at the finger', () => {
   const env = drawEnv();
-  const ghosts = () => env.log.alpha.filter(([a]) => a === 0.18).length;
+  const ghosts = () => env.log.alpha.filter(([a]) => a === 0.3).length;
   env.T.draw(env.r, IDLE, 0, {});
-  assert.equal(ghosts(), 2, 'both sticks are ghosts at alpha 0.18');
+  assert.equal(ghosts(), 2, 'both sticks are ghosts at alpha 0.3');
   const ringAt = (x, y, rad) => env.log.ring.filter(([cx, cy, rr]) => cx === x && cy === y && rr === rad);
   assert.equal(ringAt(40, 140, 16).length, 1, 'move ghost at REST.move');
   assert.equal(ringAt(236, 140, 16).length, 1, 'aim ghost at REST.aim');
@@ -847,7 +893,7 @@ test('touch draw: every view, option and time combination draws without throwing
           assert.equal(env.rec.texts().length, 0);
           continue;
         }
-        const names = env.rec.texts().map((b) => b.str).sort();
+        const names = env.rec.texts().map((b) => b.str).filter((x) => x !== 'MOVE' && !x.startsWith('AIM')).sort(); // the first-run labels come and go
         assert.deepEqual(names, ['/c', 'DASH', 'II'], 'labels for view ' + views.indexOf(v));
         assert.deepEqual(env.rec.outside(320, 180), []);
         assert.deepEqual(env.rec.overlaps(), []);
@@ -866,7 +912,7 @@ test('touch draw: a live view straight from the state machine draws', () => {
   env.T.down(st, 2, 250, 120);
   env.T.down(st, 3, 298, 146);
   env.T.draw(env.r, env.T.view(st), 0.1, { compactFrac: 0.7, compactReady: false, dashReady: true });
-  assert.deepEqual(env.rec.texts().map((b) => b.str).sort(), ['/c', 'DASH', 'II']);
+  assert.deepEqual(env.rec.texts().map((b) => b.str).sort(), ['/c', 'DASH', 'II'], 'both sticks live: no first-run labels');
   const m = env.T.view(st).move;
   assert.ok(env.log.ring.some(([x, y, rad]) => Math.abs(x - m.ox) < 1 && Math.abs(y - m.oy) < 1 && rad === 16), 'the ring follows the dragged origin');
 });

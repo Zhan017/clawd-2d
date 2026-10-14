@@ -279,7 +279,8 @@ test('icons: Clawd on #0B0B10, opaque, centred; about 70% wide, and inside the c
 test('manifest.webmanifest: valid JSON per the contract, every icon exists at its declared size', () => {
   const m = JSON.parse(fs.readFileSync(path.join(H.ROOT, 'manifest.webmanifest'), 'utf8'));
   assert.equal(m.name, 'Clawd vs Bugs');
-  assert.equal(m.short_name, 'Clawd vs Bugs');
+  assert.equal(m.id, '/', 'a stable app id, so the install identity does not hang on start_url');
+  assert.equal(m.short_name, 'Clawd', 'home-screen labels truncate at about 12 characters');
   assert.ok(typeof m.description === 'string' && m.description.length > 20);
   assert.equal(m.start_url, '/');
   assert.equal(m.scope, '/');

@@ -68,6 +68,13 @@
       return T[name](touchState, a, b, c);
     }
     const touchLoaded = () => !!(CB.Touch && typeof CB.Touch.down === 'function');
+    // The controls' layout (in the side bars of a wide phone, or in the arena) comes from the renderer's metrics, the same ones the overlay is drawn
+    // from, so a touch always lands on what was drawn. Both halves are optional: without either the touch layer keeps its in-arena layout.
+    function syncLayout() {
+      const T = CB.Touch;
+      if (!T || typeof T.setLayout !== 'function' || typeof T.layoutFor !== 'function' || !renderer || typeof renderer.metrics !== 'function') return;
+      touchCall('setLayout', T.layoutFor(renderer.metrics()));
+    }
     function stampTouch(e) {
       if (typeof e.timeStamp === 'number' && Number.isFinite(e.timeStamp)) lastTouchTS = e.timeStamp;
     }
@@ -100,6 +107,7 @@
       if (canvas.focus) canvas.focus();
       touchDown.add(e.pointerId);
       const p = toInternal(e);
+      syncLayout();
       if (p) touchCall('down', e.pointerId, p.x, p.y);
       setDevice('touch');
     }
@@ -133,7 +141,9 @@
     function onPointerCancel(e) {
       if (e.pointerType !== 'touch' || !touchLoaded()) return;
       stampTouch(e);
-      touchCall('up', e.pointerId);
+      // A cancel is not a tap (and a Touch without cancel() treats it as a lift).
+      if (CB.Touch && typeof CB.Touch.cancel === 'function') touchCall('cancel', e.pointerId);
+      else touchCall('up', e.pointerId);
       touchDown.delete(e.pointerId);
       if (!touchDown.size) afterRelease = []; // a cancelled touch is no activation, and its tap is over: nothing is left waiting for a later one
     }
@@ -296,10 +306,18 @@
           }
         }
         const g = readPad();
+        syncLayout();
         const t = touchCall('sample') || null;
         if (t && t.tap && typeof t.tap.x === 'number' && typeof t.tap.y === 'number') {
           tapX = t.tap.x;
           tapY = t.tap.y;
+          tapNewer = true;
+        }
+        // A tap on the aim half shoots at the tapped point, as a mouse click would (no stick direction, so no aim assist either).
+        const shot = device === 'touch' && touchMode === 'sticks' && t && t.aimAt && typeof t.aimAt.x === 'number' && typeof t.aimAt.y === 'number' ? t.aimAt : null;
+        if (shot) {
+          tapX = shot.x;
+          tapY = shot.y;
           tapNewer = true;
         }
         const a = peekAim();

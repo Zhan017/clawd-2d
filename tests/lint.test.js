@@ -207,10 +207,10 @@ test('lint: the whole set at once reports nothing', () => {
   assert.deepEqual(all, []);
 });
 
-// ---- more ways to play (+ daily, share and the first-run hints): 52 scripts, in an order that lets input.js find its helpers -----------------------------------------------
+// ---- more ways to play (+ daily, share, the first-run hints and install): 53 scripts, in an order that lets input.js find its helpers -----------------------------------------------
 
-test('lint: index.html lists 52 scripts, with prompts, gamepad and touch before input.js and haptics, daily and share between input.js and audio.js', () => {
-  assert.equal(LIST.length, 52);
+test('lint: index.html lists 53 scripts, with install.js after loop.js, prompts, gamepad and touch before input.js and haptics, daily and share between input.js and audio.js', () => {
+  assert.equal(LIST.length, 53);
   const at = (f) => {
     const i = LIST.indexOf(f);
     assert.ok(i >= 0, f + ' is listed');
@@ -222,6 +222,9 @@ test('lint: index.html lists 52 scripts, with prompts, gamepad and touch before 
     ['src/art/render.js', 'src/core/prompts.js', 'src/core/gamepad.js', 'src/core/touch.js', 'src/core/input.js', 'src/core/haptics.js', 'src/core/daily.js', 'src/core/share.js', 'src/core/audio.js'],
     'the order the plan fixes'
   );
+  // The install helper listens for browser events on load and is used (guarded) by the title, which comes much later.
+  assert.equal(at('src/core/install.js'), at('src/core/loop.js') + 1, 'install.js sits right after loop.js');
+  assert.ok(at('src/core/install.js') < at('src/scenes/title.js'), 'install.js before the title');
   // The first-run hints read the palette when they load and CB.Save / CB.Prompts when they run, and the play scene that calls them comes later.
   const hints = at('src/game/hints.js');
   for (const dep of ['src/art/palette.js', 'src/art/font.js', 'src/core/prompts.js', 'src/game/unlocks.js']) assert.ok(hints > at(dep), 'hints.js after ' + dep);

@@ -204,7 +204,7 @@ test('build: the #game rule stays one rule and keeps crisp pixels and touch-acti
 test('build: the #rotate overlay is in the Artifact page, hidden by default, full-screen over the canvas and clickable in portrait on touch', async () => {
   const { out } = await buildOnce();
   const page = pageWithoutScripts(out);
-  assert.match(page, /<div id="rotate">↻ Rotate your phone to play<\/div>/);
+  assert.match(page, /<div id="rotate"><div class="card"><svg [^>]*>[\s\S]*?<\/svg><p class="big">Turn your device sideways to play<\/p><p class="small">Rotation locked\? Turn off Portrait Orientation Lock in Control Center\.<\/p><\/div><\/div>/);
   assert.ok(page.indexOf('<canvas id="game"') < page.indexOf('id="rotate"'), 'after the canvas, so it paints on top');
   const css = styleOf(out);
   const base = rulesOf(css).filter((r) => r.selectors.includes('#rotate'));
@@ -230,6 +230,8 @@ test('build: index.html carries the theme-color and home-screen metas in its hea
   assert.match(head, /<meta name="theme-color" content="#0B0B10">/);
   assert.match(head, /<meta name="mobile-web-app-capable" content="yes">/);
   assert.match(head, /<meta name="apple-mobile-web-app-capable" content="yes">/);
+  assert.match(head, /<meta name="apple-mobile-web-app-title" content="Clawd">/);
+  assert.match(head, /<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">/);
   assert.match(head, /<meta name="viewport" content="[^"]*viewport-fit=cover/, 'the viewport meta is unchanged');
   const styleTags = INDEX.match(/<style\b[^>]*>/g) || [];
   assert.deepEqual(styleTags, ['<style>'], 'build-artifact.mjs matches a bare <style>');
@@ -237,7 +239,7 @@ test('build: index.html carries the theme-color and home-screen metas in its hea
 
 test('build: the rotate overlay needs no script, no https and no colour-scheme query (the Artifact rules still hold)', async () => {
   const { out } = await buildOnce();
-  const rotate = (pageWithoutScripts(out).match(/<div id="rotate">[\s\S]*?<\/div>/) || [''])[0];
+  const rotate = (pageWithoutScripts(out).match(/<div id="rotate">[\s\S]*?<\/div><\/div>/) || [''])[0];
   assert.ok(rotate.length > 0);
   assert.doesNotMatch(rotate, /<script|https?:|\bon\w+\s*=/i);
   assert.doesNotMatch(out, /prefers-color-scheme/i);

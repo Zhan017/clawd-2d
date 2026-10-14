@@ -514,7 +514,9 @@ test('merge: fire is the mouse, the pad (R-stick or RT) or the touch aim stick',
   e.tdown(1, ...CLIENT.aimSide);
   assert.equal(e.input.sample().fire, true, 'touch aim stick held');
   e.tup(1);
-  assert.equal(e.input.sample().fire, false);
+  assert.equal(e.input.sample().fire, true, 'a tap keeps shooting at its point for a moment');
+  for (let i = 0; i < 7; i++) e.input.sample();
+  assert.equal(e.input.sample().fire, false, 'and then stops');
 });
 
 test('merge: pad edges feed confirm, dash, compact, pause and quit; keyboard edges still do', () => {
@@ -820,6 +822,129 @@ test('touch: sticks mode drives the move stick, the aim stick and the buttons, w
   assert.equal(s.fire, true, 'the aim finger is still down');
   e.tcancel(2);
   assert.equal(e.input.sample().fire, false, 'pointercancel releases the aim stick');
+});
+
+// ---- T1: tap to shoot where you tap -------------------------------------------------------------------------------------------
+
+test('touch tap: a short tap on the aim half fires at the tapped point, with no direction and no assist, for the touch plus about 120 ms', () => {
+  const e = makeEnv();
+  e.input.setTouchMode('sticks');
+  e.tdown(1, 1000, 280); // internal (250, 70)
+  let s = e.input.sample();
+  assert.equal(s.fire, true);
+  assert.strictEqual(s.aimDirX, null);
+  assert.strictEqual(s.aimDirY, null);
+  assert.strictEqual(s.aimAssist, false);
+  assert.equal(s.aimX, 250);
+  assert.equal(s.aimY, 70);
+  e.tup(1);
+  for (let i = 0; i < 7; i++) {
+    s = e.input.sample();
+    assert.equal(s.fire, true, 'shot tick ' + i);
+    assert.equal(s.aimX, 250);
+    assert.equal(s.aimY, 70);
+    assert.strictEqual(s.aimDirX, null);
+  }
+  s = e.input.sample();
+  assert.equal(s.fire, false);
+  assert.equal(s.aimAssist, true, 'back to the stick direction (kept, up)');
+  assert.equal(s.aimDirY, -1);
+});
+
+test('touch tap: a tap lifted before the next sample still shoots once at its point', () => {
+  const e = makeEnv();
+  e.input.setTouchMode('sticks');
+  e.tdown(1, 1000, 280);
+  e.tup(1);
+  const s = e.input.sample();
+  assert.equal(s.fire, true);
+  assert.equal(s.aimX, 250);
+  assert.equal(s.aimY, 70);
+  assert.strictEqual(s.aimDirX, null);
+});
+
+test('touch tap: a hold (over 10 ticks) or a drag (6 px or more) is the stick as before, and a cancelled touch is no tap', () => {
+  const e = makeEnv();
+  e.input.setTouchMode('sticks');
+  e.tdown(1, 1000, 280);
+  for (let i = 0; i < 12; i++) e.input.sample();
+  let s = e.input.sample();
+  assert.strictEqual(s.aimAssist, true, 'held: the stick direction');
+  e.tup(1);
+  assert.equal(e.input.sample().fire, false, 'a lift after a hold leaves no shot');
+
+  e.tdown(2, 1000, 280);
+  e.tmove(2, 1000 + 4 * 6, 280); // 6 internal px right
+  s = e.input.sample();
+  assert.strictEqual(s.aimAssist, true, 'dragged: the stick direction at once');
+  assert.ok(s.aimDirX > 0.99, 'to the right: ' + s.aimDirX);
+  e.tup(2);
+  assert.equal(e.input.sample().fire, false);
+
+  e.tdown(3, 1000, 280);
+  e.tcancel(3);
+  assert.equal(e.input.sample().fire, false, 'pointercancel is no tap');
+});
+
+test('touch tap: the move half, menu mode, the mouse and the pad are untouched by the tap shot', () => {
+  const e = makeEnv();
+  e.input.setTouchMode('sticks');
+  e.tdown(1, ...CLIENT.moveSide);
+  e.tup(1);
+  let s = e.input.sample();
+  assert.equal(s.fire, false, 'a tap on the move half shoots nothing');
+  e.input.setTouchMode('menu');
+  e.tdown(2, 1000, 280);
+  e.tup(2);
+  s = e.input.sample();
+  assert.equal(s.fire, false, 'menu taps are taps');
+  assert.equal(s.tap, true);
+  e.mdown(40, 40);
+  assert.equal(e.input.sample().fire, true, 'the mouse still fires');
+  e.mup();
+});
+
+// ---- T4: the layout follows the renderer's metrics ---------------------------------------------------------------------------
+
+test('touch layout: with side bars the controls are hit where they are drawn, from the renderer metrics; without them nothing changes', () => {
+  const e = makeEnv();
+  const metrics = { x0: -51, y0: 0, x1: 371, y1: 180, safe: { l: 0, t: 0, r: 0, b: 0 } };
+  e.renderer.metrics = () => metrics;
+  e.renderer.toInternal = (x, y) => ({ x: x / 4 - 51, y: y / 4 });
+  const L = e.CB.Touch.layoutFor(metrics);
+  assert.equal(L.bars, true);
+  e.input.setTouchMode('sticks');
+  // DASH in the right bar, drawn at L.dash
+  e.tdown(1, (L.dash.x + 51) * 4, L.dash.y * 4);
+  let s = e.input.sample();
+  assert.equal(s.dash, true, 'a touch on the bar DASH is a dash');
+  assert.equal(s.fire, false);
+  e.tup(1);
+  e.tdown(2, (L.pause.x + 5 + 51) * 4, (L.pause.y + 5) * 4);
+  assert.equal(e.input.sample().pause, true, 'II in the right bar');
+  e.tup(2);
+  // The old DASH spot is now just aim ground (inside the arena, on the aim half)
+  e.tdown(3, (298 + 51) * 4, 146 * 4);
+  s = e.input.sample();
+  assert.equal(s.dash, false);
+  assert.equal(s.fire, true);
+  e.tup(3);
+
+  // No bars: back to the in-arena buttons.
+  Object.assign(metrics, { x0: 0, x1: 320 });
+  e.renderer.toInternal = (x, y) => ({ x: x / 4, y: y / 4 });
+  e.tdown(4, ...CLIENT.dash);
+  assert.equal(e.input.sample().dash, true);
+});
+
+test('touch layout: a renderer without metrics, or a Touch without setLayout, keeps the in-arena layout', () => {
+  const e = makeEnv();
+  e.input.setTouchMode('sticks');
+  e.tdown(1, ...CLIENT.dash);
+  assert.equal(e.input.sample().dash, true);
+  const f = makeEnv({ files: ['src/core/ns.js', 'src/core/math.js', 'src/core/input.js'] });
+  f.renderer.metrics = () => ({ x0: -51, x1: 371, y0: 0, y1: 180 });
+  assert.doesNotThrow(() => f.input.sample());
 });
 
 test('touch: a move or an up for a pointer that never went down is harmless', () => {
@@ -1510,10 +1635,15 @@ test('partial environment: only Touch is loaded (no Prompts, no Gamepad)', () =>
   const e = makeEnv({ files: ['src/core/ns.js', 'src/core/math.js', 'src/core/touch.js', 'src/core/input.js'] });
   e.input.setTouchMode('sticks');
   e.tdown(1, ...CLIENT.aimSide);
-  const s = e.input.sample();
+  let s = e.input.sample();
   assert.equal(s.device, 'touch');
   assert.equal(s.fire, true);
-  assert.equal(s.aimDirY, -1);
+  assert.equal(s.aimDirY, null, 'a new touch aims at its own point first');
+  assert.equal(s.aimY, 100);
+  for (let i = 0; i < 10; i++) e.input.sample();
+  s = e.input.sample();
+  assert.equal(s.fire, true);
+  assert.equal(s.aimDirY, -1, 'and once held it is the stick');
 });
 
 test('partial environment: only Gamepad is loaded (no Prompts, no Touch)', () => {
